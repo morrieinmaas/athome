@@ -22,7 +22,7 @@ import os
 username = os.environ.get("ATHOME_PYINFRA_USER", "user")
 
 # GitHub user whose public SSH keys get pulled into authorized_keys via
-# https://github.com/<user>.keys. Make sure your personal_ed25519 +
-# work + sidebiz pubkeys are all uploaded to this account first —
-# bootstrap.sh does this on your first machine automatically.
+# https://github.com/<user>.keys. Make sure each machine's
+# <hostname>_ed25519 pubkey is uploaded to this account first —
+# bootstrap.sh does this on every machine automatically.
 github_user = os.environ.get("ATHOME_PYINFRA_GITHUB_USER", "your-github-user")

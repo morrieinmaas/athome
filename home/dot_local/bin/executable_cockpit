@@ -8,7 +8,14 @@ export PATH="/opt/nanobrew/prefix/bin:$HOME/.local/share/mise/shims:$PATH"
 for s in work personal sidebiz misc; do
   if tmux has-session -t "$s" 2>/dev/null; then
     echo "✓ $s (exists)"
+  elif smug start "$s" --detach >/dev/null 2>&1; then
+    # smug sets a window name, which disables auto-rename — re-enable so the
+    # window tracks the current dir (basename) like every other window.
+    for w in $(tmux list-windows -t "$s" -F '#{window_id}' 2>/dev/null); do
+      tmux setw -t "$w" automatic-rename on
+    done
+    echo "✓ $s (created)"
   else
-    smug start "$s" --detach >/dev/null 2>&1 && echo "✓ $s (created)" || echo "✗ $s (failed)"
+    echo "✗ $s (failed)"
   fi
 done

@@ -3,7 +3,7 @@
 [user]
     name  = {{ .name_work  | default .name_personal }}
     email = {{ .email_work | default .email_personal }}
-{{- $key := joinPath .chezmoi.homeDir ".ssh/work_ed25519.pub" }}
+{{- $key := joinPath .chezmoi.homeDir (printf ".ssh/%s_ed25519.pub" .chezmoi.hostname) }}
 {{- if stat $key }}
     signingkey = {{ $key }}
 

@@ -1,16 +1,14 @@
-{{- /* Auto-populated from ~/.ssh/<id>_ed25519.pub. Each line is only
-       emitted if the corresponding key exists, so this file is harmless
-       on a fresh machine and self-fills as bootstrap.sh generates keys. */ -}}
-{{- $home := .chezmoi.homeDir -}}
-{{- $personalPub := joinPath $home ".ssh/personal_ed25519.pub" -}}
-{{- $workPub     := joinPath $home ".ssh/work_ed25519.pub"     -}}
-{{- $sidebizPub  := joinPath $home ".ssh/sidebiz_ed25519.pub"  -}}
-{{ if stat $personalPub -}}
-{{ .email_personal }} {{ output "cat" $personalPub | trim }}
-{{ end -}}
-{{- if stat $workPub -}}
-{{ .email_work }} {{ output "cat" $workPub | trim }}
-{{ end -}}
-{{- if stat $sidebizPub -}}
-{{ .email_sidebiz }} {{ output "cat" $sidebizPub | trim }}
-{{ end -}}
+{{- /* Auto-populated from ~/.ssh/<hostname>_ed25519.pub. ONE key signs every
+       context (single GitHub account), so each non-empty context email maps to
+       that same key — commits verify regardless of which email authored them.
+       Emitted only if the key exists, so it's harmless on a fresh machine and
+       self-fills as bootstrap.sh generates the key. */ -}}
+{{- $pub := joinPath .chezmoi.homeDir (printf ".ssh/%s_ed25519.pub" .chezmoi.hostname) -}}
+{{- if stat $pub }}
+{{- $k := output "cat" $pub | trim }}
+{{- range $email := (list .email_personal .email_work .email_sidebiz) }}
+{{- if $email }}
+{{ $email }} {{ $k }}
+{{- end }}
+{{- end }}
+{{- end }}

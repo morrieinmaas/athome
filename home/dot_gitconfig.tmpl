@@ -101,18 +101,9 @@
 [url "git@github.com:"]
     insteadOf = https://github.com/
 
-# Personal namespace: route your own repos through the github-personal SSH
-# alias so they use ~/.ssh/personal_ed25519 (per ~/.ssh/config). The
-# longer-prefix match beats the catch-all above. Only emitted when a GitHub
-# handle is configured (githubHandle prompt / ATHOME_GITHUB_HANDLE).
-{{- if .githubHandle }}
-[url "git@github-personal:{{ .githubHandle }}/"]
-    insteadOf = git@github.com:{{ .githubHandle }}/
-    insteadOf = https://github.com/{{ .githubHandle }}/
-{{- end }}
-
-# Work/sidebiz repos: use the explicit alias when cloning, e.g.
-#   git clone git@github-work:<work-org>/repo
-#   git clone git@github-sidebiz:<sidehustle-org>/repo
-# The directory-based `includeIf` blocks above take care of commit
-# identity + signing key once the repo is on disk.
+# One GitHub account → one SSH key (per machine), so there's no per-account
+# host-alias routing: every github.com repo uses ~/.ssh/<hostname>_ed25519 (see
+# ~/.ssh/config). The directory-based `includeIf` blocks above still set the
+# right commit *email* per tree (~/work vs ~/personal vs ~/sidebiz). If you add
+# a second GitHub account later, reintroduce a `[url "git@github-<acct>:..."]`
+# block here pointing at that account's host alias.

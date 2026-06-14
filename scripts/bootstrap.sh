@@ -83,11 +83,10 @@ esac
 # We use this list for keygen, GitHub upload, and the SSH-config Host
 # alias seeding. Single source of truth — change here once, everything
 # downstream follows.
-case "$MACHINE" in
-  personal) IDENTITIES=(personal sidebiz) ;;
-  work)     IDENTITIES=(work) ;;
-esac
-c_blue "==> identities active on this machine ($MACHINE): ${IDENTITIES[*]}"
+# One SSH key per machine (single GitHub account) does auth + commit signing —
+# see the keygen section below. --machine still selects which context *dirs* get
+# created (run_once_03); the per-tree git email routing is independent of keys.
+c_blue "==> machine context: $MACHINE"
 
 # ── 0. resolve the repo location from script path ───────────────────────────
 # The chezmoi source dir lives at $repo_root/home (pointed at by .chezmoiroot).
@@ -212,7 +211,14 @@ if ! command -v chezmoi >/dev/null 2>&1; then
 fi
 c_green "✓ chezmoi: $(chezmoi --version | head -n1)"
 
-# ── 1.5 (optional) restore SSH keys from a prior key-backup dir ─────────────
+# Single per-machine SSH key, named after the host so it matches the chezmoi
+# templates' {{ .chezmoi.hostname }}_ed25519 (ssh-config + signing line up). We
+# derive it via chezmoi (installed just above) so the two never disagree.
+ssh_host="$(chezmoi execute-template '{{ .chezmoi.hostname }}' 2>/dev/null)"
+ssh_host="${ssh_host:-$(short_hostname)}"
+ssh_key="$HOME/.ssh/${ssh_host}_ed25519"
+
+# ── 1.5 (optional) restore SSH key from a prior key-backup dir ──────────────
 # age + GPG are retired (D4/D5): secrets live in Bitwarden (rbw), and chezmoi
 # no longer encrypts anything. The only thing a key-backup holds now is SSH
 # keys — and those are per-machine by default (lose a laptop → revoke ONE
@@ -224,20 +230,22 @@ if [[ -n "$IMPORT_FROM" ]]; then
     c_red "--import-from: directory not found: $IMPORT_FROM"; exit 2
   fi
   if [[ "$IMPORT_SSH" == "true" && -d "$IMPORT_FROM/ssh" ]]; then
-    c_blue "==> importing SSH keys from $IMPORT_FROM"
+    c_blue "==> importing SSH key from $IMPORT_FROM (installs as ${ssh_host}_ed25519)"
     mkdir -p "$HOME/.ssh"
     chmod 700 "$HOME/.ssh"
-    for id in "${IDENTITIES[@]}"; do
-      src_priv="$IMPORT_FROM/ssh/${id}_ed25519"
-      src_pub="$IMPORT_FROM/ssh/${id}_ed25519.pub"
-      dst_priv="$HOME/.ssh/${id}_ed25519"
-      if [[ -f "$src_priv" && ! -f "$dst_priv" ]]; then
-        install -m 0600 "$src_priv" "$dst_priv"
-        [[ -f "$src_pub"  ]] && install -m 0644 "$src_pub" "${dst_priv}.pub"
-        c_green "  ✓ ssh ${id}_ed25519 restored"
+    # Take the first private key in the backup, whatever the source host named
+    # it, and install it under THIS machine's name.
+    src_priv="$(find "$IMPORT_FROM/ssh" -maxdepth 1 -name '*_ed25519' ! -name '*.pub' 2>/dev/null | head -1)"
+    if [[ -n "$src_priv" && ! -f "$ssh_key" ]]; then
+      install -m 0600 "$src_priv" "$ssh_key"
+      if [[ -f "${src_priv}.pub" ]]; then
+        install -m 0644 "${src_priv}.pub" "${ssh_key}.pub"
+      else
+        ssh-keygen -y -f "$ssh_key" > "${ssh_key}.pub"   # regenerate pub from priv
       fi
-    done
-    c_green "✓ import done — continuing with keygen flow (existing keys are reused)"
+      c_green "  ✓ ssh key restored as ${ssh_host}_ed25519"
+    fi
+    c_green "✓ import done — continuing with keygen flow (an existing key is reused)"
   else
     c_yellow "==> --import-from given without --import-ssh (or no ssh/ dir present)."
     c_yellow "    Nothing to import — age/GPG are retired. Fresh SSH keys will be generated."
@@ -254,20 +262,14 @@ fi
 # ── 4. SSH keys for each identity ───────────────────────────────────────────
 mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh"
 ssh_keys_were_generated=0
-for id in "${IDENTITIES[@]}"; do
-  key="$HOME/.ssh/${id}_ed25519"
-  if [[ -f "$key" ]]; then
-    c_green "✓ ssh key $id already exists — using it"
-  else
-    c_blue "==> generating ssh key: $key"
-    ssh-keygen -t ed25519 -f "$key" -N "" -C "${ATHOME_GITHUB_HANDLE:-$(id -un)}-${id}-$(short_hostname)"
-    ssh_keys_were_generated=1
-  fi
-done
-c_green "✓ ssh public keys:"
-for id in "${IDENTITIES[@]}"; do
-  printf '   %s: %s\n' "$id" "$(cat "$HOME/.ssh/${id}_ed25519.pub")"
-done
+if [[ -f "$ssh_key" ]]; then
+  c_green "✓ ssh key already exists — using it: ${ssh_host}_ed25519"
+else
+  c_blue "==> generating ssh key: $ssh_key"
+  ssh-keygen -t ed25519 -f "$ssh_key" -N "" -C "${ATHOME_GITHUB_HANDLE:-$(id -un)}@${ssh_host}"
+  ssh_keys_were_generated=1
+fi
+c_green "✓ ssh public key: $(cat "${ssh_key}.pub")"
 
 # ── 4.5 SSH key backup (TTY-friendly) ───────────────────────────────────────
 # Fires whenever SSH keys were freshly generated this run. age + GPG are
@@ -284,12 +286,8 @@ if (( ssh_keys_were_generated )); then
 
   mkdir -p "$backup_dir/ssh"
   chmod 700 "$backup_dir/ssh"
-  for id in "${IDENTITIES[@]}"; do
-    if [[ -f "$HOME/.ssh/${id}_ed25519" ]]; then
-      install -m 0600 "$HOME/.ssh/${id}_ed25519"     "$backup_dir/ssh/${id}_ed25519"
-      install -m 0644 "$HOME/.ssh/${id}_ed25519.pub" "$backup_dir/ssh/${id}_ed25519.pub"
-    fi
-  done
+  install -m 0600 "$ssh_key"       "$backup_dir/ssh/${ssh_host}_ed25519"
+  install -m 0644 "${ssh_key}.pub" "$backup_dir/ssh/${ssh_host}_ed25519.pub"
 
   bk_host="$(short_hostname)"
   bk_user="$(whoami)"
@@ -413,33 +411,28 @@ if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
       c_yellow "    and https://github.com/settings/ssh/signing/new (signing tab)"
       c_yellow "    Paste each block below — once as auth key, once as signing key:"
       c_yellow ""
-      for id in "${IDENTITIES[@]}"; do
-        title="${host}-${id}"
-        c_blue "  ── $title ──"
-        cat "$HOME/.ssh/${id}_ed25519.pub"
-        echo ""
-      done
+      c_blue "  ── ${host} ──"
+      cat "${ssh_key}.pub"
+      echo ""
       c_yellow "    Then re-run bootstrap if you want the gh git_protocol switch to ssh"
       c_yellow "    (or run it manually: gh config set git_protocol ssh --host github.com)"
     else
       # ── upload via gh API (scopes are present at this point) ──
       # Check-then-upload so re-runs don't spam GitHub with duplicate keys.
-      for id in "${IDENTITIES[@]}"; do
-        pub="$HOME/.ssh/${id}_ed25519.pub"
-        title="${host}-${id}"
+      pub="${ssh_key}.pub"
+      title="${host}"
 
-        if key_on_gh_auth "$pub"; then
-          c_green "  ✓ auth key already on GitHub: matching $title"
-        else
-          add_gh_ssh_key "$pub" "$title" "" || true
-        fi
+      if key_on_gh_auth "$pub"; then
+        c_green "  ✓ auth key already on GitHub: matching $title"
+      else
+        add_gh_ssh_key "$pub" "$title" "" || true
+      fi
 
-        if key_on_gh_signing "$pub"; then
-          c_green "  ✓ signing key already on GitHub: matching ${title}-sign"
-        else
-          add_gh_ssh_key "$pub" "${title}-sign" "--type signing" || true
-        fi
-      done
+      if key_on_gh_signing "$pub"; then
+        c_green "  ✓ signing key already on GitHub: matching ${title}-sign"
+      else
+        add_gh_ssh_key "$pub" "${title}-sign" "--type signing" || true
+      fi
     fi
 
     # Now that SSH keys exist on GitHub, flip gh's default protocol so any
@@ -500,10 +493,8 @@ SSHSEED
   else
     c_yellow "skipping ssh-key upload — run manually later:"
     c_yellow "  gh auth refresh -h github.com -s admin:public_key,admin:ssh_signing_key"
-    c_yellow "  for id in ${IDENTITIES[*]}; do"
-    c_yellow "    gh ssh-key add ~/.ssh/\${id}_ed25519.pub --title \"$(short_hostname)-\${id}\""
-    c_yellow "    gh ssh-key add ~/.ssh/\${id}_ed25519.pub --title \"$(short_hostname)-\${id}-sign\" --type signing"
-    c_yellow "  done"
+    c_yellow "  gh ssh-key add ${ssh_key}.pub --title \"${ssh_host}\""
+    c_yellow "  gh ssh-key add ${ssh_key}.pub --title \"${ssh_host}-sign\" --type signing"
   fi
 else
   c_yellow "gh not authed — skipping ssh-key upload (run \`gh ssh-key add\` manually later)"

@@ -459,18 +459,16 @@ if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
     # it here means subsequent `git pull` in this repo uses SSH — no
     # prompt for HTTPS password (which GitHub doesn't even accept anymore).
     #
-    # But wait: if chezmoi has ALREADY deployed ~/.gitconfig (e.g. on a
-    # re-run / partial-apply state), its `url."git@github-personal:..."
-    # insteadOf` rule will transform any `git@github.com:<handle>/...`
-    # we set here into `git@github-personal:<handle>/...`. That host
-    # alias is also defined in ~/.ssh/config — which chezmoi hasn't
-    # necessarily deployed yet on this run.
+    # But wait: ~/.gitconfig's `url."git@github.com:" insteadOf
+    # https://github.com/` catch-all makes every github.com op use SSH, and our
+    # key (~/.ssh/<host>_ed25519) is NOT a default ssh identity name — so ssh
+    # only offers it if ~/.ssh/config pins it via IdentityFile. If chezmoi
+    # hasn't deployed the ssh config yet on this run, `git pull` would fail.
     #
-    # So before rewriting the remote, make sure the three github-{ctx}
-    # Host aliases exist in ~/.ssh/config. If chezmoi already deployed the
-    # full config, the grep below will see the marker and we'll skip; if
-    # not, append the minimum needed so SSH can resolve. chezmoi's later
-    # apply will overwrite this file with its full version idempotently.
+    # So before rewriting the remote, make sure ~/.ssh/config pins github.com to
+    # our key. If chezmoi already deployed the full config, the grep below sees
+    # the marker and we skip; otherwise append the minimum block. chezmoi's later
+    # apply overwrites this file with its full version idempotently.
     mkdir -p "$HOME/.ssh"
     chmod 700 "$HOME/.ssh"
     touch "$HOME/.ssh/config"

@@ -132,8 +132,8 @@ identity keys from a prior backup dir (see
 [SSH keys](#ssh-keys-auth--commit-signing) for backup contents):
 
 ```bash
-./scripts/bootstrap.sh --import-from /path/to/key-backup-<ts> --import-ssh
-# without --import-ssh, fresh per-machine SSH keys are generated (the default)
+./scripts/bootstrap.sh --import-ssh-bw ssh/<hostname>_ed25519   # restore from Bitwarden
+# without it, a fresh per-machine key is generated + backed up to Bitwarden (default)
 ```
 
 The whole run is non-interactive — SSH key gen + upload, `chezmoi apply`, all
@@ -180,7 +180,7 @@ Authoritative reference: <https://wiki.archlinux.org/title/Netboot>.
 | `--machine personal\|work` | `personal` | Sets chezmoi `machineType`. `personal` covers sidehustle too — per-directory git identity routing handles the distinction. |
 | `--ref <tag\|branch>` | latest tag via `git describe --tags` (currently `v0.1.0`) | Materializes the ref in a throwaway worktree (no detached HEAD ever), runs chezmoi from there, leaves your main checkout untouched. Use `--ref main` for tip. Bootstrap refuses a ref that has no chezmoi sources under `home/`. |
 | `--no-agents` | off (i.e. include agents) | Skips the `~/.config/agents` skills+instructions sync. Use on machines that don't need agentic tooling. |
-| `--import-from <dir>` | none | Points at a prior machine's `~/key-backup-<ts>/` dir. Only meaningful with `--import-ssh` (age + GPG are retired, so SSH keys are all a backup holds). |
+| `--import-from <dir>` | none | Restore from a key-backup directory you transported yourself (secondary path; only with `--import-ssh`). The primary cross-machine path is `--import-ssh-bw` (Bitwarden). |
 | `--import-ssh` | off | With `--import-from`: install the key found in that backup dir as this machine's `~/.ssh/<hostname>_ed25519`. The GitHub upload step dedupes by fingerprint. |
 | `--import-ssh-bw <item>` | none | Restore the SSH key from a Bitwarden secure note (e.g. `ssh/<host>_ed25519`) via `rbw` — the primary cross-machine path. |
 
@@ -190,11 +190,11 @@ Authoritative reference: <https://wiki.archlinux.org/title/Netboot>.
 2. **Pin to the resolved ref** in a temp `git worktree` — your `~/.local/share/chezmoi` stays on `main`.
 3. **Cache sudo credentials** once + background keep-alive every 60s, so sudo never re-prompts mid-run.
 4. **Install chezmoi** if missing.
-5. **Generate SSH keys** (idempotent — skips what exists): **3 ed25519 keypairs**
-   `personal_ed25519`, `work_ed25519`, `sidebiz_ed25519` (passphrase-less; see
-   [SSH keys](#ssh-keys-auth--commit-signing)). Newly generated keys trigger a
-   `~/key-backup-<ts>/ssh/` backup dir with retrieval instructions. (age + GPG
-   keygen are retired — secrets live in Bitwarden, accessed via `rbw`.)
+5. **Generate the SSH key** (idempotent — skips if it exists): **one ed25519
+   keypair** named after the host, `~/.ssh/<hostname>_ed25519` (passphrase-less;
+   see [SSH keys](#ssh-keys-auth--commit-signing)). A freshly generated key is
+   backed up to **Bitwarden** as a secure note. (age + GPG keygen are retired —
+   secrets live in Bitwarden, accessed via `rbw`.)
 6. **Proactive `gh` scope check**: if `gh` lacks `admin:public_key` / `admin:ssh_signing_key`, you're offered either a `gh auth refresh` (browser flow) or the manual "print pub-keys + GH settings URL" opt-out — no surprise interactive prompts.
 7. **Query-then-upload** SSH keys: queries `gh api user/keys` and `gh api user/ssh_signing_keys` before uploading, so re-runs don't spam duplicates on your GitHub account.
 8. **Switch chezmoi repo remote HTTPS → SSH** as soon as keys are on GH, so subsequent `git pull` uses SSH (no HTTPS-password prompt — GitHub doesn't accept those anymore).
@@ -283,18 +283,15 @@ needed per repo.
 
 ### Wayland desktop session (Linux)
 
-archinstall's Niri profile installs niri + a lightdm greeter at install
-time (see Step 2 in [From bare metal](#from-bare-metal-no-os-yet)).
-chezmoi then layers:
+archinstall's GNOME spin installs GNOME + GDM at install time (see Step 2 in
+[From bare metal](#from-bare-metal-no-os-yet)). chezmoi then layers:
 
 - [`home/dot_config/niri/`](home/dot_config/niri/) — keybindings, output config, autostart
 - [`home/dot_config/greetd/config.toml`](home/dot_config/greetd/config.toml) —
-  polished tuigreet config with `--asterisks` and `--remember-session`
+  tuigreet config (only used if you swap GDM → greetd; GDM stays by default)
 - [`home/.chezmoiscripts/run_once_11-setup-niri-noctalia.sh.tmpl`](home/.chezmoiscripts/run_once_11-setup-niri-noctalia.sh.tmpl)
-  swaps lightdm → greetd, sets up Noctalia (Quickshell-based minimal
-  shell), enables power-profiles-daemon + bluetooth, primes PaperWM in
-  the GNOME
-  fallback session
+  installs niri + Noctalia, **respects your DM (GDM)** and sets niri as the
+  default login session, enables power-profiles-daemon + bluetooth
 - The GNOME alt session is installed as additional packages during
   archinstall and surfaced via tuigreet's session picker
 
@@ -473,8 +470,8 @@ To skip: `./scripts/bootstrap.sh --no-agents`.
 | `personalName` | empty | Personal git display name; `ATHOME_PERSONAL_NAME` env (empty = your handle). Not derived — GitHub's display name is often a real name, which we deliberately keep out of commits |
 | `netbirdManagementUrl` | empty (NetBird Cloud SaaS) | Set to `https://netbird.example.com` when self-hosting; see [docs/netbird-cloud.md](docs/netbird-cloud.md) |
 | `nordvpnCountry` | empty (NordVPN picks best) | E.g. `Netherlands` to pin |
-| `includeAgents` | `true` (or `false` via `--no-agents`) | Master on/off for the `~/.claude/` skills sync |
-| `agentsRepo` | empty | Repo synced into `~/.claude` as `owner/repo`; `ATHOME_AGENTS_REPO` env. Empty = nothing synced (a fork points it at its own, or skips) |
+| `includeAgents` | `true` (or `false` via `--no-agents`) | Master on/off for the `~/.config/agents` skills sync |
+| `agentsRepo` | empty | Repo synced into `~/.config/agents` as `owner/repo`; `ATHOME_AGENTS_REPO` env. Empty = nothing synced (a fork points it at its own, or skips) |
 
 ## Security model (defense in depth, primary-control-first)
 
@@ -562,7 +559,7 @@ athome/
 └── home/                             # ← chezmoi source root (everything below applies to ~/)
     ├── .chezmoi.toml.tmpl            # first-run prompts → ~/.config/chezmoi/chezmoi.toml
     ├── .chezmoidata/packages.yaml    # explicit per-platform package lists
-    ├── .chezmoiexternal.toml.tmpl    # declarative externals: zinit, TPM, ~/.claude
+    ├── .chezmoiexternal.toml.tmpl    # declarative externals: zinit, TPM, ~/.config/agents
     ├── .chezmoiignore                # what NOT to deploy (OS-gated)
     ├── .chezmoiscripts/              # ordered setup scripts (sudo / podman / niri-noctalia / project-dirs / …)
     │
@@ -581,7 +578,7 @@ athome/
     │   ├── ghostty/config.tmpl       # auto dark/light everforest (window-decoration gated to Linux)
     │   ├── tmux/tmux.conf            # TPM + sessionx + smart-manager + opensessions + everforest pill bar + icon picker (prefix P) + TUI launchers (gh-dash/slk)
     │   ├── nvim/                     # lazy.nvim + mason-org LSP + snacks (picker/explorer) + harpoon2 + bufferline + treesitter + which-key + noice (cmdline popup) + persistence (sessions) + render-markdown + conform + everforest
-    │   ├── opencode/config.json      # wired to ~/.claude skills + CLAUDE.md
+    │   ├── opencode/config.json      # wired to ~/.config/agents (CLAUDE.md + skills)
     │   ├── jj/config.toml.tmpl       # Jujutsu version control (templated identity)
     │   ├── gh/config.yml             # git_protocol: ssh; aliases co/cr/prv
     │   ├── niri/config.kdl           # Linux: scrollable-tiling Wayland compositor
@@ -649,7 +646,7 @@ mise doctor                 # health-check the toolchain
 nb upgrade                  # macOS (nanobrew)
 paru -Syu                   # Arch
 
-# force-refresh externals (zinit, TPM, ~/.claude) on next apply:
+# force-refresh externals (zinit, TPM, ~/.config/agents) on next apply:
 chezmoi state delete-bucket --bucket=entryState
 ```
 
@@ -665,7 +662,7 @@ and the [layout](#layout); this is the *why*):
 | **Ghostty** (terminal) | GPU-accelerated and native-feeling on both OSes; simple `key=value` config (no Lua/YAML); auto dark/light following the OS; Kitty image protocol for yazi previews; MIT. |
 | **tmux** | Everywhere over SSH, infinitely scriptable, our muscle-memory default. (zellij was dropped — tmux won outright.) |
 | **Neovim** (editor) | Lua config deployed identically everywhere via chezmoi: lazy.nvim + LSP (mason) + snacks (picker/explorer) + treesitter + conform + which-key + everforest. Kept native (not mise) because plugins compile against system lua/tree-sitter. **Zed** ships alongside as the GUI option. |
-| **OpenCode** (AI agent) | Reads `~/.claude/CLAUDE.md` + `.claude/skills/*/SKILL.md` (shared with Claude Code); model via OpenRouter, key pulled from Bitwarden through direnv + rbw. |
+| **OpenCode** (AI agent) | Reads `~/.config/agents/CLAUDE.md` + `skills/*/SKILL.md` (the agent-agnostic dir, symlinked into `~/.claude` for Claude Code); model via OpenRouter, key pulled from Bitwarden through direnv + rbw. |
 | **Podman** over Docker | Rootless, daemonless, drop-in `DOCKER_HOST` socket; `lazydocker`/compose work unchanged. |
 | **NetBird** mesh / **rbw** secrets / **Noctalia** shell | Each is the FOSS-first pick with a no-penalty self-host or open-source escape hatch — see the relevant sections above. |
 

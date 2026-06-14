@@ -168,4 +168,4 @@ secrets-restore [--dry-run]          # clone vault → unlock with the BW key �
 4. clone dev repos → committed `mise.toml` + restored `~/.secrets/<name>/.env` → `mise trust` → working
 
 > Deep-dive + the backup/restore mechanism rationale also lives in the agent skill
-> `~/.claude/skills/mise-secrets/`.
+> `~/.config/agents/skills/mise-secrets/` (symlinked into `~/.claude/skills/` for Claude Code).

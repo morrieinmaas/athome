@@ -462,24 +462,16 @@ if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
     chmod 700 "$HOME/.ssh"
     touch "$HOME/.ssh/config"
     chmod 600 "$HOME/.ssh/config"
-    if ! grep -q '^Host github-personal' "$HOME/.ssh/config" 2>/dev/null; then
-      c_blue "==> seeding github-{personal,work,sidebiz} Host aliases in ~/.ssh/config"
-      c_yellow "    (chezmoi-managed ~/.ssh/config will overwrite this idempotently on first apply)"
-      cat >> "$HOME/.ssh/config" <<'SSHSEED'
+    if ! grep -q "${ssh_host}_ed25519" "$HOME/.ssh/config" 2>/dev/null; then
+      c_blue "==> seeding github.com Host → ${ssh_host}_ed25519 in ~/.ssh/config"
+      c_yellow "    (chezmoi-managed ~/.ssh/config overwrites this idempotently on first apply)"
+      cat >> "$HOME/.ssh/config" <<SSHSEED
 
 # === bootstrap.sh seed — chezmoi-managed ~/.ssh/config will replace this ===
-Host github-personal
+Host github.com
     HostName github.com
     User git
-    IdentityFile ~/.ssh/personal_ed25519
-Host github-work
-    HostName github.com
-    User git
-    IdentityFile ~/.ssh/work_ed25519
-Host github-sidebiz
-    HostName github.com
-    User git
-    IdentityFile ~/.ssh/sidebiz_ed25519
+    IdentityFile ~/.ssh/${ssh_host}_ed25519
 SSHSEED
     fi
 

@@ -179,9 +179,10 @@ Authoritative reference: <https://wiki.archlinux.org/title/Netboot>.
 | --- | --- | --- |
 | `--machine personal\|work` | `personal` | Sets chezmoi `machineType`. `personal` covers sidehustle too — per-directory git identity routing handles the distinction. |
 | `--ref <tag\|branch>` | latest tag via `git describe --tags` (currently `v0.1.0`) | Materializes the ref in a throwaway worktree (no detached HEAD ever), runs chezmoi from there, leaves your main checkout untouched. Use `--ref main` for tip. Bootstrap refuses a ref that has no chezmoi sources under `home/`. |
-| `--no-agents` | off (i.e. include agents) | Skips the `~/.claude/` skills+CLAUDE.md sync. Use on machines that don't need agentic tooling. |
+| `--no-agents` | off (i.e. include agents) | Skips the `~/.config/agents` skills+instructions sync. Use on machines that don't need agentic tooling. |
 | `--import-from <dir>` | none | Points at a prior machine's `~/key-backup-<ts>/` dir. Only meaningful with `--import-ssh` (age + GPG are retired, so SSH keys are all a backup holds). |
-| `--import-ssh` | off | Combined with `--import-from`: restore the three `~/.ssh/{personal,work,sidebiz}_ed25519` keypairs. The GitHub upload step dedupes against existing fingerprints, so no duplicate listings. |
+| `--import-ssh` | off | With `--import-from`: install the key found in that backup dir as this machine's `~/.ssh/<hostname>_ed25519`. The GitHub upload step dedupes by fingerprint. |
+| `--import-ssh-bw <item>` | none | Restore the SSH key from a Bitwarden secure note (e.g. `ssh/<host>_ed25519`) via `rbw` — the primary cross-machine path. |
 
 ### What the bootstrap actually does
 
@@ -275,8 +276,8 @@ needed per repo.
 | What | How | Where |
 | --- | --- | --- |
 | Git author email + signing key per directory | `includeIf "gitdir:~/work/"` etc. in `~/.gitconfig` | [`home/dot_gitconfig.tmpl`](home/dot_gitconfig.tmpl) |
-| SSH key per identity | three `~/.ssh/{personal,work,sidebiz}_ed25519` keys + `Host github-{ctx}` aliases | [`home/private_dot_ssh/config.tmpl`](home/private_dot_ssh/config.tmpl) |
-| HTTPS GitHub URLs → SSH per-identity | `url.insteadOf` rewrites in `~/.gitconfig` | rewritten by `home/dot_gitconfig.tmpl` |
+| SSH key | one `~/.ssh/<hostname>_ed25519` (auth + signing); per-tree *email* still routes via `includeIf` | [`home/private_dot_ssh/config.tmpl`](home/private_dot_ssh/config.tmpl) |
+| HTTPS GitHub URLs → SSH | `url."git@github.com:" insteadOf https://github.com/` catch-all in `~/.gitconfig` | `home/dot_gitconfig.tmpl` |
 | SSH commit signing | `gpg.format = ssh` reuses each identity's ed25519 key; verified via `allowed_signers` | [`home/dot_gitconfig-*.tmpl`](home/dot_gitconfig-personal.tmpl) |
 | rbw agent caches the Bitwarden key | so direnv's per-cd `rbw get` calls don't re-prompt — `rbw unlock` once per session | [`home/dot_config/direnv/direnvrc`](home/dot_config/direnv/direnvrc) |
 
@@ -511,9 +512,9 @@ generate it locally from Bitwarden, keep it gitignored (Action A covers
 `.env*`), and regenerate rather than persist.
 
 > **age was dropped (D5):** there are no `encrypted_*` files in this repo and,
-> with `pass` gone, no driver for encrypted-files-in-repo. To reuse SSH private
-> keys across machines, transport the key-backup dir (`wush`/`wormhole`) and
-> `./bootstrap.sh --import-from <dir> --import-ssh` — not chezmoi encryption.
+> with `pass` gone, no driver for encrypted-files-in-repo. To reuse an SSH key
+> across machines it's stored in Bitwarden — restore with
+> `./scripts/bootstrap.sh --import-ssh-bw ssh/<hostname>_ed25519` — not chezmoi encryption.
 
 ## Identity model
 

@@ -689,10 +689,9 @@ Next manual steps:
        bw-setup          # registers a new device (API key) if needed, then unlocks
      See docs/secrets.md for the API-key / EU-region / Vaultwarden details.
 
-  2. (Optional) Reuse these SSH keys on another personal box. age is gone, so
-     don't roam them through chezmoi — transport the key-backup dir instead:
-       wush send ~/key-backup-*        # or: wormhole send ~/key-backup-*
-       # then on the other machine: ./bootstrap.sh --import-from <dir> --import-ssh
+  2. (Optional) Reuse this SSH key on another box. It's stored in Bitwarden as a
+     secure note (ssh/<hostname>_ed25519); restore it elsewhere with:
+       ./scripts/bootstrap.sh --import-ssh-bw ssh/<hostname>_ed25519
 
   3. VPNs (when ready):
        sudo netbird up                                   # mesh (NetBird Cloud SSO)

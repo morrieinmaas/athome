@@ -42,6 +42,23 @@ else
   exit 1
 fi
 {{- else if eq .chezmoi.os "linux" -}}
+# ── Fedora: dnf is native — no AUR helper to build. Enable the COPR plugin +
+#    RPM Fusion (free + nonfree) so the COPR desktop stack (run_onchange_02) and
+#    codecs/drivers install cleanly. Then we're done; the paru build below is
+#    Arch-only.
+if command -v dnf >/dev/null 2>&1 && ! command -v pacman >/dev/null 2>&1; then
+  echo "==> dnf: plugins-core (copr) + RPM Fusion (free + nonfree)"
+  sudo dnf -y install dnf-plugins-core || true
+  ver="$(rpm -E %fedora)"
+  sudo dnf -y install \
+    "https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-${ver}.noarch.rpm" \
+    "https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-${ver}.noarch.rpm" \
+    2>/dev/null || echo "   (RPM Fusion already enabled or mirror unreachable — continuing)"
+  echo "==> Fedora package layer ready (dnf + COPR + RPM Fusion)"
+  exit 0
+fi
+
+# ── Arch: paru (AUR helper) ──
 if command -v paru >/dev/null 2>&1; then
   echo "==> paru present ($(paru --version | head -n1))"
   exit 0

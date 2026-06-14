@@ -166,14 +166,16 @@ linux:
 # no clean Fedora package and are best pulled via mise's cargo/go/github
 # backends instead (noted at the end).
 fedora:
-  # COPRs to `dnf copr enable` first — they carry the niri/Noctalia/ghostty/zen/
-  # greetd/netbird stack that isn't in Fedora's main repos.
+  # COPRs to `dnf copr enable` first — carry the niri/Noctalia/ghostty/zen/zed/
+  # netbird/nerd-font stack that isn't in Fedora's main repos. greetd + tuigreet
+  # ARE in Fedora main, so no COPR for them.
   copr:
     - yalter/niri                  # niri compositor
     - zhangyi6324/noctalia-shell   # noctalia-shell (Quickshell) + deps
     - scottames/ghostty            # ghostty terminal
     - sneexy/zen-browser           # Zen browser (RPM)
-    - alebastr/sway-extras         # greetd-tuigreet + wlroots desktop bits
+    - pgdev/zed                    # Zed editor (GUI) — no Fedora main-repo pkg
+    - che/nerd-fonts               # JetBrains Mono *Nerd* font (the pill bar needs the glyphs)
     - jsbillings/netbird           # NetBird client + UI (alt: official dnf repo)
   dnf:
     # ── core dev/system (Arch common+pacman equivalents, Fedora names) ──
@@ -183,30 +185,35 @@ fedora:
     - zsh
     - openssh-clients
     - openssh-server
+    - pinentry                     # rbw master-password entry (Arch pinentry / mac pinentry-mac)
     - neovim
     - lua
     - luarocks
     - tmux
+    - xonsh
     - podman
-    - podman-compose
+    - podman-docker                # `docker` → podman shim (matches the Arch docker→podman shim)
+    - docker-compose-plugin        # Compose v2 (Go) as podman's compose provider — NOT the buggy python podman-compose
     - syncthing
     - ImageMagick
+    - libjxl
     - git-crypt
-    - gitleaks
+    - gitleaks                     # if absent in dnf → `go:` via mise (load-bearing, keep on PATH)
     - rbw                          # if absent in dnf → `cargo:rbw` via mise
-    # ── niri + Noctalia + greetd + ghostty + zen (from the COPRs above) ──
+    # ── niri + Noctalia + ghostty + zen + zed + greetd + nerd font ──
     - niri
     - noctalia-shell
     - ghostty
-    - greetd
-    - greetd-tuigreet
     - zen-browser
+    - zed
+    - greetd                       # Fedora main repo
+    - tuigreet                     # Fedora main repo (Arch: greetd-tuigreet)
+    - nerd-fonts-jetbrains-mono    # from che/nerd-fonts COPR
     # ── wayland / GNOME fallback / desktop (the GNOME spin ships most already) ──
     - NetworkManager
     - iwd
     - fastfetch
     - google-noto-emoji-fonts      # = Arch noto-fonts-emoji
-    - jetbrains-mono-fonts         # NOTE: NOT Nerd-patched — the pill bar needs a Nerd font (COPR che/nerd-fonts or the upstream zip)
     - wl-clipboard
     - wlsunset
     - power-profiles-daemon
@@ -222,8 +229,11 @@ fedora:
     - evolution-data-server
     - nautilus
     - gnome-shell
+    - gnome-session
     - gnome-control-center
+    - gnome-extensions-app         # = Arch gnome-shell-extensions (manage GNOME extensions)
     - gnome-keyring
+    - mutter
     # ── rootless podman backing bits ──
     - fuse-overlayfs
     - slirp4netns
@@ -232,7 +242,7 @@ fedora:
     # ── netbird (COPR jsbillings/netbird) ──
     - netbird
     - netbird-ui
-    # Pulled via MISE on Fedora instead (no/awkward dnf pkg; cargo/go/github
-    # backends, already cross-platform): matugen, eternalterminal (et), impala,
-    # bandwhich, gping, trippy, prettierd, wush, opencode. librewolf + nordvpn
-    # have their own upstream dnf repos if you want them.
+    # Pulled via MISE on Fedora (release binaries via ubi/github/cargo/go — SAME
+    # as Arch + macOS, not duplicated here): matugen, eternalterminal (et),
+    # impala, bandwhich, gping, trippy, prettierd, wush, opencode. librewolf +
+    # nordvpn have their own upstream dnf repos if you want them.

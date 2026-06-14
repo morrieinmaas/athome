@@ -23,7 +23,7 @@ if ! command -v nmcli >/dev/null 2>&1; then
   echo "==> NetworkManager not installed yet — re-run after run_onchange_02 lands it"
   exit 0
 fi
-if ! pacman -Qq iwd >/dev/null 2>&1; then
+if ! command -v iwctl >/dev/null 2>&1; then   # iwd ships iwctl — distro-neutral (Arch + Fedora)
   echo "==> iwd not installed yet — re-run after run_onchange_02 lands it"
   exit 0
 fi

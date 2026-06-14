@@ -33,11 +33,11 @@ ls -d /Applications/NordVPN.app   >/dev/null 2>&1 && echo "==> NordVPN.app prese
 ls -d /Applications/ProtonVPN.app >/dev/null 2>&1 && echo "==> ProtonVPN.app present" || true
 {{- else if eq .chezmoi.os "linux" -}}
 # ── Linux ───────────────────────────────────────────────────────────────────
-# netbird is installed from the AUR by run_onchange_02 (packages.yaml). The AUR
-# package ships a TEMPLATED unit `netbird@.service` (per the Arch wiki), so the
-# instance is `netbird@main` — NOT a plain `netbird.service`. Try the template
-# first, fall back to a plain unit (other packagings), else let `netbird up`
-# bring the daemon up itself.
+# netbird is installed by run_onchange_02 (packages.yaml): AUR on Arch, COPR/dnf
+# on Fedora. The Arch AUR package ships a TEMPLATED unit `netbird@.service` (so
+# the instance is `netbird@main`); Fedora's ships a plain `netbird.service`. Try
+# the template first, fall back to the plain unit, else let `netbird up` bring
+# the daemon up itself.
 if command -v netbird >/dev/null 2>&1; then
   sudo systemctl enable --now netbird@main 2>/dev/null \
     || sudo systemctl enable --now netbird 2>/dev/null \

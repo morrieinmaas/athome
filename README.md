@@ -173,6 +173,27 @@ with **Step 2** above. No USB stick needed.
 
 Authoritative reference: <https://wiki.archlinux.org/title/Netboot>.
 
+### From bare metal — Fedora variant
+
+Prefer Fedora? Same end-state, less to think about. **Fedora Workstation** (the
+GNOME spin) installs GNOME + GDM that already "just work" (external displays,
+floating windows), and chezmoi layers niri + Noctalia on top exactly like the
+Arch path.
+
+| Step | What you do |
+| --- | --- |
+| 1 | Install **Fedora Workstation** the normal way (Anaconda installer, GNOME spin). Reboot, log into GNOME, get on WiFi. |
+| 2 | `sudo dnf install -y git github-cli` |
+| 3 | `gh auth login` (choose **HTTPS**), then clone + bootstrap exactly as in [Quick start](#quick-start-fresh-machine): `git clone https://github.com/morrieinmaas/athome ~/.local/share/chezmoi && cd ~/.local/share/chezmoi && ./scripts/bootstrap.sh` |
+
+Bootstrap detects Fedora (`dnf` present, no `pacman`) and:
+
+- `run_once_before_01` enables **RPM Fusion** (free + nonfree) + the COPR plugin — **no `paru`** (dnf is native)
+- `run_onchange_02` `dnf copr enable`s the niri/Noctalia/ghostty/zen/zed/nerd-font/netbird COPRs, then installs the `fedora.dnf` set; **portable CLI tooling still comes from mise** (unchanged across OSes — it pulls release binaries via ubi/github/cargo/go)
+- `run_once_11` installs niri + Noctalia, **respects GDM**, and sets niri as your default login session — GNOME stays one click away at the GDM gear
+
+> Fedora package names in `packages.yaml` (`fedora.copr` + `fedora.dnf`) are best-effort — if a name is off on your release, fix it there and re-run `chezmoi apply`. The portable tools (matugen, et, impala, bandwhich, …) come from mise, not dnf.
+
 ### Bootstrap flags
 
 | Flag | Default | Effect |

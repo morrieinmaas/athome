@@ -391,64 +391,54 @@ chezmoi cd && git checkout main && exit && chezmoi apply
 A fresh machine clone uses HTTPS because no SSH key is on GitHub yet. Bootstrap upgrades you to SSH end-to-end as soon as the keys are uploaded:
 
 1. `gh repo clone` (HTTPS, via gh's stored token)
-2. Bootstrap generates 3 SSH keypairs
-3. Bootstrap uploads pub keys to GitHub (auth + signing variants)
+2. Bootstrap generates one SSH keypair, `~/.ssh/<hostname>_ed25519`
+3. Bootstrap uploads the pub key to GitHub (auth + signing variants)
 4. Bootstrap rewrites the chezmoi repo's `origin` URL: `https://github.com/...` → `git@github.com:...`
 5. `gh config set git_protocol ssh` — future `gh repo clone` defaults to SSH
-6. The chezmoi-deployed `~/.gitconfig` adds `url.insteadOf` rules that further rewrite `git@github.com:<handle>/...` → `git@github-personal:<handle>/...`, routing through the per-identity SSH host alias (uses the right `~/.ssh/<id>_ed25519` per dir)
+6. The chezmoi-deployed `~/.gitconfig` adds a `url."git@github.com:" insteadOf https://github.com/` catch-all so every clone is SSH. Per-directory git *email* still varies via `includeIf`; the single key signs all of them.
 
 Net result: HTTPS for one clone, SSH end-to-end for everything after — and the right SSH identity per directory.
 
 ## SSH keys (auth + commit signing)
 
 GPG is gone (D4): there's no GPG key to generate, no `pass` store to unlock.
-`bootstrap.sh` generates three **ed25519 SSH keys** (`personal`, `work`,
-`sidebiz`) — passphrase-less (`ssh-keygen -N ""`) — and uploads them to GitHub
-as both **auth** and **signing** keys. Because `~/.ssh/config` pins them
-per-host (`IdentityFile` + `IdentitiesOnly`), ssh, git push, and SSH commit
-signing all read the key files directly — **no ssh-agent or gpg-agent needed**.
-On macOS the keys are also added to the Keychain (`UseKeychain`).
+`bootstrap.sh` generates **one ed25519 SSH key per machine**, named after the
+host (`~/.ssh/<hostname>_ed25519`) — passphrase-less (`ssh-keygen -N ""`) — and
+uploads it to GitHub as both an **auth** and a **signing** key. One GitHub
+account → one key; naming it after the host means GitHub's key list shows which
+box each key is from, so revoking a single machine is trivial. Because
+`~/.ssh/config` pins it (`IdentityFile` + `IdentitiesOnly`), ssh, git push, and
+SSH commit signing read it directly — **no ssh-agent or gpg-agent needed**.
 
-Commit signing uses `gpg.format = ssh` (the same ed25519 key signs commits);
-verification uses `~/.config/git/allowed_signers`.
+Commit signing uses `gpg.format = ssh`; the per-directory `includeIf` blocks
+still set the right **email** per tree (`~/work`·`~/personal`·`~/sidebiz`), and
+all three emails map to the one key in `~/.config/git/allowed_signers`. Add a
+second GitHub account later → add a second key + host alias; until then, one key
+is the real-world default.
 
-### SSH key backup + cross-machine sharing
+### SSH key backup + cross-machine recovery (Bitwarden)
 
-SSH keys are **per-machine by default** — lose a laptop and you revoke ONE
-GitHub key, the others keep working. When bootstrap generates new keys it
-writes `~/key-backup-<timestamp>/ssh/<id>_ed25519{,.pub}` so you *can* reuse
-them on another personal box if you choose (re-bootstrapping an existing
-machine doesn't pester you).
+Keys are **per-machine by default** — lose a laptop, revoke that one GitHub key,
+done. When bootstrap generates a new key it stores the **private key in
+Bitwarden** as a secure note named `ssh/<hostname>_ed25519` (via the `bw` CLI) —
+encrypted at rest, synced, recoverable anywhere. No key-transport dance
+(wormhole/wush/scp retired).
 
-> Your actual **secrets** live in Bitwarden, not in any key file — recover them
-> on a new machine with `bw-setup`, no key transport required. The key-backup
-> is only about SSH identity.
+> If `bw` isn't installed yet at keygen time (it lands later via `chezmoi
+> apply`), bootstrap prints the exact `jq … | bw encode | bw create item`
+> one-liner to run once it is.
 
-#### Transport + restore
-
-| Need | Method |
-| --- | --- |
-| Live transfer (active restore) | [`magic-wormhole`](https://github.com/magic-wormhole/magic-wormhole) or [`wush`](https://github.com/coder/wush) — one-shot P2P |
-| Same-LAN fallback | `scp` + one-shot sshd |
-
-```bash
-# transport the backup dir onto the new box, then opt in to shared SSH:
-./scripts/bootstrap.sh --import-from ~/restored-key-backup --import-ssh
-```
-
-`--import-ssh` copies the `~/.ssh/{personal,work,sidebiz}_ed25519` keypairs
-into place before keygen; the GitHub upload step skips fingerprints already
-known, so no duplicates. Without `--import-ssh`, fresh per-machine keys are
-generated (the default).
-
-#### Cleanup
-
-Once the backup is safely off the box:
+Restore that key on another machine (reusing a key, or reinstalling the same
+box):
 
 ```bash
-shred -u ~/key-backup-<ts>/ssh/* 2>/dev/null
-rmdir ~/key-backup-<ts>/ssh ~/key-backup-<ts>
+./scripts/bootstrap.sh --import-ssh-bw ssh/<hostname>_ed25519
 ```
+
+It pulls the note via `rbw get`, installs it as this machine's
+`~/.ssh/<hostname>_ed25519`, and regenerates the `.pub`. (The older
+`--import-from <dir> --import-ssh` path still works if you'd rather restore from
+a key-backup directory you transported yourself.)
 
 ## Agentic skills sync (`~/.config/agents`)
 

@@ -54,13 +54,15 @@ MACHINE="personal"
 INCLUDE_AGENTS="true"   # set to "false" by --no-agents
 IMPORT_FROM=""          # set to a backup-dir path by --import-from
 IMPORT_SSH="false"      # set to "true" by --import-ssh (opt-in: SSH keys are usually per-machine)
+IMPORT_SSH_BW=""        # set to a Bitwarden item name by --import-ssh-bw (restore the key via rbw)
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --ref)         REF="$2"; shift 2 ;;
-    --machine)     MACHINE="$2"; shift 2 ;;
-    --no-agents)   INCLUDE_AGENTS="false"; shift ;;   # skip ~/.claude skills sync
-    --import-from) IMPORT_FROM="$2"; shift 2 ;;       # restore SSH keys from a prior key-backup dir (with --import-ssh)
-    --import-ssh)  IMPORT_SSH="true"; shift ;;        # opt in to restoring SSH from --import-from (SSH is per-machine by default)
+    --ref)           REF="$2"; shift 2 ;;
+    --machine)       MACHINE="$2"; shift 2 ;;
+    --no-agents)     INCLUDE_AGENTS="false"; shift ;;  # skip ~/.config/agents skills sync
+    --import-from)   IMPORT_FROM="$2"; shift 2 ;;      # restore SSH key from a prior key-backup dir (with --import-ssh)
+    --import-ssh)    IMPORT_SSH="true"; shift ;;       # opt in to restoring SSH from --import-from
+    --import-ssh-bw) IMPORT_SSH_BW="$2"; shift 2 ;;    # restore the SSH key from a Bitwarden secure note (rbw get)
     -h|--help)
       sed -n 's/^# \{0,1\}//p' "$0" | head -30
       exit 0 ;;
@@ -252,6 +254,30 @@ if [[ -n "$IMPORT_FROM" ]]; then
   fi
 fi
 
+# ── 1.6 (optional) restore the SSH key from Bitwarden (rbw) ─────────────────
+# The painless cross-machine path: pull a key you previously stored as a
+# Bitwarden secure note. Needs rbw (it's in packages.yaml; if not on PATH yet,
+# install it then re-run). Item name = whatever you stored, e.g.
+# ssh/<otherhost>_ed25519.
+if [[ -n "$IMPORT_SSH_BW" ]]; then
+  if ! command -v rbw >/dev/null 2>&1; then
+    c_yellow "==> --import-ssh-bw: rbw not installed yet — install it, then re-run:"
+    c_yellow "    ./scripts/bootstrap.sh --import-ssh-bw $IMPORT_SSH_BW"
+  else
+    c_blue "==> restoring SSH key from Bitwarden '$IMPORT_SSH_BW' → ${ssh_host}_ed25519"
+    mkdir -p "$HOME/.ssh"; chmod 700 "$HOME/.ssh"
+    rbw unlock >/dev/null 2>&1 || true
+    if rbw get --field notes "$IMPORT_SSH_BW" > "$ssh_key" 2>/dev/null && [[ -s "$ssh_key" ]]; then
+      chmod 600 "$ssh_key"
+      ssh-keygen -y -f "$ssh_key" > "${ssh_key}.pub"
+      c_green "  ✓ ssh key restored from Bitwarden as ${ssh_host}_ed25519"
+    else
+      rm -f "$ssh_key"
+      c_red "  ✗ couldn't read '$IMPORT_SSH_BW' (run \`rbw unlock\`, check the item name)"
+    fi
+  fi
+fi
+
 # ── 2. (age + GPG keygen retired) ───────────────────────────────────────────
 # age was dropped (D5): chezmoi no longer encrypts anything, so there's no
 # decrypt key to generate. GPG was dropped (D4): `pass` is gone and commit
@@ -271,55 +297,42 @@ else
 fi
 c_green "✓ ssh public key: $(cat "${ssh_key}.pub")"
 
-# ── 4.5 SSH key backup (TTY-friendly) ───────────────────────────────────────
-# Fires whenever SSH keys were freshly generated this run. age + GPG are
-# retired, so SSH identity keys are the only thing to back up. Per-machine SSH
-# is the default; this keeps the option to share them across personal boxes
-# open (restore with `--import-from <dir> --import-ssh`).
+# ── 4.5 SSH key backup → Bitwarden ──────────────────────────────────────────
+# Fires when a key was freshly generated. We store the private key as a
+# Bitwarden SECURE NOTE (ssh/<host>_ed25519) via the `bw` CLI — synced,
+# encrypted at rest, recoverable on any machine with `--import-ssh-bw`. No more
+# key-transport dance (wormhole/wush/scp). Per-machine keys are still the
+# default; this just makes recovery painless. Re-bootstrap (existing key) skips.
 #
-# Existing keys (re-bootstrap) don't trigger a backup — they're presumably
-# already saved.
+# `bw` isn't installed until chezmoi apply lands packages, so if it's not on
+# PATH yet we print the exact one-liner to run once it is.
 if (( ssh_keys_were_generated )); then
-  backup_dir="$HOME/key-backup-$(date +%Y%m%d-%H%M%S)"
-  mkdir -p "$backup_dir"
-  chmod 700 "$backup_dir"
-
-  mkdir -p "$backup_dir/ssh"
-  chmod 700 "$backup_dir/ssh"
-  install -m 0600 "$ssh_key"       "$backup_dir/ssh/${ssh_host}_ed25519"
-  install -m 0644 "${ssh_key}.pub" "$backup_dir/ssh/${ssh_host}_ed25519.pub"
-
-  bk_host="$(short_hostname)"
-  bk_user="$(whoami)"
-
-  c_yellow ""
-  c_yellow "  ────────────────────────────────────────────────────────────"
-  c_yellow "  SSH KEY BACKUP WRITTEN: $backup_dir"
-  c_yellow ""
-  c_yellow "  Contents:"
-  c_yellow "    ssh/<id>_ed25519{,.pub}  ← per-machine by default; --import-ssh to share them too"
-  c_yellow ""
-  c_yellow "  Copy it OFF this box if you want to reuse these keys elsewhere."
-  c_yellow "  (Your actual secrets live in Bitwarden — recover those with \`rbw login\`,"
-  c_yellow "   no key transport needed.)"
-  c_yellow ""
-  c_yellow "  Live transport options (when you're at the receiving machine):"
-  c_yellow "    • magic-wormhole  → wormhole send $backup_dir"
-  c_yellow "    • wush (coder)    → wush send $backup_dir"
-  c_yellow "    • scp on LAN      → from your laptop, pull from this host:"
-  c_yellow ""
-  c_yellow "        sudo systemctl enable --now sshd     # one-shot on THIS box"
-  c_yellow "        ip -4 -o addr show | awk '/inet /{print \$2, \$4}'"
-  c_yellow "        # then on your laptop:"
-  c_yellow "        scp -r ${bk_user}@${bk_host}.local:$backup_dir ~/${bk_host}-keys/"
-  c_yellow ""
-  c_yellow "  Restore on the next machine:"
-  c_yellow "    ./bootstrap.sh --import-from /path/to/backup --import-ssh"
-  c_yellow ""
-  c_yellow "  Once safely copied off, shred the local:"
-  c_yellow "    shred -u $backup_dir/ssh/* 2>/dev/null; rmdir $backup_dir/ssh $backup_dir"
-  c_yellow "  ────────────────────────────────────────────────────────────"
-  c_yellow ""
+  bw_item="ssh/${ssh_host}_ed25519"
+  store_ok=false
+  if command -v bw >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
+    c_blue "==> storing SSH key in Bitwarden as secure note '$bw_item'"
+    bw_sess="$(bw unlock --raw 2>/dev/null)" \
+      || { bw login >/dev/null 2>&1 && bw_sess="$(bw unlock --raw 2>/dev/null)"; } \
+      || bw_sess=""
+    if [[ -n "$bw_sess" ]] \
+       && jq -n --arg name "$bw_item" --arg notes "$(cat "$ssh_key")" \
+              '{type:2,name:$name,notes:$notes,secureNote:{type:0}}' \
+            | bw encode | bw create item --session "$bw_sess" >/dev/null 2>&1; then
+      c_green "  ✓ stored in Bitwarden: $bw_item"
+      store_ok=true
+    fi
+  fi
+  if ! $store_ok; then
+    c_yellow ""
+    c_yellow "  ── back up this machine's SSH key to Bitwarden (recommended) ──"
+    c_yellow "  Once \`bw\` is installed + unlocked, store the private key as a secure note:"
+    c_yellow ""
+    c_yellow "    jq -n --arg name '$bw_item' --arg notes \"\$(cat $ssh_key)\" \\"
+    c_yellow "      '{type:2,name:\$name,notes:\$notes,secureNote:{type:0}}' | bw encode | bw create item"
+    c_yellow ""
+    c_yellow "  Restore it on another machine:  ./scripts/bootstrap.sh --import-ssh-bw $bw_item"
+    c_yellow ""
+  fi
 fi
 
 # ── 4.5 upload SSH keys to GitHub (auth + signing in one shot) ──────────────

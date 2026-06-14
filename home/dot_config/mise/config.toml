@@ -30,9 +30,9 @@ eza        = "latest"
 fzf        = "latest"
 zoxide     = "latest"
 yazi       = "latest"
-navi       = "latest"
+"cargo:navi" = "latest"  # cheatsheet (aqua lacks darwin/arm64; ubi asset mismatch → cargo)
 glow       = "latest"          # markdown viewer
-tealdeer   = "cargo:tealdeer"  # `tldr` client (not in registry)
+"cargo:tealdeer" = "latest"  # `tldr` client (not in registry)
 
 # ── Modern CLI: text / data wrangling ───────────────────────────────────────
 jq         = "latest"
@@ -45,7 +45,7 @@ ast-grep   = "latest"   # structural search/rewrite
 # ── Modern CLI: system / inspection ─────────────────────────────────────────
 dust       = "latest"        # du
 duf        = "latest"        # df
-procs      = "cargo:procs"   # ps (not in registry)
+"cargo:procs" = "latest"   # ps (not in registry)
 bottom     = "latest"        # btm — top
 hexyl      = "latest"        # hex viewer
 hyperfine  = "latest"        # benchmarking
@@ -73,9 +73,9 @@ direnv     = "latest"          # per-dir env (init in completions.zsh)
 chezmoi    = "latest"          # dotfile manager (also self-bootstrapped by bootstrap.sh)
 gum        = "latest"          # shell-script UI
 just       = "latest"          # command runner
-just-lsp   = "cargo:just-lsp"  # LSP for justfiles (not in registry)
+"cargo:just-lsp" = "latest"  # LSP for justfiles (not in registry)
 task       = "latest"          # go-task (binary `task`)
-smug       = "ubi:ivaaaan/smug"  # tmux session manager — drives the cockpit bootstrap (not in registry)
+"ubi:ivaaaan/smug" = "latest"  # tmux session manager — drives the cockpit bootstrap (not in registry)
 
 # ── HTTP / containers / k8s / CI ─────────────────────────────────────────────
 xh         = "latest"   # HTTPie-like client

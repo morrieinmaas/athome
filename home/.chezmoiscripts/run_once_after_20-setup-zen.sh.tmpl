@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+# Zen Browser: make it the default browser and declaratively (re)install its
+# extensions. Zen is a Firefox fork, so it honours a Firefox enterprise policy
+# dropped in its install-dir `distribution/policies.json`. An ExtensionSettings
+# block with installation_mode "normal_installed" installs each add-on on next
+# launch (user-removable; auto-updates from AMO afterwards). Edit the EXT block
+# to change the set. Zen itself is installed by packages.yaml (cask `zen` on
+# macOS, AUR `zen-browser-bin` on Linux); this script only configures it.
+set -euo pipefail
+
+# Extension policy — keyed by each add-on's extension ID, pointing at the AMO
+# "latest" endpoint. These are the four from the reference profile: 1Password,
+# uBlock Origin, Privacy Badger, Simple Modify Headers.
+read -r -d '' POLICIES <<'JSON' || true
+{
+  "policies": {
+    "ExtensionSettings": {
+      "{d634138d-c276-4fc8-924b-40a0ea21d284}": {
+        "installation_mode": "normal_installed",
+        "install_url": "https://addons.mozilla.org/firefox/downloads/latest/1password-x-password-manager/latest.xpi"
+      },
+      "uBlock0@raymondhill.net": {
+        "installation_mode": "normal_installed",
+        "install_url": "https://addons.mozilla.org/firefox/downloads/latest/ublock-origin/latest.xpi"
+      },
+      "jid1-MnnxcxisBPnSXQ@jetpack": {
+        "installation_mode": "normal_installed",
+        "install_url": "https://addons.mozilla.org/firefox/downloads/latest/privacy-badger17/latest.xpi"
+      },
+      "{f6ca2dfb-43a6-4334-9fad-8d5a71a1fe67}": {
+        "installation_mode": "normal_installed",
+        "install_url": "https://addons.mozilla.org/firefox/downloads/latest/simple-modify-header/latest.xpi"
+      }
+    }
+  }
+}
+JSON
+
+{{ if eq .chezmoi.os "darwin" -}}
+# ── macOS ───────────────────────────────────────────────────────────────────
+app="/Applications/Zen.app"
+if [[ ! -d "$app" ]]; then
+  echo "==> Zen.app not found — install it first (nb install --cask zen), then re-run"
+  exit 0
+fi
+dist="$app/Contents/Resources/distribution"
+mkdir -p "$dist"
+printf '%s\n' "$POLICIES" > "$dist/policies.json"
+echo "==> wrote Zen extension policy → $dist/policies.json (installed on next launch)"
+
+if command -v defaultbrowser >/dev/null 2>&1; then
+  # Flips the LaunchServices default; macOS pops a one-time confirmation — click "Use Zen".
+  if defaultbrowser zen >/dev/null 2>&1; then
+    echo "==> requested Zen as default browser (confirm the macOS dialog if it appears)"
+  else
+    echo "   ! 'defaultbrowser zen' failed — list the keys with: defaultbrowser"
+  fi
+else
+  echo "   ! defaultbrowser missing — installs via packages.yaml; then run: defaultbrowser zen"
+fi
+{{- else if eq .chezmoi.os "linux" -}}
+# ── Linux (Arch: zen-browser-bin) ───────────────────────────────────────────
+zen_bin="$(command -v zen-browser || command -v zen || true)"
+if [[ -z "$zen_bin" ]]; then
+  echo "==> zen not on PATH — install zen-browser-bin (paru), then re-run"
+  exit 0
+fi
+dist="$(dirname "$(readlink -f "$zen_bin")")/distribution"
+sudo mkdir -p "$dist"
+printf '%s\n' "$POLICIES" | sudo tee "$dist/policies.json" >/dev/null
+echo "==> wrote Zen extension policy → $dist/policies.json (installed on next launch)"
+
+desktop="$(find /usr/share/applications -maxdepth 1 -iname 'zen*.desktop' -printf '%f\n' 2>/dev/null | head -1)"
+if [[ -n "$desktop" ]]; then
+  xdg-settings set default-web-browser "$desktop" 2>/dev/null || true
+  xdg-mime default "$desktop" x-scheme-handler/http x-scheme-handler/https text/html 2>/dev/null || true
+  echo "==> set Zen ($desktop) as default browser"
+else
+  echo "   ! no zen*.desktop in /usr/share/applications — set the default manually"
+fi
+{{- end }}
+
+cat <<'EOF'
+
+==> Zen configured. Launch it once so the policy add-ons install (1Password,
+    uBlock Origin, Privacy Badger, Simple Modify Headers) — manage at
+    about:addons. Edit the EXT block in run_once_after_20-setup-zen to change them.
+EOF

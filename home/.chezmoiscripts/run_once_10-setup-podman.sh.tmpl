@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if ! command -v podman >/dev/null 2>&1; then
+  echo "podman missing; skipping"
+  exit 0
+fi
+
+{{ if eq .chezmoi.os "darwin" -}}
+# macOS: podman needs a Linux VM
+if ! podman machine list --format '{{`{{.Name}}`}}' | grep -q .; then
+  echo "==> podman machine init"
+  podman machine init
+fi
+if ! podman machine list --format '{{`{{.Running}}`}}' | grep -q true; then
+  echo "==> podman machine start"
+  podman machine start
+fi
+# Stable docker.sock so DOCKER_HOST=unix:///var/run/docker.sock works for
+# docker-API clients (SDKs, testcontainers, lazydocker). podman-mac-helper
+# installs a root launchd service that links /var/run/docker.sock to the machine
+# socket — survives reboots, unlike podman 5.x's per-boot TMPDIR api socket.
+# (The `docker` CLI is a shim to podman and needs no socket; docker-compose &
+# other docker-API clients use DOCKER_HOST=unix:///var/run/docker.sock.)
+if [ ! -L /var/run/docker.sock ] && command -v podman-mac-helper >/dev/null 2>&1; then
+  echo "==> podman-mac-helper install (sudo)"
+  sudo podman-mac-helper install || echo "   mac-helper install failed — set DOCKER_HOST manually if a docker-API client needs it (see dot_zsh/exports.zsh)"
+fi
+{{- else if eq .chezmoi.os "linux" -}}
+
+# 1. subuid + subgid for rootless containers.
+#
+# archinstall's user creation USUALLY populates /etc/subuid + /etc/subgid
+# automatically (Arch's /etc/login.defs ships SUB_UID_COUNT / SUB_GID_COUNT
+# so `useradd` does the right thing). But if those defaults were edited,
+# OR the user was created by hand before login.defs got set, you end up
+# with no mappings → every `podman run` errors with:
+#     ERRO[0000] cannot find UID/GID for user <you>: no subuid ranges
+#     found for user. Check /etc/subuid and /etc/subgid.
+# Verify + auto-create if missing.
+need_subid_fix=0
+if ! grep -q "^${USER}:" /etc/subuid 2>/dev/null; then
+  need_subid_fix=1
+fi
+if ! grep -q "^${USER}:" /etc/subgid 2>/dev/null; then
+  need_subid_fix=1
+fi
+if (( need_subid_fix )); then
+  echo "==> adding subuid + subgid range for ${USER} (rootless podman needs this)"
+  sudo usermod --add-subuids 100000-165535 --add-subgids 100000-165535 "${USER}"
+  # Reset any previously-broken rootless storage so the new mappings take.
+  podman system migrate 2>/dev/null || true
+fi
+
+# 2. Rootless socket — needed by `docker.sock`-compatible clients
+#    (vscode dev containers, lazydocker, anything that talks to
+#    /run/user/$UID/podman/podman.sock as if it were docker).
+# Guarded: under `chezmoi apply` on a headless/SSH session there may be no
+# user D-Bus / XDG_RUNTIME_DIR yet — don't abort the rest of the script.
+systemctl --user enable --now podman.socket \
+  || echo "==> couldn't enable podman.socket (no user session?); later: systemctl --user enable --now podman.socket"
+
+# 3. Defensive: ensure user.max_user_namespaces isn't pinned to 0.
+#    Modern Arch kernels default to a large value; some hardened kernels
+#    or sysctl.d snippets disable it, which silently breaks rootless.
+if [[ "$(sysctl -n user.max_user_namespaces 2>/dev/null || echo 0)" -lt 1024 ]]; then
+  echo "!! user.max_user_namespaces < 1024 — rootless podman will fail."
+  echo "   Fix: sudo sysctl -w user.max_user_namespaces=15000"
+  echo "   Persist: echo 'user.max_user_namespaces = 15000' | sudo tee /etc/sysctl.d/99-podman.conf"
+fi
+{{- end }}
+
+echo "==> podman ready (test: podman run --rm hello-world)"

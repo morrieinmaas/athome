@@ -1,0 +1,20 @@
+{{/* ~/.aws/config — managed by chezmoi (mode 0600 via private_ prefix).
+     Region only; credentials live in Bitwarden and are loaded by direnv
+     (`use aws <profile>` → rbw) per-project. Never write
+     aws_access_key_id here. */ -}}
+
+[default]
+region = eu-west-1
+output = json
+
+[profile work]
+region = eu-west-1
+output = json
+
+[profile personal]
+region = eu-west-1
+output = json
+
+[profile sidebiz]
+region = eu-west-1
+output = json

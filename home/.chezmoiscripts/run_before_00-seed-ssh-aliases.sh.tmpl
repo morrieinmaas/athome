@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+# Seed the github-{personal,work,sidebiz} SSH Host aliases BEFORE chezmoi
+# deploys any files. This prevents a chicken-and-egg deadlock:
+#
+#   • dot_gitconfig.tmpl ships `url."git@github-personal:<handle>/"
+#     insteadOf = git@github.com:<handle>/` rules that silently
+#     rewrite normal GitHub URLs into the per-identity SSH aliases.
+#   • Those aliases only resolve if matching Host entries exist in
+#     ~/.ssh/config.
+#   • chezmoi processes `dot_gitconfig.tmpl` (depth 1) BEFORE
+#     `private_dot_ssh/config.tmpl` (depth 2) — so on first apply,
+#     the gitconfig lands first.
+#   • If apply crashes between those two writes (zinit failures, network
+#     hiccups, anything), `git pull` in the chezmoi repo fails because
+#     gitconfig rewrites `git@github.com:<handle>/athome.git` into
+#     `git@github-personal:<handle>/athome.git` which can't resolve
+#     yet — and now you can't pull the fix.
+#
+# Solution: this script runs on EVERY `chezmoi apply`, before any file
+# is deployed. It checks for the marker `^Host github-personal` in
+# ~/.ssh/config; if missing, appends the minimum Host blocks needed for
+# all the URL rewrites in the canonical gitconfig to resolve.
+#
+# Once the canonical `private_dot_ssh/config.tmpl` lands later in the
+# same apply, chezmoi overwrites this seed with the full version
+# (identical content for the Host blocks, plus the global `Host *`
+# defaults). On any subsequent apply, the grep marker matches and we
+# no-op.
+#
+# scripts/bootstrap.sh does the same seeding for the bootstrap path
+# (commit 859b04a). This file covers the `chezmoi apply` path.
+
+set -euo pipefail
+
+mkdir -p "$HOME/.ssh"
+chmod 700 "$HOME/.ssh"
+touch "$HOME/.ssh/config"
+chmod 600 "$HOME/.ssh/config"
+
+if ! grep -q '^Host github-personal' "$HOME/.ssh/config"; then
+  echo "==> seeding github-{personal,work,sidebiz} Host aliases in ~/.ssh/config"
+  echo "    (chezmoi-managed ~/.ssh/config will replace this idempotently in the same apply)"
+  cat >> "$HOME/.ssh/config" <<'SSHSEED'
+
+# === chezmoi run_before_00 seed — overwritten by canonical config later in this same apply ===
+Host github-personal
+    HostName github.com
+    User git
+    IdentityFile ~/.ssh/personal_ed25519
+Host github-work
+    HostName github.com
+    User git
+    IdentityFile ~/.ssh/work_ed25519
+Host github-sidebiz
+    HostName github.com
+    User git
+    IdentityFile ~/.ssh/sidebiz_ed25519
+Host github.com
+    HostName github.com
+    User git
+    IdentityFile ~/.ssh/personal_ed25519
+SSHSEED
+fi

@@ -1,0 +1,42 @@
+# ~/.config/gh-dash/config.yml — managed by chezmoi
+# gh-dash: a rich terminal UI for GitHub PRs & issues. Installed as the
+# standalone `gh-dash` binary via mise (github:dlvhdr/gh-dash), NOT as a gh
+# extension. Auth is inherited from the `gh` CLI (run `gh auth login` once) —
+# gh-dash shells out to `gh auth token`, so NO secrets live in this file.
+
+prSections:
+  - title: My Pull Requests
+    filters: is:open author:@me
+  - title: Needs My Review
+    filters: is:open review-requested:@me
+  - title: Involved
+    filters: is:open involves:@me -author:@me
+
+issuesSections:
+  - title: My Issues
+    filters: is:open author:@me
+  - title: Assigned
+    filters: is:open assignee:@me
+
+defaults:
+  view: prs
+  refetchIntervalMinutes: 5
+  preview:
+    open: true
+    width: 80
+
+keybindings:
+  prs:
+    # T → "Test": launch ENHANCE (the GitHub Actions TUI) for the selected PR.
+    # This is the documented gh-dash ↔ ENHANCE integration. Inside tmux we open
+    # it in a new window; outside tmux we run it inline. We call the gh-enhance
+    # binary directly (mise-installed) rather than `gh enhance`, since it isn't
+    # registered as a gh extension.
+    - key: T
+      name: enhance
+      command: >-
+        if [ -n "$TMUX" ]; then
+        tmux new-window 'gh-enhance -R {{.RepoName}} {{.PrNumber}}';
+        else
+        gh-enhance -R {{.RepoName}} {{.PrNumber}};
+        fi

@@ -1,0 +1,19 @@
+#!/usr/bin/env zsh
+# ~/.zshenv — managed by chezmoi.
+#
+# Intentionally minimal. .zshenv is sourced for EVERY zsh shell (login,
+# interactive, scripts, cron, gui-spawned). Anything heavy here pays a
+# cost every invocation. Put PATH and tool env in ~/.zsh/path.zsh and
+# ~/.zsh/exports.zsh, which are sourced from ~/.zshrc (interactive only).
+#
+# This file deliberately replaces the older ~/.zshenv that contained
+# manual PATH munging and `. ~/.cargo/env`. Those concerns now live in
+# ~/.zsh/path.zsh and are managed by chezmoi.
+
+# Things we want everywhere, including non-interactive scripts (cron, GUI-spawned):
+# the user-local bin dir + the mise shims, so subprocess invocations of
+# installed / mise-managed tools resolve even when path.zsh (interactive) didn't run.
+[[ ":$PATH:" == *":$HOME/.local/bin:"* ]] || export PATH="$HOME/.local/bin:$PATH"
+if [[ -d "$HOME/.local/share/mise/shims" && ":$PATH:" != *":$HOME/.local/share/mise/shims:"* ]]; then
+  export PATH="$HOME/.local/share/mise/shims:$PATH"
+fi

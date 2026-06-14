@@ -1,0 +1,6 @@
+{
+  "mux": "tmux",
+  "theme": "flexoki",
+  "sidebarWidth": 30,
+  "sidebarPosition": "left"
+}

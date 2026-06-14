@@ -1,0 +1,109 @@
+#!/usr/bin/env bash
+# VPN clients. Two independent concerns:
+#   1. Mesh VPN (NetBird client): NetBird Cloud free tier today (SSO sign-in),
+#      self-hosted NetBird management server later — same binary, different
+#      --management-url flag. The choice is captured in chezmoi data so the
+#      printed sign-in command is always correct. Replaces Tailscale/Headscale.
+#   2. Commercial privacy VPN (NordVPN / ProtonVPN): public-IP egress.
+#      NordVPN auto-connect runs via nordvpnd (systemd), enabled here
+#      once the user is logged in. Re-running after `nordvpn login` is
+#      what flips it on (script is idempotent).
+set -euo pipefail
+
+{{ if eq .chezmoi.os "darwin" -}}
+# ── macOS ───────────────────────────────────────────────────────────────────
+# NetBird ships from the netbirdio/tap (not Homebrew core). nanobrew supports
+# third-party taps via `nb install owner/tap/formula`, so install through nb
+# (the canonical macOS PM); fall back to real brew if it's still around.
+if ! command -v netbird >/dev/null 2>&1; then
+  if command -v nb >/dev/null 2>&1; then
+    echo "==> installing netbird client (CLI) via nb (netbirdio/tap)"
+    nb install netbirdio/tap/netbird || true
+    # GUI menubar app (optional):  nb install --cask netbirdio/tap/netbird-ui
+  elif [[ -x /opt/homebrew/bin/brew || -x /usr/local/bin/brew ]]; then
+    echo "==> installing netbird client (CLI) via brew (netbirdio/tap)"
+    brew install netbirdio/tap/netbird || true
+  else
+    echo "==> netbird not installed and no nb/brew found."
+    echo "    Install from https://docs.netbird.io/get-started/install/macos"
+  fi
+fi
+
+ls -d /Applications/NordVPN.app   >/dev/null 2>&1 && echo "==> NordVPN.app present"   || true
+ls -d /Applications/ProtonVPN.app >/dev/null 2>&1 && echo "==> ProtonVPN.app present" || true
+{{- else if eq .chezmoi.os "linux" -}}
+# ── Linux ───────────────────────────────────────────────────────────────────
+# netbird is installed from the AUR by run_onchange_02 (packages.yaml). The AUR
+# package ships a TEMPLATED unit `netbird@.service` (per the Arch wiki), so the
+# instance is `netbird@main` — NOT a plain `netbird.service`. Try the template
+# first, fall back to a plain unit (other packagings), else let `netbird up`
+# bring the daemon up itself.
+if command -v netbird >/dev/null 2>&1; then
+  sudo systemctl enable --now netbird@main 2>/dev/null \
+    || sudo systemctl enable --now netbird 2>/dev/null \
+    || echo "==> couldn't auto-enable a netbird service unit; \`sudo netbird up\` will start the daemon"
+else
+  echo "==> netbird not yet installed — re-run after run_onchange_02 lands it from the AUR"
+fi
+
+# NordVPN: enable group + daemon + auto-connect
+if command -v nordvpn >/dev/null 2>&1; then
+  sudo systemctl enable --now nordvpnd 2>/dev/null || true
+
+  if getent group nordvpn >/dev/null 2>&1 && ! id -nG "$USER" | grep -qw nordvpn; then
+    sudo usermod -aG nordvpn "$USER"
+    echo "==> added $USER to nordvpn group (re-login needed for it to take effect)"
+  fi
+
+  # Auto-connect is daemon-managed (systemd via nordvpnd) — runs at boot,
+  # survives reboots, no extra user systemd unit needed. Requires login.
+{{- if .nordvpn_country }}
+  if nordvpn set autoconnect on "{{ .nordvpn_country }}" >/dev/null 2>&1; then
+    echo "==> nordvpn autoconnect: enabled → {{ .nordvpn_country }}"
+  else
+    echo "==> nordvpn: not yet logged in (run \`nordvpn login\`); autoconnect will activate on next chezmoi apply"
+  fi
+{{- else }}
+  if nordvpn set autoconnect on >/dev/null 2>&1; then
+    echo "==> nordvpn autoconnect: enabled (NordVPN picks best server)"
+  else
+    echo "==> nordvpn: not yet logged in (run \`nordvpn login\`); autoconnect will activate on next chezmoi apply"
+  fi
+{{- end }}
+
+  # Sensible defaults that don't depend on login
+  nordvpn set technology nordlynx >/dev/null 2>&1 || true   # WireGuard-based, faster
+  nordvpn set killswitch on       >/dev/null 2>&1 || true   # block traffic if VPN drops
+  nordvpn set notify on           >/dev/null 2>&1 || true
+fi
+{{- end }}
+
+cat <<'EOF'
+
+==> VPN clients ready. Sign in when you have credentials:
+
+  # ── Mesh (NetBird) ────────────────────────────────────────────────────────
+EOF
+{{- if .netbird_management_url }}
+echo "  sudo netbird up --management-url {{ .netbird_management_url }}"
+echo "  # (using your self-hosted NetBird management server)"
+{{- else }}
+echo "  sudo netbird up                           # NetBird Cloud (app.netbird.io, SSO)"
+echo "  # Unattended / headless? Use a setup key from the dashboard:"
+echo "  #   sudo netbird up --setup-key <KEY>"
+echo "  # Later, to migrate to a self-hosted NetBird server:"
+echo "  #   sudo netbird up --management-url https://<netbird-host> --setup-key <KEY>"
+echo "  # See docs/netbird-cloud.md for details + the self-host exit."
+{{- end }}
+
+cat <<'EOF'
+
+  # ── Commercial (NordVPN) ────────────────────────────────────────────────
+  # Once stashed in Bitwarden (rbw):
+  #   rbw get nordvpn-username
+  #   rbw get nordvpn-password
+  # Then login + chezmoi apply enables autoconnect automatically:
+  nordvpn login --username "$(rbw get nordvpn-username)" \
+                --password "$(rbw get nordvpn-password)"
+  chezmoi apply        # re-runs this script → nordvpn set autoconnect on
+EOF

@@ -1,0 +1,71 @@
+# ~/.zsh/path.zsh — managed by chezmoi
+# Sourced from ~/.zshrc. Sets PATH in priority order (first match wins).
+
+# ─── User-local binaries ─────────────────────────────────────────────────────
+path=(
+  "$HOME/.local/bin"          # uv tool install / pip --user / cargo binaries via shim; also mise.run lands `mise` here
+  "$HOME/bin"                 # personal scripts
+  "$HOME/.cargo/bin"          # cargo install (rust toolchain managed binaries)
+  $path
+)
+
+# ─── mise shims (all portable tooling is mise-managed) ───────────────────────
+# On PATH so mise tools resolve in NON-interactive shells and BEFORE
+# `mise activate` runs in completions.zsh — e.g. `zoxide init` (completions.zsh
+# line 8) fires one line before the activate hook, and chezmoi run_* scripts
+# (bat cache) inherit this PATH. `mise activate` later manages
+# versions on top; the shims are the always-available floor.
+if [[ -d "$HOME/.local/share/mise/shims" ]]; then
+  path=("$HOME/.local/share/mise/shims" $path)
+fi
+
+# ─── Go workspace ────────────────────────────────────────────────────────────
+if command -v go >/dev/null 2>&1; then
+  export GOPATH="${GOPATH:-$HOME/go}"
+  path=("$GOPATH/bin" $path)
+fi
+
+# ─── Bun ─────────────────────────────────────────────────────────────────────
+if [[ -d "$HOME/.bun" ]]; then
+  export BUN_INSTALL="$HOME/.bun"
+  path=("$BUN_INSTALL/bin" $path)
+fi
+
+# ─── pnpm ────────────────────────────────────────────────────────────────────
+if [[ -d "$HOME/.local/share/pnpm" ]]; then
+  export PNPM_HOME="$HOME/.local/share/pnpm"
+  path=("$PNPM_HOME" $path)
+fi
+
+{{ if eq .chezmoi.os "darwin" -}}
+# ─── Homebrew fallback (residual / pre-cutover machines) ─────────────────────
+# Eval'd FIRST so nanobrew (prepended below) wins PATH priority. Sets
+# HOMEBREW_PREFIX, used as a gnubin fallback further down.
+if [[ -x /opt/homebrew/bin/brew ]]; then
+  eval "$(/opt/homebrew/bin/brew shellenv)"
+elif [[ -x /usr/local/bin/brew ]]; then
+  eval "$(/usr/local/bin/brew shellenv)"
+fi
+
+# ─── nanobrew (canonical macOS package manager; `nb`, aliased to `brew`) ──────
+if [[ -x /opt/nanobrew/prefix/bin/nb ]]; then
+  export NANOBREW_PREFIX="/opt/nanobrew/prefix"
+  path=("$NANOBREW_PREFIX/bin" "$NANOBREW_PREFIX/sbin" $path)
+fi
+
+# ─── GNU coreutils ahead of BSD ones (cross-platform script parity) ──────────
+# Prefer nanobrew's prefix per-tool; fall back to Homebrew's if a given
+# formula is only installed there.
+for gnudir in coreutils gnu-sed gawk findutils; do
+  for pfx in "${NANOBREW_PREFIX:-}" "${HOMEBREW_PREFIX:-}"; do
+    if [[ -n "$pfx" && -d "$pfx/opt/$gnudir/libexec/gnubin" ]]; then
+      path=("$pfx/opt/$gnudir/libexec/gnubin" $path)
+      break
+    fi
+  done
+done
+{{- end }}
+
+# de-dupe and export
+typeset -U path
+export PATH

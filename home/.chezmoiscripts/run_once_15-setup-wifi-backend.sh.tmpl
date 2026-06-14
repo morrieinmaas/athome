@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# WiFi backend: point NetworkManager at the iwd backend.
+#
+# Why: impala (the WiFi TUI in packages.yaml) drives WiFi by talking to iwd over
+# D-Bus, but our stack manages WiFi through NetworkManager, whose default
+# backend is wpa_supplicant. Switching NM to wifi.backend=iwd gives ONE wireless
+# stack that both NM (so Noctalia's nmcli-based NetworkService keeps working) and
+# impala can drive. iwd is enabled as a service so it's always up for impala —
+# not only when NM happens to D-Bus-activate it.
+#
+# Safety: we DELIBERATELY don't restart NetworkManager here. That would tear down
+# the active connection mid-apply — possibly the very session running chezmoi,
+# and the network the package installs are still using. The drop-in is staged and
+# iwd is enabled (not started), so the new stack comes up cleanly on the next
+# reboot, or on the manual restart printed below. Idempotent: a no-op once the
+# drop-in is already in place and iwd is enabled.
+set -euo pipefail
+
+{{ if eq .chezmoi.os "linux" -}}
+# Both NetworkManager and iwd are installed by run_onchange_02 (packages.yaml).
+# Bail politely if this runs before that has landed them.
+if ! command -v nmcli >/dev/null 2>&1; then
+  echo "==> NetworkManager not installed yet — re-run after run_onchange_02 lands it"
+  exit 0
+fi
+if ! pacman -Qq iwd >/dev/null 2>&1; then
+  echo "==> iwd not installed yet — re-run after run_onchange_02 lands it"
+  exit 0
+fi
+
+conf=/etc/NetworkManager/conf.d/wifi_backend.conf
+staged=0
+
+if [[ -f "$conf" ]] && grep -q '^wifi\.backend=iwd' "$conf"; then
+  echo "==> NM wifi.backend=iwd already configured ($conf)"
+else
+  echo "==> staging NM wifi.backend=iwd → $conf"
+  printf '[device]\nwifi.backend=iwd\n' | sudo tee "$conf" >/dev/null
+  staged=1
+fi
+
+# Enable (not --now): starting iwd while NM is still on the wpa_supplicant
+# backend lets the two contend for the wireless device. The reboot/restart
+# below brings the iwd-backed stack up in one clean step.
+if systemctl is-enabled iwd >/dev/null 2>&1; then
+  echo "==> iwd.service already enabled"
+else
+  echo "==> enabling iwd.service (starts on next boot)"
+  sudo systemctl enable iwd >/dev/null 2>&1 || echo "   ! couldn't enable iwd.service"
+  staged=1
+fi
+
+if [[ "$staged" == 1 ]]; then
+  cat <<'EOF'
+
+==> WiFi backend staged (NetworkManager → iwd). NOT activated now, to avoid
+    dropping your connection mid-apply. Activate with a reboot, or manually:
+
+      sudo systemctl restart iwd
+      sudo systemctl restart NetworkManager
+
+    Afterwards NetworkManager drives iwd (nmcli / Noctalia keep working) and
+    `impala` can manage WiFi directly.
+EOF
+fi
+{{- end }}

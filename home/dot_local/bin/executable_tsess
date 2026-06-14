@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+# tsess — `prefix K` session/window picker (no plugin, no sesh).
+#   default : live tmux sessions (fast switching)
+#   ctrl-w  : windows of the highlighted session → jump to a specific window
+#   ctrl-f  : zoxide-frecent dirs + work/personal/sidebiz trees/entities/repos → create
+#   ctrl-s  : back to sessions
+# Selecting attaches/switches if it exists, else creates (named after the dir).
+# Preview: live pane content for a session/window, dir listing for a dir.
+# run-shell has no ~/.zshenv — harden PATH for fd/fzf/eza/zoxide.
+export PATH="/opt/nanobrew/prefix/bin:$HOME/.local/share/mise/shims:$PATH"
+
+list_sessions(){ tmux list-sessions -F '#S' 2>/dev/null; }
+list_windows(){
+  local s="$1"
+  if tmux has-session -t "=$s" 2>/dev/null; then
+    tmux list-windows -t "$s" -F "$s:#{window_index}  #{window_name} (#{window_panes}p)" 2>/dev/null
+  else  # not a session (e.g. ctrl-w from a dir) → all windows everywhere
+    tmux list-windows -a -F "#{session_name}:#{window_index}  #{window_name} (#{window_panes}p)" 2>/dev/null
+  fi
+}
+list_dirs(){
+  zoxide query -l 2>/dev/null | grep -E "^$HOME/(work|personal|sidebiz)/"   # frecent first
+  printf '%s\n' "$HOME/work" "$HOME/personal" "$HOME/sidebiz"
+  fd -t d -d 1 . "$HOME/work" 2>/dev/null
+  fd -H -t d -d 4 -g .git "$HOME/work" "$HOME/personal" "$HOME/sidebiz" 2>/dev/null | sed 's#/\.git/*$##'
+}
+
+case "${1:-}" in
+  --sessions) list_sessions; exit ;;
+  --windows)  list_windows "${2:-}"; exit ;;
+  --dirs)     list_dirs | sed 's#/$##' | awk 'NF && !s[$0]++'; exit ;;
+  --preview)
+    t="$2"
+    if [[ "$t" =~ ^([A-Za-z0-9_.-]+):([0-9]+) ]]; then            # window line → that window's pane
+      tmux capture-pane -ep -t "${BASH_REMATCH[1]}:${BASH_REMATCH[2]}" 2>/dev/null
+    elif tmux has-session -t "=$t" 2>/dev/null; then               # session → windows + active pane
+      tmux list-windows -t "$t" -F '#{?window_active,▶ ,  }#{window_index}:#{window_name} (#{window_panes}p)' 2>/dev/null
+      printf '%s\n' "────────────────────────────────────────"
+      tmux capture-pane -ep -t "$t" 2>/dev/null
+    elif [ -d "$t" ]; then                                         # dir → listing
+      eza -la --git --icons --color=always --group-directories-first "$t" 2>/dev/null || ls -la "$t"
+    fi
+    exit ;;
+esac
+
+self="$0"
+# keybinding legend shown at the top of the popup
+HDR=$' ⏎ go   ^w windows   ^f find / create\n ^s sessions   esc cancel'
+sel="$(
+  list_sessions | awk 'NF && !seen[$0]++' \
+  | fzf --ansi --tmux center,70%,68% --reverse --prompt='sessions  ' \
+        --border-label ' tsess — prefix K ' --header-first --header "$HDR" \
+        --preview "$self --preview {}" --preview-window 'right,52%,border-left' \
+        --bind "ctrl-s:change-prompt(sessions  )+reload($self --sessions)" \
+        --bind "ctrl-w:change-prompt(windows  )+reload($self --windows {})" \
+        --bind "ctrl-f:change-prompt(find  )+reload($self --dirs)"
+)"
+[ -z "$sel" ] && exit 0
+if [[ "$sel" =~ ^([A-Za-z0-9_.-]+):([0-9]+) ]]; then               # window → switch + select-window
+  tmux switch-client -t "${BASH_REMATCH[1]}"
+  tmux select-window -t "${BASH_REMATCH[1]}:${BASH_REMATCH[2]}"
+elif tmux has-session -t "=$sel" 2>/dev/null; then                 # existing session → switch
+  tmux switch-client -t "$sel"
+else                                                               # dir → create + switch
+  name="$(basename "$sel" | tr ':.' '__')"
+  tmux has-session -t "=$name" 2>/dev/null || tmux new-session -ds "$name" -c "$sel"
+  tmux switch-client -t "$name"
+fi

@@ -1,0 +1,19 @@
+# bat config — managed by chezmoi (templated for per-OS theme detection).
+#
+# Auto-switch dark/light to match the terminal, which ghostty flips with the OS
+# appearance (see dot_config/ghostty/config.tmpl). bat picks --theme-dark or
+# --theme-light based on the detected mode:
+#   macOS → auto:system reads the OS preference directly (robust: it doesn't
+#           depend on the terminal-background query, which tmux can swallow).
+#   Linux → auto:system is macOS-only, so query the terminal (ghostty answers).
+{{ if eq .chezmoi.os "darwin" -}}
+--theme="auto:system"
+{{ else -}}
+--theme="auto"
+{{ end -}}
+--theme-light="gruvbox-light"
+--theme-dark="gruvbox-dark"
+--style="numbers,changes,header"
+--map-syntax "*.tmpl:Go"
+--map-syntax "*.kdl:KDL"
+--map-syntax ".chezmoiignore:Bash"

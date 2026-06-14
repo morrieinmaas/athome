@@ -1,0 +1,11 @@
+# Work project — drop into any repo under ~/work/ as `.envrc`.
+# direnv auto-allows the ~/work prefix; all secrets come from Bitwarden via
+# rbw (run `rbw unlock` once per session) — nothing on disk except as
+# transient env vars. Git identity (work email + signing key + github-work
+# SSH alias) routes via ~/.gitconfig's includeIf "gitdir:~/work/" rule.
+use ctx work
+
+# Per-project additions / overrides:
+# export AWS_REGION=eu-west-1
+# export DATABASE_URL="$(rbw get work/this-project/database-url)"
+# use_rbw DATABASE_URL work/this-project/database uri   # → rbw get --field uri …

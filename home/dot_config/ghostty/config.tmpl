@@ -1,0 +1,70 @@
+# ~/.config/ghostty/config — managed by chezmoi (templated for per-OS bits).
+# Family name must match exactly what ghostty resolves (`ghostty +list-fonts`):
+# the Nerd Font registers as "JetBrainsMono Nerd Font Mono" — NOT
+# "JetBrains Mono Nerd Font". A mismatch silently falls back to a non-Nerd
+# font (broken powerline/pill glyphs, tofu icons).
+font-family = JetBrainsMono Nerd Font Mono
+# Per-OS: on Linux/niri at scale=1.25, 11pt fits ~2 vertical splits of 50-line
+# panes. macOS has no compositor scale, so 11 renders tiny on a Retina panel —
+# 13 is a comfortable equivalent there. Tweak to taste.
+{{ if eq .chezmoi.os "darwin" -}}
+font-size = 13
+{{ else -}}
+font-size = 11
+{{ end -}}
+
+{{ if eq .chezmoi.os "linux" -}}
+# Linux/niri (Wayland) ONLY: ghostty's GTK4 frontend draws its own header bar
+# unless we suppress it (niri's prefer-no-csd asks for SSD). On macOS this same
+# option strips the native window chrome and SQUARES OFF the rounded corners,
+# so it is gated to Linux.
+window-decoration = false
+
+{{ end -}}
+window-theme = system
+
+# ── Theme: auto-switch dark/light with the OS preference ───────────────────
+# Ghostty resolves `system` via the freedesktop color-scheme protocol —
+# Noctalia / GTK / GNOME color-scheme changes propagate in real time.
+# Swap the active line below; comment the others.
+#
+# Discover every built-in: `ghostty +list-themes`
+# Preview live:            `ghostty +list-themes --preview`
+# Fuzzy-find by name:      `ghostty +list-themes | grep -i everforest`
+#
+# — Soft / paper-aesthetic curated set —
+theme = dark:Everforest Dark - Medium,light:Everforest Light - Medium
+# theme = dark:Gruvbox Dark,light:Gruvbox Light
+# theme = dark:Catppuccin Mocha,light:Catppuccin Latte
+# theme = dark:Everforest Dark - Medium,light:Everforest Light - Medium
+# theme = dark:Rose Pine,light:Rose Pine Dawn
+# theme = dark:Tokyo Night,light:Tokyo Night Day
+# theme = dark:Kanagawa,light:Kanagawa Lotus
+# theme = dark:Solarized Dark - Patched,light:Solarized Light
+# theme = dark:PaperColor Dark,light:PaperColor Light
+# theme = dark:Builtin Pastel Dark,light:Builtin Light
+
+window-padding-x = 8
+window-padding-y = 4
+
+scrollback-limit = 25000000
+
+copy-on-select = false
+clipboard-trim-trailing-spaces = true
+
+# ── Mouse / links under tmux ───────────────────────────────────────────────
+# tmux runs with `mouse on`, which grabs every click before Ghostty's link
+# layer sees it. `never` forces Shift to ALWAYS fall through to Ghostty (tmux
+# can't reclaim it via XTSHIFTESCAPE), so Shift+⌘+click opens a link and
+# Shift+drag selects, even mid-tmux. (Shift = bypass/select, ⌘ = open — two
+# separate gestures in Ghostty; plain Shift+click only selects.)
+mouse-shift-capture = never
+# Escape hatch: toggle tmux's mouse grab off → plain ⌘+click opens links and
+# drag selects natively; toggle back on to restore tmux scroll/resize.
+keybind = cmd+shift+m=toggle_mouse_reporting
+
+shell-integration = zsh
+shell-integration-features = cursor,sudo,title
+
+cursor-style = bar
+cursor-style-blink = false

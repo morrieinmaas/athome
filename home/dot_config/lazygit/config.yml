@@ -1,0 +1,23 @@
+gui:
+  theme:
+    activeBorderColor:
+      - blue
+      - bold
+    inactiveBorderColor:
+      - white
+    selectedLineBgColor:
+      - default
+  showCommandLog: false
+  nerdFontsVersion: "3"
+  showFileTree: true
+  sidePanelWidth: 0.3333
+git:
+  paging:
+    colorArg: always
+    pager: delta --paging=never --side-by-side
+  commit:
+    signOff: false
+  autoFetch: true
+  parseEmoji: true
+os:
+  editPreset: "nvim"

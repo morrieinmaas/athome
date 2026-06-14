@@ -1,0 +1,17 @@
+# Note: repo-root files (README.md, LICENSE, docs/, scripts/, .github/, …) live
+# ABOVE the home/ source root (.chezmoiroot), so chezmoi never sees them — no
+# need to ignore them here. Only target paths under ~ that have a source need
+# gating, which is what the OS-conditional blocks below do.
+
+{{- if ne .chezmoi.os "darwin" }}
+Library/**
+{{- end }}
+
+{{- if ne .chezmoi.os "linux" }}
+.config/niri/**
+.config/quickshell/**
+.config/noctalia/**
+.config/fastfetch/**
+.config/greetd/**
+.config/systemd/**
+{{- end }}

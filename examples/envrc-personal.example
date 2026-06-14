@@ -1,0 +1,5 @@
+# Personal project — drop into any repo under ~/personal/ as `.envrc`.
+# direnv auto-allows the ~/personal prefix (~/.config/direnv/direnv.toml).
+# Git identity routing (personal email + signing key + github-personal SSH
+# alias) kicks in via ~/.gitconfig's includeIf "gitdir:~/personal/" rule.
+use ctx personal

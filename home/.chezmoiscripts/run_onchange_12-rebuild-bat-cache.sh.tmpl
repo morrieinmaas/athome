@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# bat needs `bat cache --build` after new tmTheme files appear under
+# ~/.config/bat/themes. gruvbox-light/-dark are built into bat so there are no
+# external themes to cache today — this stays as a cheap refresh safety net,
+# re-running whenever the external manifest changes (chezmoi hashes the input).
+set -euo pipefail
+
+# chezmoi apply runs scripts under its own PATH (not a login shell that sourced
+# path.zsh), so mise-managed `bat` isn't otherwise found.
+export PATH="$HOME/.local/share/mise/shims:/opt/nanobrew/prefix/bin:$HOME/.local/bin:$PATH"
+
+command -v bat >/dev/null 2>&1 || exit 0
+
+# Inputs hash — re-run on theme change:
+#   external = {{ include ".chezmoiexternal.toml.tmpl" | sha256sum }}
+
+bat cache --build >/dev/null || { echo "!! bat cache build failed (non-fatal)"; exit 0; }
+echo "==> bat cache rebuilt"

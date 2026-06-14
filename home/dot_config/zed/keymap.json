@@ -1,0 +1,26 @@
+// Zed keymap — managed by chezmoi (~/.config/zed/keymap.json).
+// Minimal, vim-flavoured leader bindings layered on top of Zed's vim mode.
+// Leader = space, in normal mode. Kept small on purpose — Zed's vim defaults
+// cover motion/editing; these just reach the panels an nvim user expects.
+[
+  {
+    "context": "vim_mode == normal && !menu",
+    "bindings": {
+      "space e": "project_panel::ToggleFocus",
+      "space f": "file_finder::Toggle",
+      "space /": "pane::DeploySearch",
+      "space g": "git_panel::ToggleFocus",
+      "space s": "outline::Toggle",
+      "space d": "diagnostics::Deploy"
+    }
+  },
+  {
+    "context": "Editor",
+    "bindings": {
+      "ctrl-h": "workspace::ActivatePaneLeft",
+      "ctrl-l": "workspace::ActivatePaneRight",
+      "ctrl-k": "workspace::ActivatePaneUp",
+      "ctrl-j": "workspace::ActivatePaneDown"
+    }
+  }
+]

@@ -1,0 +1,14 @@
+# Copied to /etc/greetd/config.toml by run_once_11-setup-niri-noctalia.sh.tmpl
+#
+# Multi-DE login picker: tuigreet auto-discovers session entries in
+# /usr/share/wayland-sessions/ (niri, gnome-wayland) and
+# /usr/share/xsessions/ (gnome-xorg). The command below uses `--remember`
+# (persist the username) + `--remember-session` (default to the last DE you
+# picked), so after one selection of "niri" you fall back into niri every
+# reboot — but GNOME stays one tab+enter away.
+[terminal]
+vt = 1
+
+[default_session]
+command = "tuigreet --remember --remember-session --time --asterisks"
+user = "greeter"

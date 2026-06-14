@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# Pre-create per-context project directories + seed an .envrc that pins
+# the matching rbw/Bitwarden context. Idempotent (mkdir -p, .envrc only
+# written if missing — never clobbers user-customized envrc files).
+#
+# Personal machines (machineType = "personal") get:
+#   ~/personal/    .envrc → `use ctx personal`
+#   ~/sidebiz/     .envrc → `use ctx sidebiz`
+#
+# Work machines (machineType = "work") get:
+#   ~/work/        .envrc → `use ctx work`
+#
+# Why no ~/Code anchor: a single tree per context makes wrong-credential
+# accidents structurally hard. "Cloned a sidebiz repo into ~/Code/
+# <handle>/ then committed with the personal email" can't happen
+# anymore — the directory IS the context.
+#
+# direnv.toml whitelists these prefixes, so .envrc files load on `cd`
+# without needing `direnv allow` per repo. Subdirectories inherit
+# unless they ship their own .envrc.
+#
+# Linux-only (macOS layout is more variable — fold dirs in by hand).
+set -euo pipefail
+
+{{ if ne .chezmoi.os "linux" -}}
+exit 0
+{{- end }}
+
+{{ if eq .chezmoi.os "linux" -}}
+
+seed_envrc() {
+  local dir="$1" ctx="$2"
+  mkdir -p "$dir"
+  local envrc="$dir/.envrc"
+  if [[ -f "$envrc" ]]; then
+    return  # don't clobber user's customization
+  fi
+  cat > "$envrc" <<EOF
+# Auto-seeded by chezmoi (run_once_03-setup-project-dirs.sh.tmpl).
+# Bundles the right rbw/Bitwarden context for anything under $dir/ —
+# subdirectories inherit unless they override with their own .envrc.
+use ctx $ctx
+EOF
+  echo "✓ seeded $envrc"
+}
+
+{{ if eq .machineType "personal" -}}
+seed_envrc "$HOME/personal" personal
+seed_envrc "$HOME/sidebiz"  sidebiz
+{{- else if eq .machineType "work" -}}
+seed_envrc "$HOME/work"     work
+{{- end }}
+
+{{- end }}

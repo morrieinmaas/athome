@@ -1,0 +1,68 @@
+# ~/.zsh/exports.zsh — managed by chezmoi
+# Sourced from ~/.zshrc after path.zsh.
+
+# ─── Editor ──────────────────────────────────────────────────────────────────
+export EDITOR=nvim
+export VISUAL=nvim
+export SUDO_EDITOR=nvim
+export PAGER=less
+export LESS='-FRXM'
+export MANPAGER='nvim +Man!'
+
+# ─── Locale ──────────────────────────────────────────────────────────────────
+export LANG="${LANG:-en_US.UTF-8}"
+export LC_ALL="${LC_ALL:-en_US.UTF-8}"
+
+# ─── fzf ─────────────────────────────────────────────────────────────────────
+export FZF_DEFAULT_COMMAND='fd --type f --hidden --follow --exclude .git'
+export FZF_CTRL_T_COMMAND="$FZF_DEFAULT_COMMAND"
+export FZF_ALT_C_COMMAND='fd --type d --hidden --follow --exclude .git'
+export FZF_DEFAULT_OPTS='--height 40% --layout=reverse --border --info=inline'
+
+# ─── uv (Python toolchain) ───────────────────────────────────────────────────
+# uv manages Python versions, venvs, deps, and tool installs. No mise needed
+# for anything Python-related.
+export UV_PYTHON_PREFERENCE=managed       # always prefer uv-installed Pythons
+export UV_TOOL_BIN_DIR="$HOME/.local/bin" # `uv tool install` -> shims on PATH
+
+# ─── Podman (Docker drop-in) ─────────────────────────────────────────────────
+# The `docker` CLI is a shim to podman (dot_local/bin) — it needs no DOCKER_HOST.
+# This is for docker-API clients that hit a socket directly: docker-compose
+# (Compose v2 Go binary), SDKs, testcontainers, lazydocker.
+{{ if eq .chezmoi.os "darwin" -}}
+# Stable socket from `podman-mac-helper install` (run_once_10) — survives machine
+# restarts, unlike podman 5.x's per-boot TMPDIR api socket.
+export DOCKER_HOST="unix:///var/run/docker.sock"
+{{- else -}}
+export DOCKER_HOST="unix:///run/user/$(id -u)/podman/podman.sock"
+{{- end }}
+
+# ─── History (in addition to OMZ history lib) ────────────────────────────────
+export HISTFILE="${HISTFILE:-$HOME/.zsh_history}"
+export HISTSIZE=100000
+export SAVEHIST=100000
+setopt HIST_IGNORE_ALL_DUPS
+setopt HIST_REDUCE_BLANKS
+setopt HIST_VERIFY
+setopt SHARE_HISTORY
+
+# ─── Misc QoL ────────────────────────────────────────────────────────────────
+setopt AUTO_CD                     # cd by typing dir name
+setopt EXTENDED_GLOB               # **/*.py etc.
+setopt INTERACTIVE_COMMENTS        # # comments allowed in shell
+setopt NO_BEEP
+
+# ─── GitHub token for MCP / tooling (no secret on disk) ──────────────────────
+# The GitHub MCP server (and some CLIs) read $GITHUB_PERSONAL_ACCESS_TOKEN. gh
+# keeps the token in the OS keyring; we materialize it into the env at shell
+# start. Guarded, so a machine without gh — or not logged in — gets an empty
+# value, never an error.
+command -v gh >/dev/null 2>&1 && export GITHUB_PERSONAL_ACCESS_TOKEN="$(gh auth token 2>/dev/null)"
+
+# ─── SSH keys (no agent required) ────────────────────────────────────────────
+# GPG / gpg-agent retired (Phase 5). The ed25519 identity keys are generated
+# WITHOUT a passphrase (bootstrap.sh) and ~/.ssh/config pins them per-host via
+# IdentityFile + IdentitiesOnly, so ssh and git (SSH commit signing) read the
+# key files directly — no ssh-agent or gpg-agent needed. On macOS the keys are
+# additionally added to the Keychain (UseKeychain in ~/.ssh/config); on Linux
+# nothing to wire.

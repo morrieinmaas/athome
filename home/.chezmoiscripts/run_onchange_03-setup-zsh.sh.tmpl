@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+# Set zsh as the login shell + bootstrap zinit. Cross-platform.
+#
+# `run_onchange_*.sh.tmpl`: chezmoi re-runs this whenever the rendered
+# content changes. The token below captures zsh's path — if zsh wasn't
+# installed on the previous apply but is now, the rendered content
+# differs and the script re-runs and finishes the chsh step. No manual
+# state-bucket bust needed.
+#
+# zsh-presence: {{ if lookPath "zsh" }}{{ lookPath "zsh" }}{{ else }}absent{{ end }}
+set -euo pipefail
+
+# Helper: append a manual follow-up note (printed by bootstrap.sh at end).
+followup() {
+  if [[ -n "${ATHOME_FOLLOWUP_LOG:-}" ]]; then
+    printf '  • %s\n' "$*" >> "$ATHOME_FOLLOWUP_LOG"
+  fi
+}
+
+zsh_bin="$(command -v zsh || true)"
+if [[ -z "$zsh_bin" ]]; then
+  echo "zsh not installed yet; deferring (will retry on next chezmoi apply)"
+  followup "zsh missing — install it (\`pacman -S zsh\` or \`brew install zsh\`), then re-run chezmoi apply"
+  exit 0
+fi
+
+# /etc/shells gate
+if ! grep -qx "$zsh_bin" /etc/shells; then
+  echo "$zsh_bin" | sudo tee -a /etc/shells >/dev/null
+fi
+
+# Detect current login shell — cross-platform.
+current_shell=""
+if command -v dscl >/dev/null 2>&1; then
+  current_shell="$(dscl . -read "/Users/$USER" UserShell 2>/dev/null | awk '{print $2}' || true)"
+fi
+if [[ -z "$current_shell" ]] && command -v getent >/dev/null 2>&1; then
+  current_shell="$(getent passwd "$USER" | cut -d: -f7)"
+fi
+[[ -z "$current_shell" ]] && current_shell="${SHELL:-}"
+
+if [[ "$current_shell" != "$zsh_bin" ]]; then
+  echo "==> changing default shell: $current_shell → $zsh_bin"
+  # `sudo chsh -s <shell> <user>` avoids the PAM password prompt that plain
+  # `chsh` triggers; sudo keep-alive (set by bootstrap.sh) means no prompt here.
+  if sudo chsh -s "$zsh_bin" "$USER" 2>/dev/null; then
+    echo "✓ default shell set to zsh"
+    followup "Reload your current terminal to use zsh: \`exec zsh\` (or close + reopen)"
+  else
+    echo "!! sudo chsh failed; fall back to non-sudo chsh"
+    if chsh -s "$zsh_bin" 2>/dev/null; then
+      echo "✓ default shell set to zsh"
+      followup "Reload your current terminal: \`exec zsh\` (or log out + back in)"
+    else
+      followup "Change default shell manually: \`sudo chsh -s $zsh_bin $USER\` then \`exec zsh\`"
+    fi
+  fi
+fi
+
+# zinit bootstrap — belt+braces backup for `dot_zshrc.tmpl`'s self-bootstrap
+# and the declarative .chezmoiexternal entry. Three paths fetch zinit, so be
+# careful NOT to fight any of them:
+#
+#   • chezmoi external (type = git-repo) materializes ZINIT_HOME with .git/
+#   • this script ran historically with `[[ ! -d "$ZINIT_HOME/.git" ]]` — and
+#     hit exit 128 ("destination path exists / not empty") when chezmoi had
+#     materialized the dir without a .git/ subdir yet (mid-apply race).
+#   • dot_zshrc.tmpl self-bootstraps at first interactive shell launch
+#
+# Rule: if ANY zinit dir exists, leave it alone. zshrc will fix it if broken.
+ZINIT_HOME="${XDG_DATA_HOME:-$HOME/.local/share}/zinit/zinit.git"
+if [[ -e "$ZINIT_HOME" ]]; then
+  echo "✓ zinit dir present at $ZINIT_HOME (chezmoi external or prior clone) — skipping clone"
+else
+  echo "==> bootstrapping zinit (plugin manager — includes fish-style autosuggestions)"
+  mkdir -p "$(dirname "$ZINIT_HOME")"
+  git clone --depth 1 https://github.com/zdharma-continuum/zinit.git "$ZINIT_HOME"
+fi
+echo "✓ zinit ready (autosuggestions + completions + syntax-highlighting load on first zsh launch)"

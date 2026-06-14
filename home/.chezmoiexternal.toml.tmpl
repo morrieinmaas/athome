@@ -1,0 +1,49 @@
+# Declarative externals fetched + refreshed by chezmoi itself.
+# Beats run_once_ shell scripts: chezmoi handles update cadence, hash
+# pinning, and clean uninstall (delete the entry, next apply removes).
+
+# ── zinit (zsh plugin manager) ──────────────────────────────────────────────
+# .zshrc also bootstraps zinit defensively on first launch — either path works.
+[".local/share/zinit/zinit.git"]
+    type          = "git-repo"
+    url           = "https://github.com/zdharma-continuum/zinit.git"
+    refreshPeriod = "168h"   # weekly
+
+# ── TPM (tmux plugin manager) ───────────────────────────────────────────────
+# tmux.conf also bootstraps TPM defensively. Plugins themselves are installed
+# by .chezmoiscripts/run_onchange_14-install-tmux-plugins.sh on first apply.
+[".config/tmux/plugins/tpm"]
+    type          = "git-repo"
+    url           = "https://github.com/tmux-plugins/tpm.git"
+    refreshPeriod = "168h"
+
+# bat's gruvbox-light / gruvbox-dark themes are built in (no external needed).
+# bottom also ships gruvbox built-in. Nothing to fetch here.
+
+{{- /* ~/.claude (skills + CLAUDE.md + AGENTIC-SYSTEMS.md + RTK.md) from your own
+       agents repo. Editor-agnostic config: read directly by opencode (skillsDir
+       + instructionsFiles in dot_config/opencode/config.json), natively by
+       Claude Code, and referencable from nvim/aider/cursor. NO IDE binaries
+       installed by this — Windsurf, Claude Code, etc. are managed separately.
+
+       Sensitive bits (settings.json, projects/, sessions/, history.jsonl) are
+       excluded by that repo's own .gitignore.
+
+       Which repo comes from the `agentsRepo` prompt (owner/repo); emitted only
+       when set AND includeAgents is true. Legacy machines that pre-date that
+       prompt have no agents_repo cached, so we fall back to <handle>/skills to
+       avoid dropping an already-synced ~/.claude. A fresh install that leaves
+       agentsRepo empty syncs nothing (no clone failure). */ -}}
+{{- $repo := "" -}}
+{{- if hasKey . "agents_repo" -}}
+{{-   $repo = .agents_repo -}}
+{{- else if .githubHandle -}}
+{{-   $repo = printf "%s/skills" .githubHandle -}}
+{{- end -}}
+{{ if and .include_agents $repo }}
+# ── Agentic skills / instructions (editor-agnostic) ─────────────────────────
+[".claude"]
+    type          = "git-repo"
+    url           = "git@github.com:{{ $repo }}.git"
+    refreshPeriod = "168h"
+{{ end }}

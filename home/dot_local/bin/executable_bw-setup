@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+# bw-setup — interactive Bitwarden (rbw) onboarding. Run it anytime; bootstrap.sh
+# also calls it at the end of a run. Single source of truth for "log me in".
+#
+# Sets rbw's non-secret config (pinentry / lock_timeout / base_url), then logs
+# in — registering the device first on official Bitwarden cloud (one-time
+# personal API key, required by their CLI bot-detection), or a plain login
+# against a self-hosted Vaultwarden / EU server (set ATHOME_BW_BASE_URL).
+# See docs/secrets.md.
+#
+# NOT set -e: failures are handled explicitly so we always reach the summary.
+set -uo pipefail
+
+if [[ -t 1 ]]; then
+  g() { printf '\033[32m%s\033[0m\n' "$*"; }
+  y() { printf '\033[33m%s\033[0m\n' "$*" >&2; }
+else
+  g() { printf '%s\n' "$*"; }
+  y() { printf '%s\n' "$*" >&2; }
+fi
+
+# rbw may live in nanobrew's prefix (macOS), which a non-login shell may miss.
+export PATH="/opt/nanobrew/prefix/bin:/usr/local/bin:$HOME/.local/bin:$PATH"
+if ! command -v rbw >/dev/null 2>&1; then
+  y "rbw not on PATH. Install it (it's in packages.yaml) then re-run bw-setup."
+  exit 1
+fi
+
+# ── non-secret config (idempotent) ──────────────────────────────────────────
+case "$(uname -s)" in
+  Darwin) rbw_pinentry="pinentry-mac" ;;
+  *)      rbw_pinentry="pinentry-curses" ;;   # terminal-native; works headless + any terminal
+esac
+rbw config set pinentry "$rbw_pinentry" >/dev/null 2>&1 || true
+rbw config set lock_timeout 28800       >/dev/null 2>&1 || true   # 8h, like the old gpg-agent cache
+if [[ -n "${ATHOME_BW_BASE_URL:-}" ]]; then
+  rbw config set base_url "$ATHOME_BW_BASE_URL" >/dev/null 2>&1 || true
+fi
+
+# ── already good? ───────────────────────────────────────────────────────────
+if rbw unlocked >/dev/null 2>&1; then
+  g "✓ Bitwarden already unlocked — rbw get <name> is ready"
+  exit 0
+fi
+
+# ── email ───────────────────────────────────────────────────────────────────
+email="${ATHOME_BW_EMAIL:-}"
+[[ -z "$email" ]] && read -r -p "Bitwarden email: " email
+[[ -n "$email" ]] && { rbw config set email "$email" >/dev/null 2>&1 || true; }
+
+# ── log in ──────────────────────────────────────────────────────────────────
+# Plain login works on Vaultwarden / an already-registered cloud device. On a
+# NEW official-cloud device it fails (registration required) → register path.
+if ! rbw login >/dev/null 2>&1; then
+  y "Plain login failed — official Bitwarden cloud needs this device registered (one-time)."
+  y "  Get a personal API key: web vault → Settings → Security → Keys → \"View API Key\""
+  printf 'Register this device now (paste client_id + client_secret, then master password)? [Y/n] '
+  read -r ans; ans="${ans:-y}"
+  if [[ "$ans" =~ ^[Yy]$ ]]; then
+    if rbw register; then
+      rbw login >/dev/null 2>&1 || y "rbw login failed after register — try \`rbw login\` manually"
+    else
+      y "rbw register failed — check the client_id / client_secret and retry"
+    fi
+  fi
+fi
+rbw unlock >/dev/null 2>&1 || true   # belt-and-suspenders; login usually leaves it unlocked
+
+# ── summary ─────────────────────────────────────────────────────────────────
+if rbw unlocked >/dev/null 2>&1; then
+  g "✓ Bitwarden ready — rbw get/list/search/code + direnv all resolve now"
+  exit 0
+else
+  y "rbw setup incomplete. Finish with:  rbw register   (new device) then  rbw unlock"
+  y "  Details: docs/secrets.md"
+  exit 1
+fi

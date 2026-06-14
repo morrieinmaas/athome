@@ -1,0 +1,118 @@
+# ~/.gitconfig — managed by chezmoi
+
+[user]
+    name  = {{ .name_personal }}
+    email = {{ .email_personal }}
+
+# Per-context identity overrides. One root dir per context, no ambiguity:
+# every repo under ~/personal/ commits as personal, under ~/work/ as work,
+# under ~/sidebiz/ as sidebiz. The old ~/Code/<org>/ override soup is gone
+# because it was structurally easier to mis-clone "work" project under the
+# your personal namespace and ship a sidebiz commit with the work email
+# attached. Single tree per context = no accidents.
+[includeIf "gitdir:~/personal/"]
+    path = ~/.gitconfig-personal
+
+[includeIf "gitdir:~/work/"]
+    path = ~/.gitconfig-work
+
+[includeIf "gitdir:~/sidebiz/"]
+    path = ~/.gitconfig-sidebiz
+
+[init]
+    defaultBranch = main
+
+[core]
+    editor       = nvim
+    pager        = delta
+    autocrlf     = input
+    excludesfile = ~/.gitignore_global
+    # Global hooks dir applies to EVERY repo: gitleaks pre-commit + conventional-commits msg
+    hooksPath    = ~/.config/git/hooks
+
+[transfer]
+    fsckObjects = true
+[fetch]
+    fsckObjects = true
+    prune       = true
+[receive]
+    fsckObjects = true
+
+[pull]
+    rebase = true
+[rebase]
+    autostash = true
+    autosquash = true
+[push]
+    default     = simple
+    autoSetupRemote = true
+    followTags  = true
+[merge]
+    conflictstyle = zdiff3
+[rerere]
+    enabled = true
+[branch]
+    sort = -committerdate
+[tag]
+    sort = version:refname
+[diff]
+    algorithm   = histogram
+    colorMoved  = default
+    tool        = difftastic
+[difftool "difftastic"]
+    cmd = difft "$LOCAL" "$REMOTE"
+[difftool]
+    prompt = false
+
+[pager]
+    diff   = delta
+    log    = delta
+    reflog = delta
+    show   = delta
+[interactive]
+    diffFilter = delta --color-only
+[delta]
+    navigate     = true
+    side-by-side = true
+    line-numbers = true
+    syntax-theme = gruvbox-light
+
+[color]
+    ui = auto
+
+[alias]
+    st        = status -sb
+    co        = checkout
+    sw        = switch
+    br        = branch
+    cm        = commit -m
+    amend     = commit --amend --no-edit
+    last      = log -1 HEAD
+    lg        = log --graph --pretty=format:'%C(yellow)%h%Creset %C(cyan)%an%Creset %s %C(green)(%cr)%Creset %C(magenta)%d%Creset' --abbrev-commit
+    unstage   = reset HEAD --
+    please    = push --force-with-lease
+
+# ── URL rewrites: force-SSH and route your own namespace through personal alias.
+# Multiple `insteadOf` rules cascade — git picks the LONGEST matching prefix.
+
+# Catch-all: any clone from github.com (HTTPS or default-SSH) becomes SSH.
+# This means `git clone https://github.com/foo/bar` silently turns into
+# `git@github.com:foo/bar` — SSH auth, no HTTPS-token prompt.
+[url "git@github.com:"]
+    insteadOf = https://github.com/
+
+# Personal namespace: route your own repos through the github-personal SSH
+# alias so they use ~/.ssh/personal_ed25519 (per ~/.ssh/config). The
+# longer-prefix match beats the catch-all above. Only emitted when a GitHub
+# handle is configured (githubHandle prompt / ATHOME_GITHUB_HANDLE).
+{{- if .githubHandle }}
+[url "git@github-personal:{{ .githubHandle }}/"]
+    insteadOf = git@github.com:{{ .githubHandle }}/
+    insteadOf = https://github.com/{{ .githubHandle }}/
+{{- end }}
+
+# Work/sidebiz repos: use the explicit alias when cloning, e.g.
+#   git clone git@github-work:<work-org>/repo
+#   git clone git@github-sidebiz:<sidehustle-org>/repo
+# The directory-based `includeIf` blocks above take care of commit
+# identity + signing key once the repo is on disk.

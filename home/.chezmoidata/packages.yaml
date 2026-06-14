@@ -1,0 +1,155 @@
+---
+# Native OS-package-manager packages ONLY.
+#
+# All *portable* CLI tooling (language runtimes + modern CLI utilities) now
+# lives in mise — see home/dot_config/mise/config.toml [tools]. mise is the
+# single cross-platform installer for portable tools on BOTH OSes, which is
+# what let us delete the old per-OS name-translation lists (choose vs
+# choose-rust, jj vs jujutsu, taplo vs taplo-cli, …).
+#
+# What stays HERE: GUI apps / casks, the Linux desktop stack, fonts, system &
+# privileged packages, libraries, and the handful of tools with native
+# OS-integration (e.g. ICMP tools needing caps, npm-backed daemons) that don't
+# belong in a user-space version manager.
+#
+# Rule of thumb: portable & user-space → mise; GUI / OS-integration / library /
+# privileged → here. The install script installs `common` via brew/nb on macOS
+# and via paru on Linux (paru delegates official-repo packages to pacman).
+
+# Native tools whose package name is the SAME on Homebrew and pacman/AUR.
+common:
+  - bash             # modern 5.x — macOS stock is GPL2-era 3.2; Arch has it already
+  - git              # system VCS
+  - git-lfs          # large-file storage (kept with git)
+  - neovim           # editor — native: LSP/treesitter/lua compile against system libs
+  - lua              # explicit so /usr/lib/lua/* exists for plugin require() paths
+  - luarocks         # for :checkhealth lua + native deps if a plugin needs them
+  - tree-sitter-cli  # `tree-sitter` binary — nvim-treesitter compiles parsers via it; coupled to nvim
+  - tmux             # multiplexer — native: TPM plugins build against it
+  - uv               # Astral's Python tool/env manager — owns all Python concerns (mise's `python` is intentionally absent)
+  - pre-commit       # python pre-commit framework (drives this repo's own hooks)
+  - gitleaks         # secret-leak guard — native (NOT mise): the GLOBAL git pre-commit hook shells out to it and runs where mise isn't activated. Must always be on PATH.
+  - podman           # rootless containers — needs system integration (see linux backing bits)
+  - docker-compose   # Compose v2 (Docker's FOSS Go client — Apache-2.0, daemonless, NO engine): a static binary that translates compose YAML into API calls on the podman socket. Pinned as podman's compose provider in dot_config/containers/containers.conf, so `podman compose` + `docker compose` (via the docker→podman shim) route through it. The `docker` CLI is NOT installed — it's a shim to podman (dot_local/bin/docker). We intentionally DON'T install podman-compose: 1.6.0 has data-loss bugs (removed a running container across alternating compose projects). Same name on brew + pacman(extra).
+  - syncthing        # file-sync daemon/service
+  - imagemagick      # general image manipulation; library used by Noctalia + nvim
+  # Secrets: pass/gnupg/age retired → Bitwarden + rbw. rbw is native (brew core
+  # + Arch extra) rather than a mise cargo: build — it's load-bearing and we
+  # want it rock-solid, not source-compiled on every fresh machine. pinentry
+  # stays in the per-OS lists because rbw needs a pinentry program.
+  - rbw            # Bitwarden CLI with agent (replaces pass + gpg-agent caching)
+  - git-crypt      # transparent file encryption for the secrets-vault repo (versioned, encrypted off-site backup; key lives in Bitwarden). See docs/secrets.md → Model B
+
+# macOS / Homebrew specifics
+darwin:
+  brew_formulae:
+    - coreutils
+    - gnu-sed
+    - gawk
+    - findutils
+    - et                             # Eternal Terminal — reconnecting shell, transparent byte pipe (keeps remote tmux scrollback / clipboard / graphics, unlike mosh). Homebrew formula `et`; Arch AUR `eternalterminal`. Server wired up by run_once_18-setup-eternal-terminal.
+    - pinentry-mac                   # pinentry prompt — required by rbw (Bitwarden master-password entry)
+    - bandwhich                      # per-process bandwidth — needs root/caps; kept native (not mise)
+    - gping                          # ping with a graph — ICMP; kept native
+    - trippy                         # traceroute/ping TUI — ICMP; kept native
+    - jpeg-xl                        # modern image format (library)
+    - prettierd                      # persistent prettier daemon (JS/TS/JSON/MD/YAML) — npm-backed
+    - wush                           # P2P file transfer + ad-hoc SSH (coder/wush)
+    - defaultbrowser                 # CLI to set the default browser — run_once_after_20 flips it to Zen (Linux uses xdg-settings instead)
+    # `bw` (bitwarden-cli) retired to on-demand (D3): rbw is the primary client.
+    # Install only if an admin task rbw can't do comes up: `nb install bitwarden-cli`.
+  brew_casks:
+    - ghostty
+    - zen                            # Zen Browser (Homebrew cask is `zen`; Arch AUR is `zen-browser-bin`)
+    - librewolf                     # privacy-hardened Firefox fork (kept alongside Zen for anon browsing)
+    # NetBird (mesh VPN, replaces tailscale) is installed in run_once_08, not
+    # here — it's tap-only (`netbirdio/tap/netbird`) and run_once_08 pairs the
+    # install with daemon enable + `netbird up` guidance. nb supports taps.
+    - protonvpn
+    - nordvpn
+    - maccy                          # clipboard manager (mac equivalent of cliphist)
+    - zed                            # Zed editor (GUI; configured via dot_config/zed/). Arch: `zed` in extra (pacman).
+    - podman-desktop                 # podman GUI (Docker Desktop replacement). Arch: AUR `podman-desktop`.
+    - font-jetbrains-mono-nerd-font  # ghostty + the tmux pill bar need the Nerd glyphs
+
+# Linux / Arch specifics
+linux:
+  pacman:
+    - base-devel
+    - zsh                            # macOS ships zsh; Arch needs it explicitly
+    - openssh
+    - zed                            # Zed editor (GUI; in extra). macOS: `zed` cask. Config under dot_config/zed/.
+    - ghostty
+    - niri
+    - greetd
+    - greetd-tuigreet
+    - fastfetch
+    - xonsh
+    - gnome-shell-extensions
+    - pinentry                       # pinentry prompt — required by rbw (Bitwarden master-password entry)
+    - libjxl                         # equivalent of brew's jpeg-xl
+    - networkmanager                 # Noctalia's NetworkService.qml shells out to nmcli; relying on archinstall to install NM is fragile
+    - iwd                            # iNet wireless daemon — the WiFi backend NetworkManager is pointed at (run_once_15) so impala has a daemon to talk to. Arch extra.
+    - impala                         # WiFi TUI (pythops/impala) — Arch `extra`. LINUX-ONLY: no macOS build (talks to iwd over D-Bus), so it can't live in the cross-platform mise [tools]. Needs iwd running + NM on the iwd backend; both are wired up by run_once_15-setup-wifi-backend.
+    # Noctalia replaces the following natively: launcher (was fuzzel),
+    # notifications (was mako), lockscreen (was swaylock), idle handler
+    # (was swayidle), clipboard history+picker (was cliphist), polkit
+    # agent (was polkit-gnome), wallpaper daemon (was swww-daemon-as-
+    # primary). Don't reinstall those — they fight Noctalia over Wayland
+    # protocols / D-Bus names / org.freedesktop.* services.
+    - wl-clipboard                   # generic Wayland clipboard CLI; Noctalia uses it under the hood for some actions
+    - ttf-jetbrains-mono-nerd        # ghostty font + Nerd glyphs for the tmux pill bar
+    - noto-fonts-emoji               # color emoji (the tmux pet etc.) — macOS ships Apple Color Emoji; Linux needs this or emoji render as tofu
+    # GNOME — minimal subset, available as alternative DE via greetd picker.
+    # No `gnome` group install (avoids gnome-music/weather/etc. bloat); no
+    # `gdm` (greetd stays the active display manager).
+    - gnome-shell                    # core GNOME compositor
+    - gnome-session                  # session manager + .desktop entries
+    - gnome-control-center           # settings
+    - mutter                         # GNOME's window manager
+    - gnome-keyring                  # credential storage (native ssh-agent path on Linux; many GNOME apps)
+    - nautilus                       # file manager
+    # ── Noctalia shell deps (per docs.noctalia.dev/v4/getting-started/installation) ──
+    # Core: brightnessctl + git + imagemagick + python are already in our
+    # list elsewhere. Optional integrations listed below.
+    - wlsunset                       # blue-light filter Noctalia controls
+    - evolution-data-server          # calendar/contact backend Noctalia integrates with (optional)
+    - ddcutil                        # external monitor brightness via DDC/CI (optional; can cause issues w/ some monitors)
+    - power-profiles-daemon          # power-profile selector backend (performance/balanced/saver)
+    - kimageformats                  # Qt6/KF6 plugin: AVIF/JXL/PSD/etc — Quickshell previews
+    - qt6-imageformats               # Qt6 plugin: ICO/MNG/TIFF/WBMP/WEBP — same reason
+    - bluez                          # BlueZ stack — the kernel-side bluetooth daemon
+    - bluez-utils                    # bluetoothctl CLI; required for Noctalia bluetooth panel
+    # polkit-gnome dropped — Noctalia ships its own polkit auth agent
+    - xdg-desktop-portal             # base portal service (D-Bus activated; required by gtk + wlr backends)
+    - xdg-desktop-portal-gtk         # file-picker / dialog backend that actually works under niri
+    - xdg-desktop-portal-wlr         # screencast / screenshot backend for wlroots-style Wayland (niri)
+    - brightnessctl                  # brightness keybinds in niri (XF86MonBrightness*)
+    # ── Rootless podman backing bits (usually pulled as podman deps but
+    #    we make them explicit so an audit / re-install can't skip them):
+    - fuse-overlayfs                 # overlay storage driver for rootless containers
+    - slirp4netns                    # rootless networking
+    - aardvark-dns                   # default DNS resolver for netavark (modern podman default)
+    - netavark                       # default network backend (replaces CNI in podman ≥ 4)
+    # ── go tooling not covered by the mise go runtime ──
+    - go-tools                       # gopls, goimports, godoc, etc. — provides `goimports`
+  aur:
+    # paru itself is bootstrapped by run_once_before_01; listed here so
+    # subsequent re-runs treat it like any other AUR package.
+    - paru
+    - netbird                        # mesh VPN client (replaces tailscale). NetBird Cloud free tier; self-host is a no-penalty future exit. `netbird up` in run_once_08.
+    - opencode-bin
+    - zen-browser-bin
+    - librewolf-bin                  # privacy-hardened Firefox fork
+    - nirimod-git
+    - eternalterminal                # `et` — reconnecting remote shell (AUR only). etserver enabled by run_once_18-setup-eternal-terminal.
+    - matugen-bin                    # auto-theming from wallpaper — used by Noctalia's color generation
+    - noctalia-shell                 # the shell itself (Quickshell-based — pulls noctalia-qs as a dep)
+    - nordvpn-bin
+    - bandwhich                      # needs root/caps; kept native (matches the brew formula on macOS)
+    - gping                          # ICMP; kept native
+    - trippy                         # ICMP; kept native
+    - prettierd                      # via npm under the hood; AUR wrapper
+    - wush-bin                       # P2P file transfer + ad-hoc SSH (coder/wush)
+    # `bw` (bitwarden-cli-bin) retired to on-demand (D3): rbw is the primary
+    # client. Install only for an admin task rbw can't do: `paru -S bitwarden-cli-bin`.

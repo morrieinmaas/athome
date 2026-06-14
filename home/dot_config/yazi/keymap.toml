@@ -1,0 +1,8 @@
+[mgr]
+keymap = [
+  { on = ["g", "h"], run = "cd ~",                 desc = "Home"      },
+  { on = ["g", "p"], run = "cd ~/personal",        desc = "Personal"  },
+  { on = ["g", "w"], run = "cd ~/work",            desc = "Work"      },
+  { on = ["g", "s"], run = "cd ~/sidebiz",         desc = "Sidebiz"   },
+  { on = ["g", "d"], run = "cd ~/Downloads",       desc = "Downloads" },
+]

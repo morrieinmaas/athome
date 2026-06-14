@@ -1,0 +1,14 @@
+# ~/.config/btm/btm.toml — bottom (btm) config
+[flags]
+rate              = "1s"
+default_widget_type = "cpu"
+mem_as_value      = true
+tree              = true
+hide_table_gap    = true
+default_time_value = "60s"
+time_delta        = "15s"
+
+[colors]
+table_header_color = "LightBlue"
+selected_text_color = "Black"
+selected_bg_color  = "LightBlue"

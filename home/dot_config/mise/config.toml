@@ -1,0 +1,112 @@
+# Global tool versions — overridden per-project by .mise.toml
+#
+# mise is the single cross-platform installer for ALL portable tooling on both
+# macOS and Linux: language runtimes + modern CLI utilities. The OS package
+# managers (nb on macOS, paru on Arch) only handle GUI apps, desktop/system
+# packages, fonts, libraries, and OS-integrated tools — see
+# home/.chezmoidata/packages.yaml.
+#
+# Bare names resolve via mise's built-in registry (usually an aqua/ubi backend)
+# — this is what kills the old per-OS name-translation table (choose vs
+# choose-rust, jj vs jujutsu, taplo vs taplo-cli, go-task's `task`, tealdeer's
+# `tldr`). Explicit `cargo:` entries are for tools not in the registry.
+#
+# NOTE: Python is intentionally absent. Use `uv` for all Python concerns
+# (versions, venvs, deps, tools). See ~/.zsh/exports.zsh + aliases.zsh.
+
+[tools]
+# ── Language runtimes ────────────────────────────────────────────────────────
+node    = "lts"
+go      = "latest"
+rust    = "latest"
+deno    = "latest"
+bun     = "latest"
+
+# ── Modern CLI: search / view / navigate ────────────────────────────────────
+ripgrep    = "latest"   # rg
+fd         = "latest"
+bat        = "latest"
+eza        = "latest"
+fzf        = "latest"
+zoxide     = "latest"
+yazi       = "latest"
+navi       = "latest"
+glow       = "latest"          # markdown viewer
+tealdeer   = "cargo:tealdeer"  # `tldr` client (not in registry)
+
+# ── Modern CLI: text / data wrangling ───────────────────────────────────────
+jq         = "latest"
+yq         = "latest"   # jq for YAML
+sd         = "latest"   # sed alternative
+grex       = "latest"   # regex generator
+choose     = "latest"   # field selector (was choose / choose-rust)
+ast-grep   = "latest"   # structural search/rewrite
+
+# ── Modern CLI: system / inspection ─────────────────────────────────────────
+dust       = "latest"        # du
+duf        = "latest"        # df
+procs      = "cargo:procs"   # ps (not in registry)
+bottom     = "latest"        # btm — top
+hexyl      = "latest"        # hex viewer
+hyperfine  = "latest"        # benchmarking
+tokei      = "latest"        # LoC counter
+watchexec  = "latest"        # file-watch runner
+viddy      = "latest"        # modern watch(1)
+
+# ── Git / VCS ────────────────────────────────────────────────────────────────
+lazygit    = "latest"
+difftastic = "latest"   # difft
+delta      = "latest"   # git-delta — syntax-highlighting pager
+jj         = "latest"   # Jujutsu (was jj / jujutsu)
+# gitleaks is NOT here — it's native (packages.yaml). The global git pre-commit
+# hook shells out to `gitleaks` and runs in contexts where mise isn't activated
+# (IDE git integration, scripts, the bootstrap itself); a mise shim wouldn't be
+# on PATH there and the secret scan would silently skip. Load-bearing → native.
+
+# NOTE: rbw (Bitwarden CLI) is deliberately NOT here. It's the load-bearing
+# secrets tool and ships as a fast official package (brew core + Arch extra),
+# so it lives in packages.yaml — a cargo: source-compile on every fresh machine
+# would be slow and a single point of failure for direnv/VPN secrets.
+
+# ── Terminal / shell environment ─────────────────────────────────────────────
+direnv     = "latest"          # per-dir env (init in completions.zsh)
+chezmoi    = "latest"          # dotfile manager (also self-bootstrapped by bootstrap.sh)
+gum        = "latest"          # shell-script UI
+just       = "latest"          # command runner
+just-lsp   = "cargo:just-lsp"  # LSP for justfiles (not in registry)
+task       = "latest"          # go-task (binary `task`)
+smug       = "ubi:ivaaaan/smug"  # tmux session manager — drives the cockpit bootstrap (not in registry)
+
+# ── HTTP / containers / k8s / CI ─────────────────────────────────────────────
+xh         = "latest"   # HTTPie-like client
+doggo      = "latest"   # modern dig
+croc       = "latest"   # relay file transfer
+lazydocker = "latest"
+helm       = "latest"   # k8s package manager
+jqp        = "latest"   # interactive jq playground
+act        = "latest"   # run GitHub Actions locally
+
+# ── GitHub CLI + terminal UIs ────────────────────────────────────────────────
+# gh is the auth source for the two GitHub TUIs below — they read its stored
+# token (`gh auth login`), so no API tokens live in their configs. All three
+# TUIs are portable Go binaries pulled straight from GitHub releases via mise's
+# github backend (verifies checksums + SLSA provenance; no gh-extension
+# machinery, no per-OS package names). gh-dash binds `T` to launch
+# gh-enhance/ENHANCE in a new tmux window — see dot_config/gh-dash/config.yml.
+gh                         = "latest"   # GitHub CLI (registry alias for cli/cli)
+"github:dlvhdr/gh-dash"    = "latest"   # gh-dash — PR/issue dashboard TUI (binary: gh-dash)
+"github:dlvhdr/gh-enhance" = "latest"   # ENHANCE — GitHub Actions TUI (binary: gh-enhance)
+"github:gammons/slk"       = "latest"   # slk — Slack TUI; browser-session auth, tokens in ~/.local/share/slk/tokens (never tracked)
+
+# ── Formatters / linters (nvim conform + our own configs) ────────────────────
+ruff       = "latest"   # Python linter + formatter
+taplo      = "latest"   # TOML formatter (was taplo / taplo-cli)
+stylua     = "latest"   # Lua formatter
+shfmt      = "latest"   # shell formatter (pre-commit shellcheck pairs with it)
+actionlint = "latest"   # GitHub Actions YAML linter
+"go:golang.org/x/tools/cmd/goimports" = "latest"  # Go formatter for nvim conform — cross-platform (Arch's go-tools was Linux-only)
+
+[settings]
+experimental         = true
+verbose              = false
+trusted_config_paths = ["~/personal", "~/work", "~/sidebiz"]

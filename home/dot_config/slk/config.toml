@@ -1,0 +1,22 @@
+# ~/.config/slk/config.toml — managed by chezmoi
+# slk: a fast Slack TUI (gammons/slk), installed via mise (github:gammons/slk).
+#
+# AUTH IS NOT STORED HERE. slk uses your browser session — run
+# `slk --add-workspace`, paste your workspace's `xoxc-…` token + `d` cookie
+# (DevTools), and slk writes the credentials to ~/.local/share/slk/tokens/,
+# which is OUTSIDE chezmoi's tree and never tracked. On onboarding slk also
+# appends a `[workspaces.<slug>]` block to THIS file — those carry no secrets
+# (just slug / team_id / order), so they're safe to commit if you want them
+# synced across machines.
+
+[general]
+use_slack_sections = true   # mirror your real Slack sidebar sections
+
+[appearance]
+theme = "ANSI Dark"         # inherits the terminal's 16-color palette → matches whatever scheme the terminal is on
+image_protocol = "auto"     # auto-detect kitty/sixel; half-block fallback elsewhere
+
+[notifications]
+enabled = true
+on_dm = true
+on_mention = true

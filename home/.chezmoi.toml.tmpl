@@ -1,0 +1,75 @@
+{{/* First-run prompts for chezmoi. Stored at ~/.config/chezmoi/chezmoi.toml after init. */ -}}
+
+{{- $machineType         := promptStringOnce . "machineType"         "Machine type (work|personal — personal covers sidehustle)" "personal" -}}
+{{- $hostname            := promptStringOnce . "hostname"            "Hostname" .chezmoi.hostname -}}
+{{- $githubHandle        := promptStringOnce . "githubHandle"        "GitHub username (e.g. octocat)" "" -}}
+{{- $githubId            := promptStringOnce . "githubId"            "GitHub numeric user ID (`gh api user -q .id`; empty = plain noreply email)" "" -}}
+{{- $netbirdMgmtUrl      := promptStringOnce . "netbirdManagementUrl" "NetBird management URL (empty = NetBird Cloud SaaS, e.g. https://netbird.example.com when self-hosting)" "" -}}
+{{- $nordvpnCountry      := promptStringOnce . "nordvpnCountry"      "NordVPN auto-connect country (empty = NordVPN picks best, e.g. Netherlands)" "" -}}
+{{/* Work + sidebiz emails are prompted (not hardcoded) so the template
+     stays publishable. bootstrap.sh forwards real values via
+     --promptString on init, then chezmoi.toml caches them. */ -}}
+{{- $workEmail           := promptStringOnce . "workEmail"           "Work git identity email (empty = use personal everywhere)" "" -}}
+{{- $sidebizEmail        := promptStringOnce . "sidebizEmail"        "Side-business git identity email (empty = use personal everywhere)" "" -}}
+{{- $personalName        := promptStringOnce . "personalName"        "Personal git display name (empty = use your GitHub username)" "" -}}
+{{- $workName            := promptStringOnce . "workName"            "Work git display name (empty = use personal name)" "" -}}
+{{- $sidebizName         := promptStringOnce . "sidebizName"         "Side-business git display name (empty = use personal name)" "" -}}
+{{- $includeAgents       := promptBoolOnce   . "includeAgents"       "Sync ~/.claude skills + CLAUDE.md (editor-agnostic; used by opencode + Claude Code, readable by nvim/aider/cursor)" true -}}
+{{- $agentsRepo          := promptStringOnce . "agentsRepo"          "Skills/agents repo to sync into ~/.claude as owner/repo (empty = none; ATHOME_AGENTS_REPO in bootstrap)" "" -}}
+
+# No `encryption` key: age was dropped (D5) — there are no encrypted_* files in
+# this repo, and with `pass` gone there's no driver for encrypted-files-in-repo.
+# Secrets live in Bitwarden, resolved at runtime via rbw (never in tracked files).
+
+[git]
+    autoCommit = false
+    autoPush   = false
+
+[diff]
+    pager = "delta"
+
+[data]
+    machineType  = {{ $machineType | quote }}
+    hostname     = {{ $hostname | quote }}
+    githubHandle = {{ $githubHandle | quote }}
+    githubId     = {{ $githubId | quote }}
+
+    # Identity emails per context. Personal = the GitHub noreply address derived
+    # from your handle (+ numeric id when given). Empty handle = empty personal
+    # email; set githubHandle (or ATHOME_GITHUB_HANDLE in bootstrap).
+    {{- if and $githubId $githubHandle }}
+    email_personal = {{ printf "%s+%s@users.noreply.github.com" $githubId $githubHandle | quote }}
+    {{- else if $githubHandle }}
+    email_personal = {{ printf "%s@users.noreply.github.com" $githubHandle | quote }}
+    {{- else }}
+    email_personal = ""
+    {{- end }}
+    email_work    = {{ $workEmail | quote }}
+    email_sidebiz = {{ $sidebizEmail | quote }}
+
+    # Friendly names per context. All prompted (empty = fall back: personal to
+    # your GitHub handle; work/sidebiz to personal in the gitconfig templates)
+    # so no real name is hardcoded — keeps the repo publishable.
+    {{- if $personalName }}
+    name_personal = {{ $personalName | quote }}
+    {{- else if $githubHandle }}
+    name_personal = {{ $githubHandle | quote }}
+    {{- else }}
+    name_personal = ""
+    {{- end }}
+    name_work     = {{ $workName | quote }}
+    name_sidebiz  = {{ $sidebizName | quote }}
+
+    # VPN config (empty = service default)
+    netbird_management_url = {{ $netbirdMgmtUrl | quote }}
+    nordvpn_country        = {{ $nordvpnCountry | quote }}
+
+    # Sync ~/.claude (skills + CLAUDE.md + AGENTIC-SYSTEMS.md + RTK.md) via
+    # chezmoi external. Editor/agent-agnostic — opencode reads it directly,
+    # Claude Code reads it natively, nvim can reference CLAUDE.md.
+    include_agents = {{ $includeAgents }}
+
+    # Which repo the ~/.claude external syncs (owner/repo). Empty = none; a fork
+    # points this at its own. On legacy machines that pre-date this key, the
+    # external falls back to <handle>/skills (see .chezmoiexternal.toml.tmpl).
+    agents_repo = {{ $agentsRepo | quote }}

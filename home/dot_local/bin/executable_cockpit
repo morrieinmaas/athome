@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# cockpit — idempotently bootstrap the 4 context tmux sessions (work/personal/
+# sidebiz/misc) from their smug configs. Each built DETACHED so re-runs never
+# hijack your client. Safe alongside continuum: existing sessions are untouched.
+# display-popup/run-shell run in the tmux server env (no ~/.zshenv) — harden PATH.
+set -uo pipefail
+export PATH="/opt/nanobrew/prefix/bin:$HOME/.local/share/mise/shims:$PATH"
+for s in work personal sidebiz misc; do
+  if tmux has-session -t "$s" 2>/dev/null; then
+    echo "✓ $s (exists)"
+  else
+    smug start "$s" --detach >/dev/null 2>&1 && echo "✓ $s (created)" || echo "✗ $s (failed)"
+  fi
+done

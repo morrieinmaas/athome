@@ -1,0 +1,36 @@
+# ~/.ssh/config — managed by chezmoi
+# Private keys themselves stay outside chezmoi until age-encrypted; see
+# README "Post-apply manual steps".
+
+Host *
+    IdentitiesOnly yes
+    ServerAliveInterval 60
+    ServerAliveCountMax 3
+# No AddKeysToAgent/UseKeychain: the ed25519 identity keys are passphrase-less
+# and pinned per-host via IdentityFile below, so ssh reads them directly — no
+# agent, no Keychain passphrase store. Those options would only warn here.
+
+# ── GitHub identity aliases ──────────────────────────────────────────────────
+# Use the URL form `git@github-<context>:<owner>/<repo>.git` to commit under
+# the matching identity (.gitconfig-<context> kicks in via includeIf).
+
+Host github-personal
+    HostName github.com
+    User git
+    IdentityFile ~/.ssh/personal_ed25519
+
+Host github-work
+    HostName github.com
+    User git
+    IdentityFile ~/.ssh/work_ed25519
+
+Host github-sidebiz
+    HostName github.com
+    User git
+    IdentityFile ~/.ssh/sidebiz_ed25519
+
+# Default github.com still works (uses personal key).
+Host github.com
+    HostName github.com
+    User git
+    IdentityFile ~/.ssh/personal_ed25519

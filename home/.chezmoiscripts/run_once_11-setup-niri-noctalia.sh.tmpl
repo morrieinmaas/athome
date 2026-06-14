@@ -1,0 +1,112 @@
+#!/usr/bin/env bash
+# Linux only. Configures niri + Noctalia shell, swaps whichever display
+# manager is active for greetd, primes PaperWM in the GNOME fallback
+# session, enables power-profiles-daemon + bluetooth.
+#
+# Packages themselves come from .chezmoidata/packages.yaml via
+# run_onchange_02 (noctalia-shell from AUR, plus deps).
+set -euo pipefail
+
+followup() {
+  if [[ -n "${ATHOME_FOLLOWUP_LOG:-}" ]]; then
+    printf '  • %s\n' "$*" >> "$ATHOME_FOLLOWUP_LOG"
+  fi
+}
+
+{{ if ne .chezmoi.os "linux" -}}
+exit 0
+{{- end }}
+
+{{ if eq .chezmoi.os "linux" -}}
+
+# Noctalia post-install. Noctalia uses an in-shell setup wizard on first
+# launch — there's nothing to configure from the chezmoi side beyond
+# "make sure the package landed and the config dir exists". User runs the
+# wizard interactively the first time they log into niri.
+if command -v noctalia-shell >/dev/null 2>&1; then
+  echo "✓ noctalia-shell present ($(noctalia-shell --version 2>/dev/null || echo unversioned))"
+  mkdir -p "$HOME/.config/noctalia"
+else
+  echo "!! 'noctalia-shell' binary not found after package install"
+  followup "noctalia-shell not on PATH — check the AUR install:"
+  followup "    paru -Q noctalia-shell"
+  followup "    paru -S noctalia-shell    # if missing"
+fi
+
+# PaperWM for the GNOME fallback session
+if command -v gnome-extensions >/dev/null 2>&1; then
+  paperwm_uuid="paperwm@paperwm.github.com"
+  if ! gnome-extensions list 2>/dev/null | grep -q "$paperwm_uuid"; then
+    paru -S --needed --noconfirm gnome-shell-extension-paperwm 2>/dev/null || true
+  fi
+  gnome-extensions enable "$paperwm_uuid" 2>/dev/null || true
+fi
+
+# Display manager: respect whatever's already configured. We ONLY enable
+# greetd if NO DM is currently enabled — we don't replace a working one.
+#
+# Reasoning:
+#   • If you picked `ly` / `lightdm` / `sddm` / etc. during archinstall and
+#     it works, this script has no business swapping it. Greetd was a
+#     personal preference; not a requirement of the niri+Noctalia stack.
+#   • If NOTHING is configured (boot lands in TTY login) → enable greetd
+#     as a sensible default so you actually get a graphical login.
+#   • Re-run: already-enabled DM (any) → idempotent no-op.
+#
+# `display-manager.service` is the canonical systemd alias for whichever
+# greeter is "active". An EXISTING symlink means a DM is configured.
+current_dm=""
+if [[ -L /etc/systemd/system/display-manager.service ]]; then
+  current_dm="$(basename "$(readlink /etc/systemd/system/display-manager.service)" .service)"
+fi
+
+if [[ -n "$current_dm" ]] && systemctl is-enabled "$current_dm" 2>/dev/null | grep -q enabled; then
+  echo "✓ display manager already configured: $current_dm — leaving it alone"
+  echo "  (to migrate to greetd: sudo systemctl disable $current_dm && sudo systemctl enable greetd)"
+else
+  echo "==> no display manager configured — enabling greetd as the default"
+  sudo systemctl enable greetd
+  followup "Display manager changed to greetd — reboot to land in the niri session via tuigreet"
+fi
+
+# /etc/greetd/config.toml is sudo-only, hence this step
+src="$HOME/.config/greetd/config.toml"
+if [[ -f "$src" ]]; then
+  sudo install -D -m 0644 "$src" /etc/greetd/config.toml
+fi
+
+# Greeter needs the user in the `greeter` group on some installs
+if getent group greeter >/dev/null 2>&1; then
+  if ! id -nG "$USER" | grep -qw greeter; then
+    sudo usermod -aG greeter "$USER"
+    followup "Added $USER to 'greeter' group — log out + back in for it to take effect"
+  fi
+fi
+
+# Wallpaper directory — Noctalia's in-shell Settings → Wallpaper panel
+# handles picking + persisting (state in ~/.config/noctalia/). Drop any
+# image into ~/Pictures/Wallpapers/ and pick via the Noctalia UI.
+mkdir -p "$HOME/Pictures/Wallpapers"
+
+# power-profiles-daemon: Noctalia exposes a Performance/Balanced/Saver
+# selector that uses this daemon as the backend. Enable it.
+if command -v powerprofilesctl >/dev/null 2>&1 \
+   || pacman -Q power-profiles-daemon >/dev/null 2>&1; then
+  if ! systemctl is-enabled power-profiles-daemon.service 2>/dev/null | grep -q enabled; then
+    echo "==> enabling power-profiles-daemon"
+    sudo systemctl enable --now power-profiles-daemon.service
+  fi
+fi
+
+# bluetooth: enable bluez's daemon so Noctalia bluetooth panel + system
+# tray adapter check work. Disabled by default on fresh Arch even when
+# the packages are installed.
+if pacman -Q bluez >/dev/null 2>&1; then
+  if ! systemctl is-enabled bluetooth.service 2>/dev/null | grep -q enabled; then
+    echo "==> enabling bluetooth.service"
+    sudo systemctl enable --now bluetooth.service
+  fi
+fi
+
+echo "==> niri + noctalia + greetd configured"
+{{- end }}

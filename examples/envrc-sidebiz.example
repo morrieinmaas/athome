@@ -1,0 +1,5 @@
+# Sidehustle project — drop into any repo under ~/sidebiz/ as `.envrc`.
+# Loads Stripe + GitHub + OpenRouter under the sidebiz Bitwarden context (via
+# rbw). Git identity (sidebiz email + signing key + github-sidebiz SSH alias)
+# routes via ~/.gitconfig's includeIf "gitdir:~/sidebiz/" rule.
+use ctx sidebiz

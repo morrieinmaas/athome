@@ -1,0 +1,112 @@
+#!/usr/bin/env bash
+# Install the system package manager.
+#  - macOS  -> nanobrew (`nb`, Homebrew-compatible, Zig; canonical PM per D6)
+#  - Linux  -> paru (Rust-based AUR helper) on top of pacman
+#
+# This script is run_once_BEFORE everything else. If it fails, chezmoi
+# bails the whole apply — so it's the most important script to make robust.
+# We retry the paru build on transient failures (mirror flakiness, AUR git
+# clone races) and surface the actual makepkg error so the user can debug.
+set -euo pipefail
+
+{{ if eq .chezmoi.os "darwin" -}}
+# nanobrew is the single macOS package manager (D6). It reads Homebrew's
+# formula/cask API (coverage = Homebrew), installs into /opt/nanobrew/prefix
+# without touching /opt/homebrew, and — unlike older versions — supports
+# third-party taps via `nb install owner/tap/formula`. The OS package install
+# (run_onchange_02) and NetBird (run_once_08) both drive `nb`.
+if ! command -v nb >/dev/null 2>&1; then
+  echo "==> installing nanobrew (nb)"
+  # The installer lays down /opt/nanobrew/ owned by the invoking user (like
+  # Homebrew chowns /opt/homebrew) — do NOT `sudo nb init` afterwards, that
+  # would leave the prefix root-owned and silently break unprivileged
+  # `nb install` in run_onchange_02.
+  curl -fsSL https://nanobrew.trilok.ai/install | bash
+
+  # Make nb reachable for the rest of this apply, before a login shell
+  # sources path.zsh.
+  [[ -x /opt/nanobrew/prefix/bin/nb ]] && export PATH="/opt/nanobrew/prefix/bin:$PATH"
+fi
+
+if command -v nb >/dev/null 2>&1; then
+  # Defensive: if a prior `sudo` run (or the installer) left the prefix not
+  # user-writable, normalize ownership so `nb install` works without sudo.
+  if [[ -d /opt/nanobrew && ! -w /opt/nanobrew/prefix ]]; then
+    echo "==> normalizing /opt/nanobrew ownership to $(whoami)"
+    sudo chown -R "$(whoami)" /opt/nanobrew
+  fi
+  echo "==> nanobrew present ($(nb help 2>/dev/null | head -1 | sed 's/\x1b\[[0-9;]*m//g'))"
+else
+  echo "!! nanobrew install failed — re-run bootstrap. If it keeps failing,"
+  echo "   install Homebrew as a fallback and \`alias nb=brew\` for this apply."
+  exit 1
+fi
+{{- else if eq .chezmoi.os "linux" -}}
+if command -v paru >/dev/null 2>&1; then
+  echo "==> paru present ($(paru --version | head -n1))"
+  exit 0
+fi
+
+echo "==> installing paru (AUR helper)"
+
+# Refresh package db + ensure build prerequisites. base-devel is a group;
+# git is standalone. --needed = no-op if already current.
+sudo pacman -Sy --noconfirm
+sudo pacman -S --needed --noconfirm base-devel git
+
+build_paru() {
+  local tmp build_log
+  tmp="$(mktemp -d)"
+  build_log="$(mktemp)"
+  echo "  build dir: $tmp"
+  echo "  build log: $build_log"
+
+  if ! git clone --depth 1 https://aur.archlinux.org/paru.git "$tmp/paru" 2>&1 | tee -a "$build_log"; then
+    rm -rf "$tmp"; rm -f "$build_log"
+    return 1
+  fi
+
+  # Run makepkg in subshell with -si (install + skipped-pgp checks via -s deps).
+  # Errors stream to build_log so the user can see exactly what failed.
+  if ! (cd "$tmp/paru" && makepkg -si --noconfirm 2>&1 | tee -a "$build_log"); then
+    echo ""
+    echo "!! makepkg failed. Last 30 lines of build log:"
+    tail -n 30 "$build_log" | sed 's/^/   /'
+    echo ""
+    echo "!! Full log preserved at: $build_log"
+    echo "!! Build dir preserved at: $tmp"
+    # Intentionally NOT removed on failure — preserved for debugging, matching
+    # the message above. (The success path below removes it.)
+    return 1
+  fi
+
+  rm -rf "$tmp"
+  rm -f "$build_log"
+  return 0
+}
+
+attempt=1
+max_attempts=3
+until build_paru; do
+  if (( attempt >= max_attempts )); then
+    echo ""
+    echo "!! paru install failed after $max_attempts attempts."
+    echo "!! Likely causes:"
+    echo "    - mirror flakiness:   sudo pacman -Syyu  &&  retry"
+    echo "    - missing base-devel: pacman -Qi base-devel"
+    echo "    - PGP key issue:      cd /tmp/<build_dir> && makepkg --noconfirm --skippgpcheck"
+    echo "    - corrupt cache:      sudo pacman -Sc"
+    echo ""
+    echo "Once you've fixed the underlying issue, just re-run bootstrap.sh —"
+    echo "chezmoi tracks success in its state DB, so completed run_once scripts"
+    echo "won't re-run, but this failed one WILL re-execute."
+    exit 1
+  fi
+  echo ""
+  echo "!! attempt $attempt failed; retrying in 5s (attempt $((attempt + 1))/$max_attempts)"
+  sleep 5
+  ((attempt++))
+done
+
+echo "==> paru installed: $(paru --version | head -n1)"
+{{- end }}

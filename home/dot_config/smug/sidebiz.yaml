@@ -1,0 +1,10 @@
+# managed by chezmoi (athome) — tmux cockpit session "sidebiz"
+session: sidebiz
+root: ~/sidebiz
+windows:
+  - name: main
+    layout: main-vertical   # left full-height pane | right column split top/bottom
+    commands: []            # pane 1 (auto-created): plain shell
+    panes:
+      - commands: []        # pane 2: plain shell
+      - commands: []        # pane 3: plain shell

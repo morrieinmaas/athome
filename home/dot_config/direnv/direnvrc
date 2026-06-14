@@ -1,0 +1,92 @@
+# ~/.config/direnv/direnvrc — managed by chezmoi
+# Helpers for per-project context switching via `rbw` (Bitwarden). Secrets
+# live in Bitwarden and are resolved at `cd`-time via the rbw agent — never
+# written to disk. Run `rbw unlock` once per session; the agent caches the key.
+
+# Load a single Bitwarden item into an env var.
+#   In .envrc:    use rbw OPENROUTER_API_KEY personal/openrouter-api-key
+# `entry` is the Bitwarden item name (use the old pass paths as item names so
+# the .envrc API is unchanged). Optional 3rd arg selects a field — one of
+# rbw's built-ins (uri/username/password/notes/code) or a custom field name:
+#   use rbw DATABASE_URL database uri     # → rbw get --field uri database
+use_rbw() {
+  local var="$1" entry="$2" field="${3:-}"
+  if ! command -v rbw >/dev/null 2>&1; then
+    log_error "use_rbw: rbw not installed"; return 1
+  fi
+  local val
+  if [[ -n "$field" ]]; then
+    val="$(rbw get --field "$field" "$entry" 2>/dev/null)"
+  else
+    val="$(rbw get "$entry" 2>/dev/null)"
+  fi
+  if [[ -z "$val" ]]; then
+    log_error "use_rbw: entry '$entry' not found (is rbw unlocked? run \`rbw unlock\`)"; return 1
+  fi
+  export "$var=$val"
+}
+
+# AWS profile + credentials in one call.
+#   In .envrc:    use aws work
+use_aws() {
+  local profile="$1" ak sk region
+  # Read FIRST, validate, then export — never export empty creds. Empty
+  # AWS_ACCESS_KEY_ID/SECRET still count as "set" to the SDK and would clobber
+  # a working ~/.aws/credentials or IMDS chain (silent InvalidClientTokenId).
+  ak="$(rbw get "$profile/aws-access-key-id"     2>/dev/null)" || true
+  sk="$(rbw get "$profile/aws-secret-access-key" 2>/dev/null)" || true
+  if [[ -z "$ak" || -z "$sk" ]]; then
+    log_error "use_aws: couldn't read $profile AWS creds (is rbw unlocked? run \`rbw unlock\`)"
+    return 1
+  fi
+  export AWS_PROFILE="$profile" AWS_ACCESS_KEY_ID="$ak" AWS_SECRET_ACCESS_KEY="$sk"
+  if region="$(rbw get "$profile/aws-region" 2>/dev/null)" && [[ -n "$region" ]]; then
+    export AWS_REGION="$region" AWS_DEFAULT_REGION="$region"
+  fi
+}
+
+# Provider shortcuts: positional arg = context (work|personal|sidebiz).
+use_openrouter() { use_rbw OPENROUTER_API_KEY "$1/openrouter-api-key"; }
+use_openai()     { use_rbw OPENAI_API_KEY     "$1/openai-api-key";     }
+use_anthropic()  { use_rbw ANTHROPIC_API_KEY  "$1/anthropic-api-key";  }
+use_github()     { use_rbw GITHUB_TOKEN       "$1/github-token";       }
+use_stripe()     { use_rbw STRIPE_API_KEY     "$1/stripe-api-key";     }
+use_openai_org() { use_rbw OPENAI_ORG_ID      "$1/openai-org-id";      }
+use_huggingface(){ use_rbw HF_TOKEN           "$1/huggingface-token";  }
+
+# Apply a full context bundle. Usage: use ctx work
+use_ctx() {
+  local ctx="$1"
+  # Every provider call is best-effort: a locked vault (or a missing entry for
+  # a provider you don't use) should NOT abort the whole .envrc under
+  # direnv's strict_env. You'll see a one-line warning; run `rbw unlock`.
+  case "$ctx" in
+    work)
+      use_aws        work 2>/dev/null || true
+      use_github     work 2>/dev/null || true
+      use_openrouter work 2>/dev/null || true
+      ;;
+    personal)
+      use_aws        personal 2>/dev/null || true
+      use_github     personal 2>/dev/null || true
+      use_openrouter personal 2>/dev/null || true
+      ;;
+    sidebiz)
+      use_aws        sidebiz 2>/dev/null || true
+      use_github     sidebiz 2>/dev/null || true
+      use_openrouter sidebiz 2>/dev/null || true
+      use_stripe     sidebiz 2>/dev/null || true
+      ;;
+    *)
+      log_error "use_ctx: unknown context '$ctx' (expected work|personal|sidebiz)"
+      return 1
+      ;;
+  esac
+}
+
+# Standard layouts wrapped so they don't blow up if mise/uv isn't installed.
+layout_uv() {
+  command -v uv >/dev/null || { log_error "uv not installed"; return 1; }
+  [[ -d .venv ]] || uv venv
+  source .venv/bin/activate
+}

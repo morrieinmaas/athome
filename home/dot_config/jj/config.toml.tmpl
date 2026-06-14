@@ -1,0 +1,31 @@
+#:schema https://docs.jj-vcs.dev/latest/config-schema.json
+# ~/.config/jj/config.toml — managed by chezmoi
+
+# Global default = personal identity. Override per-repo with:
+#   jj config set --repo user.email "you@work.example"      # work
+#   jj config set --repo user.email "you@sidehustle.example" # sidehustle
+# Or use the project-local `.jj/config.toml`.
+[user]
+name  = "{{ .name_personal }}"
+email = "{{ .email_personal }}"
+
+[ui]
+default-command = "log"
+diff-editor     = ":builtin"
+pager           = "less -FRX"
+diff-formatter  = ["delta"]
+
+[git]
+push-bookmark-prefix = "push-"
+
+[aliases]
+l   = ["log", "--limit", "10"]
+st  = ["status"]
+d   = ["diff"]
+n   = ["new"]
+e   = ["edit"]
+sq  = ["squash"]
+abandon-discard = ["abandon", "--retain-bookmarks"]
+
+[revsets]
+log = "@ | ancestors(immutable_heads().., 4) | trunk()"

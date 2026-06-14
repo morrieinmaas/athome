@@ -1,0 +1,123 @@
+#!/usr/bin/env bash
+# EternalTerminal (et) server: run etserver on this machine so it's reachable
+# via `et <host>` over the NetBird mesh. Unlike mosh, et is a transparent byte
+# pipe — remote tmux scrollback, OSC 52 clipboard and Sixel/kitty graphics all
+# pass through untouched; it just re-attaches the same shell when your IP
+# changes or the laptop wakes.
+#
+# et handshakes over ssh, so sshd must be reachable too. Port 2022 alone grants
+# nothing without ssh auth, and it's mesh-only (never forwarded to the public
+# internet). Config is the chezmoi-tracked ~/.config/et/et.cfg, installed to
+# /etc/et.cfg on both OSes — symmetric: a systemd service on Linux, a system
+# LaunchDaemon on macOS, both running etserver at boot from /etc/et.cfg.
+set -euo pipefail
+
+src_cfg="$HOME/.config/et/et.cfg"
+if [[ ! -f "$src_cfg" ]]; then
+  echo "==> $src_cfg missing — re-run after chezmoi applies dot_config/et/et.cfg"
+  exit 0
+fi
+if ! command -v etserver >/dev/null 2>&1; then
+  echo "==> etserver not installed yet — re-run after run_onchange_02 lands 'et'/'eternalterminal'"
+  exit 0
+fi
+
+# Install the tracked config to the system path both services read.
+if ! cmp -s "$src_cfg" /etc/et.cfg 2>/dev/null; then
+  echo "==> installing et config → /etc/et.cfg (port 2022, telemetry off)"
+  sudo install -m 0644 "$src_cfg" /etc/et.cfg
+fi
+
+{{ if eq .chezmoi.os "linux" -}}
+# ── Linux: sshd + et.service ────────────────────────────────────────────────
+sudo systemctl enable --now sshd >/dev/null 2>&1 \
+  || echo "   ! couldn't enable sshd — et needs it for the handshake"
+
+# Use the packaged et.service if the eternalterminal package shipped one;
+# otherwise drop a minimal unit so the server runs at boot regardless.
+if ! systemctl cat et.service >/dev/null 2>&1; then
+  echo "==> no packaged et.service — installing a minimal unit"
+  sudo tee /etc/systemd/system/et.service >/dev/null <<EOF
+[Unit]
+Description=Eternal Terminal server (etserver)
+After=network-online.target sshd.service
+Wants=network-online.target sshd.service
+
+[Service]
+ExecStart=$(command -v etserver) --cfgfile /etc/et.cfg
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+EOF
+  sudo systemctl daemon-reload
+fi
+
+if sudo systemctl enable --now et >/dev/null 2>&1; then
+  echo "==> etserver enabled (systemd: et.service, port 2022)"
+else
+  echo "   ! couldn't enable et.service — check: systemctl status et"
+fi
+{{- else if eq .chezmoi.os "darwin" -}}
+# ── macOS: et LaunchDaemon + Remote Login (sshd) ────────────────────────────
+plist=/Library/LaunchDaemons/com.local.eternalterminal.plist
+et_bin="$(command -v etserver)"
+
+echo "==> installing et LaunchDaemon → $plist (etserver: $et_bin)"
+sudo tee "$plist" >/dev/null <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.local.eternalterminal</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>$et_bin</string>
+        <string>--cfgfile</string>
+        <string>/etc/et.cfg</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/tmp/etserver.out</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/etserver.err</string>
+</dict>
+</plist>
+EOF
+sudo chown root:wheel "$plist"
+sudo chmod 0644 "$plist"
+
+# (Re)load in the system domain — bootout first so re-runs are idempotent.
+sudo launchctl bootout system "$plist" 2>/dev/null || true
+if sudo launchctl bootstrap system "$plist" 2>/dev/null; then
+  echo "==> etserver LaunchDaemon loaded (port 2022)"
+elif sudo launchctl load -w "$plist" 2>/dev/null; then
+  echo "==> etserver LaunchDaemon loaded (legacy launchctl, port 2022)"
+else
+  echo "   ! couldn't load $plist — check: sudo launchctl print system/com.local.eternalterminal"
+fi
+
+# et needs Remote Login (sshd). Don't force it: recent macOS requires Full Disk
+# Access to toggle it from a script, and it's a security-relevant change. Report
+# state + how to turn it on.
+if sudo systemsetup -getremotelogin 2>/dev/null | grep -qiE 'on$'; then
+  echo "==> Remote Login (sshd) is ON — et is reachable"
+else
+  cat <<'NOTE'
+   ! Remote Login (sshd) is OFF — et can't handshake until it's on. Enable it:
+       System Settings → General → Sharing → Remote Login  (toggle on)
+     or from a Terminal that has Full Disk Access:
+       sudo systemsetup -setremotelogin on
+NOTE
+fi
+{{- end }}
+
+cat <<'EOF'
+
+==> et server ready (port 2022, config /etc/et.cfg). From another machine on
+    the mesh:  et <this-host-or-netbird-ip>
+EOF

@@ -1,0 +1,54 @@
+// Zed settings — managed by chezmoi (~/.config/zed/settings.json on macOS + Linux).
+// On-brand with the rest of the setup: Gruvbox Light, JetBrains Mono Nerd
+// Font, vim mode (this is an nvim-first user), format-on-save. Zed's built-in
+// language servers + formatters do the work; we don't hand-wire external tools
+// to avoid drift against the mise-managed binaries.
+{
+  // Follow the OS appearance (matches ghostty + nvim auto-dark-mode).
+  // Gruvbox is a built-in Zed theme family — no extension needed.
+  "theme": {
+    "mode": "system",
+    "light": "Gruvbox Light",
+    "dark": "Gruvbox Dark"
+  },
+
+  "vim_mode": true,
+  "telemetry": {
+    "diagnostics": false,
+    "metrics": false
+  },
+
+  "buffer_font_family": "JetBrainsMono Nerd Font Mono",
+  "buffer_font_size": 14,
+  "ui_font_size": 15,
+
+  "relative_line_numbers": "enabled",
+  "cursor_blink": false,
+  "scroll_beyond_last_line": "off",
+
+  "format_on_save": "on",
+  "ensure_final_newline_on_save": true,
+  "remove_trailing_whitespace_on_save": true,
+  "soft_wrap": "editor_width",
+
+  "tab_size": 2,
+  "hard_tabs": false,
+
+  "terminal": {
+    "font_family": "JetBrainsMono Nerd Font Mono",
+    "shell": {
+      "program": "zsh"
+    }
+  },
+
+  "git": {
+    "inline_blame": {
+      "enabled": true
+    }
+  },
+
+  // The agent panel is opt-in; don't auto-phone-home to model providers.
+  "features": {
+    "edit_prediction_provider": "none"
+  }
+}

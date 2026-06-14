@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+# Global pre-commit hook deployed by chezmoi at ~/.config/git/hooks/pre-commit.
+# Activated via `core.hooksPath` in ~/.gitconfig — applies to EVERY repo.
+#
+# Three guards (any failure blocks the commit):
+#   1. gitleaks scan of staged changes
+#   2. hard-reject any staged file matching obvious-key globs
+#   3. hard-reject any staged file >10MB (likely a binary blob you forgot)
+set -euo pipefail
+
+red()  { printf '\033[31m%s\033[0m\n' "$*" >&2; }
+warn() { printf '\033[33m%s\033[0m\n' "$*" >&2; }
+green(){ printf '\033[32m%s\033[0m\n' "$*" >&2; }
+
+# Allow `git commit --no-verify` for genuine emergencies, but log it.
+if [[ "${SKIP_GIT_HOOKS:-}" == "1" ]]; then
+  warn "pre-commit: SKIP_GIT_HOOKS=1, bypassing"
+  exit 0
+fi
+
+staged="$(git diff --cached --name-only --diff-filter=ACM)"
+[[ -z "$staged" ]] && exit 0
+
+# ── 1. gitleaks ─────────────────────────────────────────────────────────────
+if command -v gitleaks >/dev/null 2>&1; then
+  cfg=()
+  [[ -f .gitleaks.toml ]] && cfg=(--config=.gitleaks.toml)
+  if ! gitleaks protect --staged --redact --no-banner "${cfg[@]}"; then
+    red "pre-commit: gitleaks found secrets in staged changes — aborting"
+    red "  re-run with SKIP_GIT_HOOKS=1 only after triaging"
+    exit 1
+  fi
+else
+  # Fail CLOSED: a missing scanner must not silently let secrets through.
+  red "pre-commit: gitleaks not on PATH — refusing to commit unscanned."
+  red "  install it (mise install / sudo pacman -S gitleaks / brew install gitleaks),"
+  red "  or bypass deliberately with: SKIP_GIT_HOOKS=1 git commit ..."
+  exit 1
+fi
+
+# ── 2. obvious-key filename block ───────────────────────────────────────────
+deny_patterns=(
+  '*_ed25519'         '*_rsa'         '*_dsa'         '*_ecdsa'
+  '*.pem' '*.key' '*.p12' '*.pfx'
+  '*service-account*.json'
+  '*credentials*.json'
+  '*.age'
+  'id_rsa' 'id_ed25519' 'id_dsa' 'id_ecdsa'
+  '.env'  '.env.*'
+)
+violations=()
+while IFS= read -r f; do
+  base="${f##*/}"
+  for pat in "${deny_patterns[@]}"; do
+    case "$base" in
+      "$pat") violations+=("$f"); break;;
+    esac
+  done
+  # always allow public counterparts
+  case "$base" in
+    *.pub) continue ;;
+    .env.example|.env.sample) continue ;;
+  esac
+done <<< "$staged"
+
+if (( ${#violations[@]} > 0 )); then
+  red "pre-commit: refusing to commit private-key-shaped files:"
+  for v in "${violations[@]}"; do red "  - $v"; done
+  red "  if this is intentional (e.g. age-encrypted), rename or commit with SKIP_GIT_HOOKS=1"
+  exit 1
+fi
+
+# ── 3. blob-size guard ──────────────────────────────────────────────────────
+max_bytes=$((10 * 1024 * 1024))
+big=()
+while IFS= read -r f; do
+  [[ -f "$f" ]] || continue
+  sz=$(wc -c < "$f" | tr -d ' ')
+  (( sz > max_bytes )) && big+=("$f ($((sz/1024/1024))MB)")
+done <<< "$staged"
+
+if (( ${#big[@]} > 0 )); then
+  red "pre-commit: files exceed 10MB:"
+  for b in "${big[@]}"; do red "  - $b"; done
+  red "  use git-lfs or a CDN; SKIP_GIT_HOOKS=1 to bypass"
+  exit 1
+fi
+
+green "pre-commit: clean"

@@ -1,0 +1,19 @@
+{{- /* Personal identity.
+       SSH signing only activates once the keypair exists on disk —
+       otherwise every commit fails on a fresh machine before key generation. */ -}}
+[user]
+    name  = {{ .name_personal }}
+    email = {{ .email_personal }}
+{{- $key := joinPath .chezmoi.homeDir ".ssh/personal_ed25519.pub" }}
+{{- if stat $key }}
+    signingkey = {{ $key }}
+
+[commit]
+    gpgsign = true
+[tag]
+    gpgsign = true
+[gpg]
+    format = ssh
+[gpg "ssh"]
+    allowedSignersFile = ~/.config/git/allowed_signers
+{{- end }}

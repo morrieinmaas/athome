@@ -1,0 +1,37 @@
+# Repo-local gitleaks config. Extends the default rule set with extra rules for
+# private-key material that must never be committed (age/GPG/OpenSSH).
+#
+# Run locally: gitleaks detect --redact --no-banner
+# Run on a single commit: gitleaks protect --staged --redact --no-banner
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Placeholders + examples that aren't real secrets"
+paths = [
+  '''dot_config/git/allowed_signers\.tmpl$''',  # ssh-ed25519 placeholders
+]
+regexes = [
+  '''aws_secret_access_key\s*=\s*\.\.\.''',          # `aws_secret_access_key = ...`
+  '''AKIA\.\.\.''',                                    # `AKIA...`
+  '''ssh-ed25519\s+AAAA\.\.\.<paste-''',              # allowed_signers placeholders
+]
+
+[[rules]]
+id = "age-private-key"
+description = "age private key material"
+regex = '''AGE-SECRET-KEY-1[0-9A-Z]{58}'''
+tags = ["key", "age"]
+
+[[rules]]
+id = "openpgp-private-key-armored"
+description = "OpenPGP armored private key block"
+regex = '''-----BEGIN PGP PRIVATE KEY BLOCK-----'''
+tags = ["key", "gpg"]
+
+[[rules]]
+id = "openssh-private-key-armored"
+description = "OpenSSH armored private key block"
+regex = '''-----BEGIN OPENSSH PRIVATE KEY-----'''
+tags = ["key", "ssh"]

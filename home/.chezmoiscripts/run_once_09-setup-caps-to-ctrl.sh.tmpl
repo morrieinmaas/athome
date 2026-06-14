@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+{{ if eq .chezmoi.os "darwin" -}}
+# LaunchAgent itself is deployed by chezmoi as Library/LaunchAgents/...
+# We just load it and apply the mapping immediately so reboot isn't required.
+plist="$HOME/Library/LaunchAgents/com.local.caps-to-control.plist"
+if [[ -f "$plist" ]]; then
+  launchctl unload "$plist" 2>/dev/null || true
+  launchctl load -w "$plist"
+  /usr/bin/hidutil property --set \
+    '{"UserKeyMapping":[{"HIDKeyboardModifierMappingSrc":0x700000039,"HIDKeyboardModifierMappingDst":0x7000000E0}]}' \
+    >/dev/null
+  echo "==> caps→ctrl active (macOS)"
+fi
+{{- else if eq .chezmoi.os "linux" -}}
+# System-wide xkb option covers TTY + most DEs/compositors.
+if command -v localectl >/dev/null 2>&1; then
+  sudo localectl set-x11-keymap us "" "" caps:ctrl_modifier || true
+fi
+
+# GNOME-specific (idempotent — niri/Noctalia pick this up via their own config)
+if command -v gsettings >/dev/null 2>&1 && [[ -n "${DISPLAY:-${WAYLAND_DISPLAY:-}}" ]]; then
+  gsettings set org.gnome.desktop.input-sources xkb-options "['caps:ctrl_modifier']" || true
+fi
+echo "==> caps→ctrl active (Linux)"
+{{- end }}

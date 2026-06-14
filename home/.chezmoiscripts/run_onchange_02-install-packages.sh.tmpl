@@ -1,0 +1,124 @@
+#!/usr/bin/env bash
+# Re-runs whenever packages.yaml changes (chezmoi hashes the rendered output).
+# Source of truth: .chezmoidata/packages.yaml — installs via the right PM per OS.
+#
+# Per-package loop instead of batch: a single conflict or PKGBUILD failure
+# doesn't cascade into "everything after the bad one is missing". Slower
+# but robust. Each tool's install is idempotent (--needed / "already
+# installed" check), so re-running is cheap.
+set -euo pipefail
+
+# Hash to force re-run on change:
+#   packages.yaml hash = {{ include ".chezmoidata/packages.yaml" | sha256sum }}
+
+# Tally so a SYSTEMIC failure (empty toolchain) can't pass silently. Assigned
+# via $((x+1)) not ((x++)) — the post-increment form returns the old value, so
+# `((x++))` when x is 0 returns nonzero and `set -e` would kill the script.
+INSTALL_OK=0
+INSTALL_FAIL=0
+
+# install_one <package-manager> <package> — install one package, log result.
+# Never fails the whole script: a single bad package logs and continues.
+# On failure, surface the tail of the package manager's output so the
+# user can see the actual reason (conflict, missing dep, network, etc.)
+# instead of a generic "install failed" line.
+install_one() {
+  local pm="$1" pkg="$2" label
+  local -a cmd
+  case "$pm" in
+    nb)        label=nb;     cmd=(nb install "$pkg") ;;
+    nb_cask)   label=cask;   cmd=(nb install --cask "$pkg") ;;
+    pacman)    label=pacman; cmd=(sudo pacman -S --needed --noconfirm "$pkg") ;;
+    paru)      label=paru;   cmd=(paru -S --needed --noconfirm --skipreview "$pkg") ;;
+    *)         printf '  ! unknown pm: %s\n' "$pm" >&2; return 0 ;;
+  esac
+  local out
+  if out=$("${cmd[@]}" 2>&1); then
+    printf '  ✓ %s: %s\n' "$label" "$pkg"
+    INSTALL_OK=$((INSTALL_OK + 1))
+  else
+    printf '  ! %s: %s — install failed (continuing)\n' "$label" "$pkg" >&2
+    printf '%s\n' "$out" | tail -8 | sed 's/^/      /' >&2
+    INSTALL_FAIL=$((INSTALL_FAIL + 1))
+  fi
+}
+
+{{ if eq .chezmoi.os "darwin" -}}
+# nanobrew (`nb`) is the macOS package manager (D6). It reads Homebrew's API
+# live, so there's no index to refresh; `nb update` just self-updates nb.
+echo "==> nb self-update"
+nb update >/dev/null 2>&1 || true
+
+echo "==> nb formulae (common + darwin)"
+{{ range .common -}}
+install_one nb {{ . | quote }}
+{{ end -}}
+{{ range .darwin.brew_formulae -}}
+install_one nb {{ . | quote }}
+{{ end }}
+
+echo "==> nb casks"
+{{ range .darwin.brew_casks -}}
+install_one nb_cask {{ . | quote }}
+{{ end }}
+
+{{- else if eq .chezmoi.os "linux" -}}
+# System refresh + upgrade through paru if available — covers both repo
+# and AUR packages in one pass. Falls back to pacman if paru isn't built
+# yet (very first run before run_once_before_01 lands paru).
+if command -v paru >/dev/null 2>&1; then
+  echo "==> paru: refresh + system upgrade (repo + AUR)"
+  paru -Syu --noconfirm --skipreview
+else
+  echo "==> pacman: refresh + system upgrade (paru not yet installed)"
+  sudo pacman -Syu --noconfirm
+fi
+
+if ! command -v paru >/dev/null 2>&1; then
+  echo "!! paru missing — re-run after the bootstrap script's run_once_before_01"
+  echo "   has built it. linux.pacman + linux.aur installs both go through paru,"
+  echo "   so without it we can't install anything."
+  exit 1
+fi
+
+# Every linux package goes through paru — uniform install path. paru
+# delegates to pacman for official-repo entries (small AUR-query
+# overhead in exchange for one consistent tool), and handles AUR
+# packages itself. The packages.yaml split between linux.pacman and
+# linux.aur is now an ORGANIZATIONAL hint to the maintainer ("which
+# repo does this live in") rather than a behavioral switch.
+echo "==> paru: official-repo packages (common + linux.pacman)"
+{{ range .common -}}
+install_one paru {{ . | quote }}
+{{ end -}}
+{{ range .linux.pacman -}}
+install_one paru {{ . | quote }}
+{{ end }}
+
+echo "==> paru: AUR packages (linux.aur)"
+{{ range .linux.aur -}}
+install_one paru {{ . | quote }}
+{{ end }}
+{{- end }}
+
+echo "==> package install complete ($INSTALL_OK ok, $INSTALL_FAIL failed)"
+
+# Discoverability guard (AGENTIC-SYSTEMS: errors must be surfaceable). A few
+# failures are normal — a flaky AUR build, a renamed formula. But if EVERY
+# attempted install failed, something systemic is wrong: a broken/empty package
+# manager, no network, or (macOS) a non-writable /opt/nanobrew prefix. Don't
+# leave an empty toolchain silently. `nb install`/`paru -S --needed` both exit
+# 0 for already-installed packages, so re-runs never false-trip this.
+# We exit 0 so the rest of the apply (desktop, shell, …) still converges; the
+# loud banner + the bootstrap follow-up log are the surfacing mechanism.
+if (( INSTALL_FAIL > 0 && INSTALL_OK == 0 )); then
+  msg="ALL ${INSTALL_FAIL} package installs FAILED — toolchain is empty. Check the package manager (nanobrew/paru), network, and (macOS) /opt/nanobrew ownership, then re-run \`chezmoi apply\`."
+  {
+    echo ""
+    echo "  ############################################################"
+    echo "  ## !! ${msg}"
+    echo "  ############################################################"
+    echo ""
+  } >&2
+  [[ -n "${ATHOME_FOLLOWUP_LOG:-}" ]] && printf '  • %s\n' "$msg" >> "$ATHOME_FOLLOWUP_LOG"
+fi

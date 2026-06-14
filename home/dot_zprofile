@@ -1,0 +1,10 @@
+#!/usr/bin/env zsh
+# ~/.zprofile — managed by chezmoi.
+#
+# Intentionally empty. .zprofile is sourced for LOGIN shells before
+# .zshrc. We've moved brew shellenv and all PATH wiring into
+# ~/.zsh/path.zsh (sourced from .zshrc), so this file has no work.
+#
+# Kept as a managed file so chezmoi will overwrite any stale content
+# (e.g. the previous `eval "$(/opt/homebrew/bin/brew shellenv)"` on the
+# work MBP).

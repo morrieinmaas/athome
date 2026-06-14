@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Headless install/update of TPM-managed tmux plugins whenever tmux.conf
+# changes. Re-runs because chezmoi hashes the file content below.
+set -euo pipefail
+
+# tmux.conf hash = {{ include "dot_config/tmux/tmux.conf" | sha256sum }}
+
+command -v tmux >/dev/null 2>&1 || { echo "tmux not installed; skipping"; exit 0; }
+[[ -d "$HOME/.config/tmux/plugins/tpm" ]] || { echo "tpm missing; chezmoi external should fetch on apply"; exit 0; }
+
+# TPM needs a tmux server to run install_plugins. Start a headless one,
+# install, then tear it down — leaves no stale session.
+# Surface stderr so install failures (network, perms, bad plugin name)
+# show up in the apply log instead of being swallowed.
+tmux start-server
+tmux new-session -d -s _tpm_install
+echo "==> tmux: install_plugins"
+"$HOME/.config/tmux/plugins/tpm/bin/install_plugins" || echo "!! install_plugins exited non-zero (continuing)"
+echo "==> tmux: update_plugins"
+"$HOME/.config/tmux/plugins/tpm/bin/update_plugins" all || echo "!! update_plugins exited non-zero (continuing)"
+tmux kill-session -t _tpm_install 2>/dev/null || true
+
+# Sanity check: list what actually landed in ~/.config/tmux/plugins so the user
+# can see at a glance whether tmux-gruvbox etc. are there.
+echo "==> tmux plugins present:"
+ls -1 "$HOME/.config/tmux/plugins" 2>/dev/null | sed 's/^/      /'

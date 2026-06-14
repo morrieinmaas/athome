@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Global commit-msg hook. Enforces conventional-commits subject and final
+# secret sweep on the message itself (people sometimes paste tokens into
+# commit bodies — yes, really).
+set -euo pipefail
+
+[[ "${SKIP_GIT_HOOKS:-}" == "1" ]] && exit 0
+
+msg_file="$1"
+subject="$(head -n1 "$msg_file")"
+
+# Allow merge / revert / fixup commits through unchanged
+case "$subject" in
+  Merge*|Revert*|"fixup!"*|"squash!"*) exit 0 ;;
+esac
+
+# Conventional-commits subject: <type>(scope?)!?: <description>
+# Scope allows letters, digits, _, -, /, and , for multi-scope (e.g. feat(api,ui): ...).
+re='^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-z0-9_,/-]+\))?!?: .+'
+if ! [[ "$subject" =~ $re ]]; then
+  printf '\033[31mcommit-msg: subject must follow Conventional Commits\033[0m\n' >&2
+  printf '  got:      %s\n' "$subject" >&2
+  printf '  expected: <type>(<scope>): <description>\n' >&2
+  printf '            type ∈ feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert\n' >&2
+  exit 1
+fi
+
+# Token-shaped strings in the message body
+if grep -qE 'ghp_[A-Za-z0-9]{36}|sk-[A-Za-z0-9]{20,}|xox[abprs]-[A-Za-z0-9-]+|AKIA[0-9A-Z]{16}' "$msg_file"; then
+  printf '\033[31mcommit-msg: message body contains token-shaped string — aborting\033[0m\n' >&2
+  exit 1
+fi

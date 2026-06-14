@@ -2,8 +2,7 @@
 # Linux only. Configures niri + Noctalia shell. RESPECTS whatever display
 # manager you already have (e.g. GDM from archinstall's GNOME profile) and sets
 # niri as your DEFAULT login session; only falls back to enabling greetd if NO
-# DM exists. Primes PaperWM in the GNOME session, enables power-profiles-daemon
-# + bluetooth.
+# DM exists. Enables power-profiles-daemon + bluetooth.
 #
 # Packages themselves come from .chezmoidata/packages.yaml via
 # run_onchange_02 (noctalia-shell from AUR, plus deps).
@@ -33,15 +32,6 @@ else
   followup "noctalia-shell not on PATH — check the AUR install:"
   followup "    paru -Q noctalia-shell"
   followup "    paru -S noctalia-shell    # if missing"
-fi
-
-# PaperWM for the GNOME fallback session
-if command -v gnome-extensions >/dev/null 2>&1; then
-  paperwm_uuid="paperwm@paperwm.github.com"
-  if ! gnome-extensions list 2>/dev/null | grep -q "$paperwm_uuid"; then
-    paru -S --needed --noconfirm gnome-shell-extension-paperwm 2>/dev/null || true
-  fi
-  gnome-extensions enable "$paperwm_uuid" 2>/dev/null || true
 fi
 
 # Display manager: respect whatever's already configured. We ONLY enable

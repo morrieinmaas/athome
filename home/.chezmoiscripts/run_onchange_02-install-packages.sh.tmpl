@@ -30,6 +30,7 @@ install_one() {
     nb_cask)   label=cask;   cmd=(nb install --cask "$pkg") ;;
     pacman)    label=pacman; cmd=(sudo pacman -S --needed --noconfirm "$pkg") ;;
     paru)      label=paru;   cmd=(paru -S --needed --noconfirm --skipreview "$pkg") ;;
+    dnf)       label=dnf;    cmd=(sudo dnf install -y "$pkg") ;;
     *)         printf '  ! unknown pm: %s\n' "$pm" >&2; return 0 ;;
   esac
   local out
@@ -63,42 +64,55 @@ install_one nb_cask {{ . | quote }}
 {{ end }}
 
 {{- else if eq .chezmoi.os "linux" -}}
-# System refresh + upgrade through paru if available — covers both repo
-# and AUR packages in one pass. Falls back to pacman if paru isn't built
-# yet (very first run before run_once_before_01 lands paru).
-if command -v paru >/dev/null 2>&1; then
-  echo "==> paru: refresh + system upgrade (repo + AUR)"
-  paru -Syu --noconfirm --skipreview
+if command -v dnf >/dev/null 2>&1 && ! command -v pacman >/dev/null 2>&1; then
+  # ── Fedora: dnf + COPR. Portable tooling is mise's job (config.toml); this is
+  #    only the native/GUI/desktop residue. fedora.dnf is SELF-CONTAINED (Fedora
+  #    names differ from Arch), so we do NOT layer `common` on top here.
+  echo "==> dnf: refresh + upgrade"
+  sudo dnf -y upgrade --refresh || true
+  sudo dnf -y install dnf-plugins-core >/dev/null 2>&1 || true   # provides `dnf copr`
+  {{ range .fedora.copr -}}
+  echo "==> dnf copr enable {{ . }}"; sudo dnf -y copr enable {{ . | quote }} || true
+  {{ end -}}
+  echo "==> dnf: packages (fedora.dnf)"
+  {{ range .fedora.dnf -}}
+  install_one dnf {{ . | quote }}
+  {{ end }}
 else
-  echo "==> pacman: refresh + system upgrade (paru not yet installed)"
-  sudo pacman -Syu --noconfirm
+  # ── Arch: paru/pacman. Refresh + upgrade through paru if available — covers
+  #    repo + AUR in one pass. Falls back to pacman if paru isn't built yet
+  #    (very first run before run_once_before_01 lands paru).
+  if command -v paru >/dev/null 2>&1; then
+    echo "==> paru: refresh + system upgrade (repo + AUR)"
+    paru -Syu --noconfirm --skipreview
+  else
+    echo "==> pacman: refresh + system upgrade (paru not yet installed)"
+    sudo pacman -Syu --noconfirm
+  fi
+
+  if ! command -v paru >/dev/null 2>&1; then
+    echo "!! paru missing — re-run after the bootstrap script's run_once_before_01"
+    echo "   has built it. linux.pacman + linux.aur installs both go through paru,"
+    echo "   so without it we can't install anything."
+    exit 1
+  fi
+
+  # Every Arch package goes through paru — uniform path. paru delegates to
+  # pacman for official-repo entries and handles AUR itself; the pacman/aur
+  # split in packages.yaml is an organizational hint, not a behavioral switch.
+  echo "==> paru: official-repo packages (common + linux.pacman)"
+  {{ range .common -}}
+  install_one paru {{ . | quote }}
+  {{ end -}}
+  {{ range .linux.pacman -}}
+  install_one paru {{ . | quote }}
+  {{ end }}
+
+  echo "==> paru: AUR packages (linux.aur)"
+  {{ range .linux.aur -}}
+  install_one paru {{ . | quote }}
+  {{ end }}
 fi
-
-if ! command -v paru >/dev/null 2>&1; then
-  echo "!! paru missing — re-run after the bootstrap script's run_once_before_01"
-  echo "   has built it. linux.pacman + linux.aur installs both go through paru,"
-  echo "   so without it we can't install anything."
-  exit 1
-fi
-
-# Every linux package goes through paru — uniform install path. paru
-# delegates to pacman for official-repo entries (small AUR-query
-# overhead in exchange for one consistent tool), and handles AUR
-# packages itself. The packages.yaml split between linux.pacman and
-# linux.aur is now an ORGANIZATIONAL hint to the maintainer ("which
-# repo does this live in") rather than a behavioral switch.
-echo "==> paru: official-repo packages (common + linux.pacman)"
-{{ range .common -}}
-install_one paru {{ . | quote }}
-{{ end -}}
-{{ range .linux.pacman -}}
-install_one paru {{ . | quote }}
-{{ end }}
-
-echo "==> paru: AUR packages (linux.aur)"
-{{ range .linux.aur -}}
-install_one paru {{ . | quote }}
-{{ end }}
 {{- end }}
 
 echo "==> package install complete ($INSTALL_OK ok, $INSTALL_FAIL failed)"

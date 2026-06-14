@@ -156,3 +156,83 @@ linux:
     - wush-bin                       # P2P file transfer + ad-hoc SSH (coder/wush)
     # `bw` (bitwarden-cli-bin) retired to on-demand (D3): rbw is the primary
     # client. Install only for an admin task rbw can't do: `paru -S bitwarden-cli-bin`.
+
+# ── Fedora (Workstation / GNOME spin) ───────────────────────────────────────
+# Portable CLI tooling still comes from mise (config.toml) — same as Arch +
+# macOS — so this is ONLY the native / GUI / desktop residue, via dnf + COPR
+# (NEVER Flatpak). Fedora package names differ from Arch's, so this list is
+# SELF-CONTAINED: run_onchange_02 does NOT layer `common` on top for Fedora.
+# Names are best-effort — VERIFY on a real Fedora box. A few Arch-AUR tools have
+# no clean Fedora package and are best pulled via mise's cargo/go/github
+# backends instead (noted at the end).
+fedora:
+  # COPRs to `dnf copr enable` first — they carry the niri/Noctalia/ghostty/zen/
+  # greetd/netbird stack that isn't in Fedora's main repos.
+  copr:
+    - yalter/niri                  # niri compositor
+    - zhangyi6324/noctalia-shell   # noctalia-shell (Quickshell) + deps
+    - scottames/ghostty            # ghostty terminal
+    - sneexy/zen-browser           # Zen browser (RPM)
+    - alebastr/sway-extras         # greetd-tuigreet + wlroots desktop bits
+    - jsbillings/netbird           # NetBird client + UI (alt: official dnf repo)
+  dnf:
+    # ── core dev/system (Arch common+pacman equivalents, Fedora names) ──
+    - '@development-tools'         # ≈ base-devel
+    - git
+    - git-lfs
+    - zsh
+    - openssh-clients
+    - openssh-server
+    - neovim
+    - lua
+    - luarocks
+    - tmux
+    - podman
+    - podman-compose
+    - syncthing
+    - ImageMagick
+    - git-crypt
+    - gitleaks
+    - rbw                          # if absent in dnf → `cargo:rbw` via mise
+    # ── niri + Noctalia + greetd + ghostty + zen (from the COPRs above) ──
+    - niri
+    - noctalia-shell
+    - ghostty
+    - greetd
+    - greetd-tuigreet
+    - zen-browser
+    # ── wayland / GNOME fallback / desktop (the GNOME spin ships most already) ──
+    - NetworkManager
+    - iwd
+    - fastfetch
+    - google-noto-emoji-fonts      # = Arch noto-fonts-emoji
+    - jetbrains-mono-fonts         # NOTE: NOT Nerd-patched — the pill bar needs a Nerd font (COPR che/nerd-fonts or the upstream zip)
+    - wl-clipboard
+    - wlsunset
+    - power-profiles-daemon
+    - ddcutil
+    - bluez
+    - bluez-tools
+    - brightnessctl
+    - xdg-desktop-portal
+    - xdg-desktop-portal-gtk
+    - xdg-desktop-portal-wlr
+    - kf6-kimageformats
+    - qt6-qtimageformats
+    - evolution-data-server
+    - nautilus
+    - gnome-shell
+    - gnome-control-center
+    - gnome-keyring
+    # ── rootless podman backing bits ──
+    - fuse-overlayfs
+    - slirp4netns
+    - aardvark-dns
+    - netavark
+    # ── netbird (COPR jsbillings/netbird) ──
+    - netbird
+    - netbird-ui
+    # Pulled via MISE on Fedora instead (no/awkward dnf pkg; cargo/go/github
+    # backends, already cross-platform): matugen, eternalterminal (et), impala,
+    # bandwhich, gping, trippy, prettierd, wush, opencode. librewolf + nordvpn
+    # have their own upstream dnf repos if you want them.

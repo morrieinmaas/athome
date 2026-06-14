@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# Linux only. Configures niri + Noctalia shell, swaps whichever display
-# manager is active for greetd, primes PaperWM in the GNOME fallback
-# session, enables power-profiles-daemon + bluetooth.
+# Linux only. Configures niri + Noctalia shell. RESPECTS whatever display
+# manager you already have (e.g. GDM from archinstall's GNOME profile) and sets
+# niri as your DEFAULT login session; only falls back to enabling greetd if NO
+# DM exists. Primes PaperWM in the GNOME session, enables power-profiles-daemon
+# + bluetooth.
 #
 # Packages themselves come from .chezmoidata/packages.yaml via
 # run_onchange_02 (noctalia-shell from AUR, plus deps).
@@ -69,6 +71,24 @@ else
   followup "Display manager changed to greetd — reboot to land in the niri session via tuigreet"
 fi
 
+# If GDM is the active DM (e.g. archinstall's GNOME profile installed it), make
+# niri the DEFAULT login session — GNOME stays one click away in the GDM gear
+# menu. GDM reads the per-user default from AccountsService. Only acts once niri
+# is actually installed (its wayland session file exists).
+if [[ "$current_dm" == gdm ]] && [[ -f /usr/share/wayland-sessions/niri.desktop ]]; then
+  af="/var/lib/AccountsService/users/$USER"
+  if ! sudo grep -qs '^Session=niri$' "$af" 2>/dev/null; then
+    if sudo test -f "$af"; then
+      sudo sed -i '/^X\?Session=/d' "$af"          # drop any existing default
+      sudo sed -i '/^\[User\]/a Session=niri' "$af" # set niri, keep other keys
+    else
+      printf '[User]\nSession=niri\nSystemAccount=false\n' | sudo tee "$af" >/dev/null
+    fi
+    echo "==> default GDM session → niri (GNOME still selectable at the login gear)"
+    followup "GDM defaults to niri at next login; pick GNOME from the gear menu anytime"
+  fi
+fi
+
 # /etc/greetd/config.toml is sudo-only, hence this step
 src="$HOME/.config/greetd/config.toml"
 if [[ -f "$src" ]]; then
@@ -108,5 +128,5 @@ if pacman -Q bluez >/dev/null 2>&1; then
   fi
 fi
 
-echo "==> niri + noctalia + greetd configured"
+echo "==> niri + noctalia + display-manager configured"
 {{- end }}

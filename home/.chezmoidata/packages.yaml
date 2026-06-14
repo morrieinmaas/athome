@@ -100,9 +100,12 @@ linux:
     - wl-clipboard                   # generic Wayland clipboard CLI; Noctalia uses it under the hood for some actions
     - ttf-jetbrains-mono-nerd        # ghostty font + Nerd glyphs for the tmux pill bar
     - noto-fonts-emoji               # color emoji (the tmux pet etc.) — macOS ships Apple Color Emoji; Linux needs this or emoji render as tofu
-    # GNOME — minimal subset, available as alternative DE via greetd picker.
-    # No `gnome` group install (avoids gnome-music/weather/etc. bloat); no
-    # `gdm` (greetd stays the active display manager).
+    # GNOME — on a fresh box the FULL GNOME DE + GDM come from archinstall's
+    # GNOME profile ("just works": external displays, floating). This minimal
+    # subset is just a safety net for a Minimal/no-DE install. GDM is the display
+    # manager with niri as the DEFAULT session (set by run_once_11); GNOME stays
+    # selectable at the GDM gear. greetd is only auto-enabled if NO DM exists.
+    # No `gnome` group install (avoids gnome-music/weather/etc. bloat).
     - gnome-shell                    # core GNOME compositor
     - gnome-session                  # session manager + .desktop entries
     - gnome-control-center           # settings

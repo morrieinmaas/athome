@@ -42,8 +42,8 @@ cd ~/.local/share/chezmoi
 
 We don't ship a custom installer any more. Arch's own `archinstall` TUI
 is well-maintained, supports netboot out of the box, and one boot
-through it gets you to a working system with niri + greetd + the GNOME
-fallback session — all the same packages chezmoi later refines. Less
+through it gets you to a working GNOME desktop + GDM; chezmoi then layers
+niri + Noctalia on top and sets niri as your default login session. Less
 code to maintain on our side, less schema drift to chase.
 
 **Whole path, end to end:**
@@ -91,11 +91,11 @@ The TUI is keyboard-driven; arrow keys + Enter. The settings we want:
 | Hostname | whatever you want (e.g. `thinkpad`) |
 | Root password | optional — we use sudo via the regular user, so blank is fine |
 | User account | username + password, **add to sudoers** (wheel) |
-| Profile | **Desktop** → **Niri** → accept the default greeter (archinstall's Niri profile pins `lightdm-gtk-greeter`) → all open-source GPU drivers. chezmoi can swap this to `greetd` + `tuigreet` later if you prefer (see `home/.chezmoiscripts/run_once_11-setup-niri-noctalia.sh.tmpl`). |
+| Profile | **Desktop** → **GNOME** → its default greeter **GDM** → all open-source GPU drivers. archinstall has **no Niri profile** — niri/Noctalia come from chezmoi, which sets niri as your **default** session; GNOME stays selectable at the GDM gear menu. (`run_once_11-setup-niri-noctalia.sh.tmpl`. Prefer `greetd`+`tuigreet`? It's only auto-enabled if no DM exists — disable GDM first.) |
 | Audio | **pipewire** |
 | Kernels | `linux` |
 | Network configuration | **Use NetworkManager** (so `nmtui-connect` works after reboot) |
-| Additional packages | `git github-cli gnome-shell gnome-session gnome-control-center gnome-keyring xdg-desktop-portal-gnome` (everything else lands via chezmoi later) |
+| Additional packages | `git github-cli` (GNOME + GDM come from the profile above; niri/Noctalia + everything else land via chezmoi) |
 | Timezone | already set above |
 | Save config (optional) | export to `/tmp/user_configuration.json` if you want a reproducible re-install later |
 
@@ -103,10 +103,9 @@ Then **Install**. ~10 minutes of pacstrap output. When done: reboot.
 
 #### Step 3 — first boot
 
-At boot, type your LUKS passphrase. Your greeter loads (lightdm by
-default, unless chezmoi later swapped it for greetd) — log in to the
-**Niri** session with your user password. You're in a Wayland session
-with clipboard, browser, and terminal.
+At boot, type your LUKS passphrase. **GDM** loads — log into **GNOME**
+for now (niri isn't installed until bootstrap runs). You're in a working
+Wayland desktop with clipboard, browser, and terminal.
 
 Open a terminal and reconnect WiFi (NetworkManager doesn't carry the
 ISO's iwd profiles across the reboot — LUKS-encrypted disk can't read
@@ -141,6 +140,10 @@ The whole run is non-interactive — SSH key gen + upload, `chezmoi apply`, all
 the chezmoi run-once scripts, package install via pacman (official repos) +
 paru (AUR), niri + Noctalia shell setup. Secrets aren't part of bootstrap: log
 in to Bitwarden once afterwards with `bw-setup` (registers the device + unlocks; the agent caches your key).
+
+After bootstrap finishes, **log out (or reboot)** — GDM now defaults to the
+**niri** session (set by `run_once_11`); GNOME stays on the GDM gear menu
+whenever you want the "it just works" fallback (external displays, floating).
 
 #### Netboot variant
 

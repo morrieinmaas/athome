@@ -9,5 +9,5 @@
       }
     }
   },
-  "instructions": ["~/.claude/CLAUDE.md"]
+  "instructions": ["~/.config/agents/CLAUDE.md"]
 }

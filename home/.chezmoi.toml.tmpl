@@ -14,8 +14,8 @@
 {{- $personalName        := promptStringOnce . "personalName"        "Personal git display name (empty = use your GitHub username)" "" -}}
 {{- $workName            := promptStringOnce . "workName"            "Work git display name (empty = use personal name)" "" -}}
 {{- $sidebizName         := promptStringOnce . "sidebizName"         "Side-business git display name (empty = use personal name)" "" -}}
-{{- $includeAgents       := promptBoolOnce   . "includeAgents"       "Sync ~/.claude skills + CLAUDE.md (editor-agnostic; used by opencode + Claude Code, readable by nvim/aider/cursor)" true -}}
-{{- $agentsRepo          := promptStringOnce . "agentsRepo"          "Skills/agents repo to sync into ~/.claude as owner/repo (empty = none; ATHOME_AGENTS_REPO in bootstrap)" "" -}}
+{{- $includeAgents       := promptBoolOnce   . "includeAgents"       "Sync ~/.config/agents skills + instructions (agent-agnostic; opencode reads it, symlinked into ~/.claude for Claude Code, readable by nvim/aider/cursor)" true -}}
+{{- $agentsRepo          := promptStringOnce . "agentsRepo"          "Skills/agents repo to sync into ~/.config/agents as owner/repo (empty = none; ATHOME_AGENTS_REPO in bootstrap)" "" -}}
 
 # No `encryption` key: age was dropped (D5) — there are no encrypted_* files in
 # this repo, and with `pass` gone there's no driver for encrypted-files-in-repo.

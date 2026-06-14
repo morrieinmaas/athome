@@ -450,24 +450,24 @@ shred -u ~/key-backup-<ts>/ssh/* 2>/dev/null
 rmdir ~/key-backup-<ts>/ssh ~/key-backup-<ts>
 ```
 
-## Agentic skills sync (`~/.claude/`)
+## Agentic skills sync (`~/.config/agents`)
 
-Bootstrap clones the editor-agnostic skills repo you name in the `agentsRepo` prompt (`owner/repo`, e.g. `<handle>/skills`) into `~/.claude/` via a chezmoi external — gated by `includeAgents` (on by default; `--no-agents` to skip). Leave `agentsRepo` empty to sync nothing. Sensitive bits (`settings.json`, `projects/`, `sessions/`, `history.jsonl`) are excluded by that repo's own `.gitignore`.
+Bootstrap clones the agent-agnostic skills repo you name in the `agentsRepo` prompt (`owner/repo`, e.g. `<handle>/skills`) into **`~/.config/agents`** via a chezmoi external — gated by `includeAgents` (on by default; `--no-agents` to skip). Leave `agentsRepo` empty to sync nothing. Sensitive bits (`settings.json`, `projects/`, `sessions/`, `history.jsonl`) are excluded by that repo's own `.gitignore`.
 
-What ends up there:
+`~/.config/agents` is the **canonical, tool-neutral home** — nothing is Claude-locked. What lands there:
 
-- `~/.claude/CLAUDE.md` — global instructions
-- `~/.claude/AGENTIC-SYSTEMS.md`, `~/.claude/RTK.md` — referenced from CLAUDE.md
-- `~/.claude/skills/*/SKILL.md` — 97+ skills following the SKILL.md spec
-- `~/.claude/agents/` — agent prompts
+- `~/.config/agents/CLAUDE.md` (and/or `AGENTS.md`) — global instructions
+- `~/.config/agents/AGENTIC-SYSTEMS.md`, `RTK.md` — referenced from the instructions
+- `~/.config/agents/skills/*/SKILL.md` — skills following the SKILL.md spec
+- `~/.config/agents/agents/` — agent prompts
 
 Who reads it:
 
-- **opencode** — automatically; `dot_config/opencode/config.json` is wired with `skillsDir: ~/.claude/skills` + `instructionsFiles: [~/.claude/CLAUDE.md]`
-- **Claude Code** — natively (when you use it)
-- **nvim / aider / cursor / Windsurf** — can be configured to read `CLAUDE.md` per their own conventions
+- **opencode** — directly; `dot_config/opencode/config.json` points `instructions` at `~/.config/agents/CLAUDE.md`
+- **Claude Code** — expects `~/.claude`, so `run_once_after_22-link-agents.sh` **symlinks** the shared items (`CLAUDE.md`, `skills`, `agents`, …) from `~/.config/agents` into `~/.claude`. Claude's own runtime (`settings.json`, `projects/`, `sessions/`, `history.jsonl`) stays in `~/.claude`, untouched.
+- **nvim / aider / cursor / Windsurf** — point them at `~/.config/agents` per their own conventions
 
-**Nothing IDE-specific is installed.** Windsurf, Claude Code CLI, Cursor etc. are managed by you separately. This is purely a sync of the editor-agnostic configuration.
+**Nothing IDE-specific is installed.** This is purely a sync of the agent-agnostic configuration.
 
 To skip: `./scripts/bootstrap.sh --no-agents`.
 

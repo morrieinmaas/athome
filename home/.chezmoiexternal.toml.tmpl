@@ -20,20 +20,19 @@
 # bat's gruvbox-light / gruvbox-dark themes are built in (no external needed).
 # bottom also ships gruvbox built-in. Nothing to fetch here.
 
-{{- /* ~/.claude (skills + CLAUDE.md + AGENTIC-SYSTEMS.md + RTK.md) from your own
-       agents repo. Editor-agnostic config: read directly by opencode (skillsDir
-       + instructionsFiles in dot_config/opencode/config.json), natively by
-       Claude Code, and referencable from nvim/aider/cursor. NO IDE binaries
-       installed by this — Windsurf, Claude Code, etc. are managed separately.
+{{- /* ~/.config/agents — agent-AGNOSTIC home for skills + instructions
+       (CLAUDE.md/AGENTS.md, AGENTIC-SYSTEMS.md, RTK.md, skills/, agents/) from
+       your own agents repo. Read directly by opencode (instructions in
+       dot_config/opencode/config.json) and symlinked into ~/.claude by
+       run_once_after_22 so Claude Code finds it too — while Claude's own runtime
+       (settings.json, projects/, sessions/, history.jsonl) stays in ~/.claude.
+       Referencable from nvim/aider/cursor. NO IDE binaries installed by this.
 
-       Sensitive bits (settings.json, projects/, sessions/, history.jsonl) are
-       excluded by that repo's own .gitignore.
+       Sensitive bits are excluded by that repo's own .gitignore.
 
        Which repo comes from the `agentsRepo` prompt (owner/repo); emitted only
-       when set AND includeAgents is true. Legacy machines that pre-date that
-       prompt have no agents_repo cached, so we fall back to <handle>/skills to
-       avoid dropping an already-synced ~/.claude. A fresh install that leaves
-       agentsRepo empty syncs nothing (no clone failure). */ -}}
+       when set AND includeAgents is true. Legacy machines fall back to
+       <handle>/skills. Leaving agentsRepo empty syncs nothing. */ -}}
 {{- $repo := "" -}}
 {{- if hasKey . "agents_repo" -}}
 {{-   $repo = .agents_repo -}}
@@ -41,8 +40,8 @@
 {{-   $repo = printf "%s/skills" .githubHandle -}}
 {{- end -}}
 {{ if and .include_agents $repo }}
-# ── Agentic skills / instructions (editor-agnostic) ─────────────────────────
-[".claude"]
+# ── Agentic skills / instructions (agent-agnostic; ~/.config/agents) ────────
+[".config/agents"]
     type          = "git-repo"
     url           = "git@github.com:{{ $repo }}.git"
     refreshPeriod = "168h"

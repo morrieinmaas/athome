@@ -5,29 +5,55 @@
 # the committed default (gruvbox-light) is untouched. bat/delta/zed stay gruvbox
 # (the only family all three bundle). See ~/.config/themes/registry.sh.
 #
-#   theme              # fzf picker
+#   theme              # fzf picker (also: tmux `prefix T` popup)
 #   theme <name>       # set directly: gruvbox everforest catppuccin tokyonight rose-pine kanagawa
 #   theme --current    # print the active theme
 #   theme --list       # list available themes
+#   theme --swatch <n> # print a colour preview (used by the picker's fzf preview)
 set -euo pipefail
+
+# display-popup / run-shell give a bare non-login shell — make sure fzf, tmux and
+# this script's deps resolve regardless of how we were launched.
+export PATH="$HOME/.local/share/mise/shims:/opt/homebrew/bin:/opt/nanobrew/prefix/bin:$HOME/.local/bin:/usr/bin:/bin:$PATH"
 
 dir="${HOME}/.config/themes"
 # shellcheck source=/dev/null
 . "$dir/registry.sh"
 
+self="$(command -v theme 2>/dev/null || echo "$HOME/.local/bin/theme")"
 current() { cat "$dir/active" 2>/dev/null || echo gruvbox; }
+hex2rgb() { local h="${1#\#}"; printf '%d;%d;%d' "$((16#${h:0:2}))" "$((16#${h:2:2}))" "$((16#${h:4:2}))"; }
+
+swatch() {
+  local name="$1" pal g
+  pal="$(theme_tmux "$name")" || true
+  [ -z "$pal" ] && { echo "  unknown theme: $name"; return 0; }
+  eval "$pal"   # BG FG BLUE YELLOW GREEN GREY MUTED
+  g="$(theme_ghostty "$name")"
+  printf '\n  %s%s\n\n' "$name" "$( [ "$name" = "$(current)" ] && echo '  (active)')"
+  printf '  '
+  for c in "$BLUE" "$YELLOW" "$GREEN" "$GREY" "$FG" "$BG"; do
+    printf '\033[48;2;%sm      \033[0m' "$(hex2rgb "$c")"
+  done
+  printf '\n  '
+  printf '%-7s' blue yellow green grey fg bg
+  printf '\n\n  ghostty : %s\n  nvim    : %s\n' "$g" "$(theme_nvim "$name")"
+}
 
 case "${1:-}" in
   --current) current; exit 0 ;;
   --list)    printf '%s\n' $THEME_LIST; exit 0 ;;
+  --swatch)  swatch "${2:-$(current)}"; exit 0 ;;
 esac
 
 name="${1:-}"
 if [ -z "$name" ]; then
   command -v fzf >/dev/null || { echo "fzf not found — usage: theme <name>" >&2; exit 1; }
+  height=40%; [ -n "${THEME_POPUP:-}" ] && height=100%   # fill the tmux popup
   name="$(printf '%s\n' $THEME_LIST | fzf \
-            --prompt='theme> ' --height=40% --reverse --no-multi \
-            --header="current: $(current)  ·  enter = apply to ghostty + tmux + nvim")" || exit 0
+            --prompt='theme> ' --height="$height" --reverse --no-multi \
+            --header="current: $(current)  ·  enter = ghostty + tmux + nvim" \
+            --preview "$self --swatch {}" --preview-window='down,9,wrap')" || exit 0
 fi
 [ -z "$name" ] && exit 0
 
@@ -39,10 +65,11 @@ esac
 mkdir -p "$dir"
 printf '%s\n' "$name" > "$dir/active"   # nvim fs-watches this dir; tmux.conf reads it on start
 
-# ── ghostty: rewrite the active `theme = ` line in the live config ──
+# ── ghostty: rewrite the active `theme = ` line, then hot-reload via SIGUSR2 ──
 gcfg="${HOME}/.config/ghostty/config"
 if [ -f "$gcfg" ] && grep -qE '^theme = ' "$gcfg"; then
   sed -i.bak -E "s|^theme = .*|theme = $(theme_ghostty "$name")|" "$gcfg" && rm -f "$gcfg.bak"
+  pkill -USR2 -x ghostty 2>/dev/null || true   # Ghostty reloads its config on SIGUSR2
 fi
 
 # ── tmux: recolour the running server's pills live ──
@@ -53,5 +80,4 @@ fi
 # ── nvim: live instances re-apply via their fs-watch on ~/.config/themes;
 #          new instances read active on startup. ──
 
-echo "theme → $name"
-echo "  ghostty: reload config (⌘⇧, ) to see it · tmux: live · nvim: live + next launch"
+echo "theme → $name  (ghostty: live · tmux: live · nvim: live + next launch)"

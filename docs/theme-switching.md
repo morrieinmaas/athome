@@ -5,11 +5,14 @@ auto-toggle stays — each theme just supplies the light *and* dark palette and 
 apps follow the OS appearance as before.
 
 ```bash
-theme                 # fzf picker
+theme                 # fzf picker (with a live colour-swatch preview)
 theme everforest      # set directly
 theme --current       # print active theme
 theme --list          # list available themes
 ```
+
+Or from tmux: **`prefix T`** opens the picker in a `display-popup` (same style as
+the `prefix P` pet-icon picker).
 
 Available: `gruvbox` (default) · `everforest` · `catppuccin` · `tokyonight` ·
 `rose-pine` · `kanagawa`.
@@ -22,7 +25,7 @@ theme name is written to **`~/.config/themes/active`**.
 
 | App | Mechanism |
 |-----|-----------|
-| **ghostty** | picker rewrites the live `theme = dark:…,light:…` line (reload with ⌘⇧,) |
+| **ghostty** | picker rewrites the live `theme = dark:…,light:…` line and hot-reloads it with `SIGUSR2` — no restart, no ⌘⇧, |
 | **tmux** | pills read `@theme_*` user options; `apply-tmux.sh` sets them live, `tmux.conf` restores the pick on a fresh server |
 | **nvim** | 6 colorscheme plugins, all deriving light/dark from `vim.opt.background`; `config/theme.lua` reads `active` and fs-watches it, so open nvims switch instantly. `auto-dark-mode.nvim` still owns the OS toggle |
 | **bat / delta / zed** | stay **gruvbox** — the only family all three bundle (bat ships no everforest/catppuccin/etc.) |

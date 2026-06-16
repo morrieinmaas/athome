@@ -115,8 +115,10 @@ alias pers='cd ~/personal'
 alias work='cd ~/work'
 alias side='cd ~/sidebiz'
 
-# ─── Safety nets (with --interactive=once so it's not annoying for bulk) ─────
-alias rm='rm -I --preserve-root'
+# ─── Safety nets ─────────────────────────────────────────────────────────────
+# No `rm` alias on purpose: -i/-I trains reflexive "y", fights -f, and the
+# GNU/BSD --preserve-root split made it break at runtime. Use `trash` for
+# recoverable deletes instead of shadowing rm.
 alias mv='mv -i'
 alias cp='cp -i'
 

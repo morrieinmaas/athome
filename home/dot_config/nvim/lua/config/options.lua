@@ -29,7 +29,7 @@ opt.swapfile   = false
 opt.backup     = false
 
 opt.termguicolors = true
-opt.background    = "dark"
+opt.background    = "light"
 
 opt.clipboard = "unnamedplus"
 opt.mouse     = "a"

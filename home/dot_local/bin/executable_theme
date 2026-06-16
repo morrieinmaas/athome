@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# theme — pick ONE colorscheme and apply it across ghostty + tmux + nvim at once.
+#
+# Runtime-only: edits your live ~/.config (instant), never the athome repo, so
+# the committed default (gruvbox-light) is untouched. bat/delta/zed stay gruvbox
+# (the only family all three bundle). See ~/.config/themes/registry.sh.
+#
+#   theme              # fzf picker
+#   theme <name>       # set directly: gruvbox everforest catppuccin tokyonight rose-pine kanagawa
+#   theme --current    # print the active theme
+#   theme --list       # list available themes
+set -euo pipefail
+
+dir="${HOME}/.config/themes"
+# shellcheck source=/dev/null
+. "$dir/registry.sh"
+
+current() { cat "$dir/active" 2>/dev/null || echo gruvbox; }
+
+case "${1:-}" in
+  --current) current; exit 0 ;;
+  --list)    printf '%s\n' $THEME_LIST; exit 0 ;;
+esac
+
+name="${1:-}"
+if [ -z "$name" ]; then
+  command -v fzf >/dev/null || { echo "fzf not found — usage: theme <name>" >&2; exit 1; }
+  name="$(printf '%s\n' $THEME_LIST | fzf \
+            --prompt='theme> ' --height=40% --reverse --no-multi \
+            --header="current: $(current)  ·  enter = apply to ghostty + tmux + nvim")" || exit 0
+fi
+[ -z "$name" ] && exit 0
+
+case " $THEME_LIST " in
+  *" $name "*) ;;
+  *) echo "unknown theme: $name (try: $THEME_LIST)" >&2; exit 1 ;;
+esac
+
+mkdir -p "$dir"
+printf '%s\n' "$name" > "$dir/active"   # nvim fs-watches this dir; tmux.conf reads it on start
+
+# ── ghostty: rewrite the active `theme = ` line in the live config ──
+gcfg="${HOME}/.config/ghostty/config"
+if [ -f "$gcfg" ] && grep -qE '^theme = ' "$gcfg"; then
+  sed -i.bak -E "s|^theme = .*|theme = $(theme_ghostty "$name")|" "$gcfg" && rm -f "$gcfg.bak"
+fi
+
+# ── tmux: recolour the running server's pills live ──
+if command -v tmux >/dev/null 2>&1 && tmux info >/dev/null 2>&1; then
+  "$dir/apply-tmux.sh" || true
+fi
+
+# ── nvim: live instances re-apply via their fs-watch on ~/.config/themes;
+#          new instances read active on startup. ──
+
+echo "theme → $name"
+echo "  ghostty: reload config (⌘⇧, ) to see it · tmux: live · nvim: live + next launch"

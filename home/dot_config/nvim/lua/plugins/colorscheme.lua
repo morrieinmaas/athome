@@ -1,35 +1,64 @@
+-- Colorschemes + the dark/light + theme-picker wiring.
+--
+-- All six colorscheme plugins are declared lazy and loaded on demand by
+-- config/theme.apply() (it reads ~/.config/themes/active). Each is configured to
+-- derive its palette from vim.opt.background, so the ONE colorscheme handles both
+-- light and dark and auto-dark-mode.nvim just flips background. Switch the family
+-- with the shared `theme` command — running nvims pick it up via theme.watch().
 return {
+  { "ellisonleao/gruvbox.nvim", lazy = true },
+
   {
     "sainnhe/everforest",
-    name = "everforest",
-    lazy = false,
-    priority = 1000,
-    config = function()
-      -- everforest uses ONE colorscheme ("everforest") and switches light/dark
-      -- via `vim.opt.background` (same pattern the old gruvbox setup used).
-      -- These globals must be set BEFORE `:colorscheme`.
+    lazy = true,
+    init = function()
       vim.g.everforest_background = "medium" -- hard | medium | soft
-      vim.g.everforest_enable_italic = 1 -- italic comments
+      vim.g.everforest_enable_italic = 1
       vim.g.everforest_better_performance = 1
-      vim.g.everforest_transparent_background = 0
-      vim.opt.background = "light" -- light-mode primary
-      vim.cmd.colorscheme("everforest")
     end,
   },
+
+  {
+    "catppuccin/nvim",
+    name = "catppuccin",
+    lazy = true,
+    opts = { flavour = "auto", background = { light = "latte", dark = "mocha" } },
+  },
+
+  {
+    "folke/tokyonight.nvim",
+    lazy = true,
+    opts = { style = "moon", light_style = "day" },
+  },
+
+  {
+    "rose-pine/neovim",
+    name = "rose-pine",
+    lazy = true,
+    opts = { dark_variant = "moon" }, -- light → dawn (derived from background)
+  },
+
+  {
+    "rebelot/kanagawa.nvim",
+    lazy = true,
+    opts = { background = { dark = "wave", light = "lotus" } },
+  },
+
+  -- Owns the dark/light toggle. On startup AND whenever the OS appearance flips,
+  -- it sets background then re-applies the active theme so the palette follows.
   {
     "f-person/auto-dark-mode.nvim",
     lazy = false,
     priority = 999,
     opts = {
       update_interval = 3000,
-      -- Same colorscheme both ways; everforest derives the palette from `background`.
       set_dark_mode = function()
         vim.opt.background = "dark"
-        vim.cmd.colorscheme("everforest")
+        require("config.theme").apply()
       end,
       set_light_mode = function()
         vim.opt.background = "light"
-        vim.cmd.colorscheme("everforest")
+        require("config.theme").apply()
       end,
     },
   },

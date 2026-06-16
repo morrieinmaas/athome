@@ -10,7 +10,7 @@ vim.opt.rtp:prepend(lazypath)
 
 require("lazy").setup({
   spec = { { import = "plugins" } },
-  install = { colorscheme = { "everforest" } },
+  install = { colorscheme = { "gruvbox", "habamax" } },
   checker = { enabled = true, notify = false },
   change_detection = { notify = false },
   performance = {
@@ -22,3 +22,10 @@ require("lazy").setup({
     },
   },
 })
+
+-- Apply the active theme (from ~/.config/themes/active, default gruvbox) and
+-- watch for the `theme` picker switching it live. auto-dark-mode re-applies on
+-- OS appearance changes; this covers initial paint + picker-driven switches.
+local theme = require("config.theme")
+theme.apply()
+theme.watch()

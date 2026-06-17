@@ -35,22 +35,39 @@ done
 [ -n "$BASE" ] || {
   echo "slk-auth: Slack app data not found — desktop app installed + signed in?" >&2; exit 1; }
 
-# xoxc token(s): scrape the Local Storage leveldb (find avoids glob pitfalls; BSD grep -oE ok).
-toks=()
-while IFS= read -r line; do [ -n "$line" ] && toks+=("$line"); done < <(
-  find "$BASE/Local Storage/leveldb" -type f \( -name '*.ldb' -o -name '*.log' \) \
-    -exec strings {} + 2>/dev/null | grep -oE 'xoxc-[0-9A-Za-z-]{20,}' | sort -u)
-[ "${#toks[@]}" -gt 0 ] || { echo "slk-auth: no xoxc token found in leveldb" >&2; exit 1; }
-
-# Everything else (cookie decrypt, auth.test, file writes) happens in Python:
-# stdlib urllib/json/sqlite3 + pycryptodome (pulled on demand by uv).
-uv run --with pycryptodome python - "$mode" "$BASE" "${toks[@]}" <<'PY'
+# Everything (token scrape, cookie decrypt, auth.test, file writes) happens in
+# Python: stdlib urllib/json/sqlite3 + pycryptodome (pulled on demand by uv).
+uv run --with pycryptodome python - "$mode" "$BASE" <<'PY'
 import sys, os, re, json, sqlite3, subprocess, hashlib, urllib.request, urllib.parse
 from pathlib import Path
 from Crypto.Cipher import AES
 
 mode, base = sys.argv[1], Path(sys.argv[2])
-tokens = list(dict.fromkeys(sys.argv[3:]))   # dedupe, preserve order
+
+# ── xoxc token(s) from the Local Storage leveldb. Chromium stores localStorage
+# values as UTF-16LE (unicode) OR Latin-1 (ascii-only), so a plain `strings`
+# scan misses the live token. Scan each .ldb/.log decoded as Latin-1 AND as
+# UTF-16LE at both byte alignments, union the hits, then let auth.test pick the
+# valid one(s). ──
+tok_re = re.compile(r'xoxc-[0-9A-Za-z-]{20,}')
+tokens = []
+seen = set()
+lsdir = base/"Local Storage/leveldb"
+for f in sorted(lsdir.glob("*")) if lsdir.is_dir() else []:
+    if f.suffix not in (".ldb", ".log"):
+        continue
+    try:
+        raw = f.read_bytes()
+    except OSError:
+        continue
+    for text in (raw.decode("latin-1", "ignore"),
+                 raw.decode("utf-16-le", "ignore"),
+                 raw[1:].decode("utf-16-le", "ignore")):
+        for m in tok_re.findall(text):
+            if m not in seen:
+                seen.add(m); tokens.append(m)
+if not tokens:
+    sys.exit("slk-auth: no xoxc token found in the Slack leveldb")
 
 # ── decrypt the d cookie ──
 ck = next((p for p in [base/"Cookies", base/"Network/Cookies"] if p.exists()), None)
@@ -79,7 +96,8 @@ tokdir   = xdg_data/"tokens"
 cfgfile  = xdg_cfg/"config.toml"
 
 print(f"Slack data : {base}")
-print(f"d cookie   : {cookie[:8]}… ({len(cookie)} chars) ✓ decrypted\n")
+print(f"d cookie   : {cookie[:8]}… ({len(cookie)} chars) ✓ decrypted")
+print(f"tokens     : {len(tokens)} candidate(s) found in leveldb\n")
 
 valid = []
 for tok in tokens:

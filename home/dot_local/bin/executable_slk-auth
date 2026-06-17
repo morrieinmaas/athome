@@ -1,0 +1,109 @@
+#!/usr/bin/env bash
+# slk-auth — pull Slack creds from the desktop app so `slk --add-workspace` is a
+# quick paste instead of the DevTools dance.
+#
+# slk (gammons/slk) has NO non-interactive auth — no env vars, flags, or writable
+# token file — so this is as automated as it gets: it extracts the `xoxc` token
+# (from the Slack app's Local Storage leveldb) and decrypts the `d` cookie (from
+# the app's Chromium Cookies DB, AES-encrypted with the "Slack Safe Storage"
+# macOS Keychain key), validates them via auth.test, and hands them over for a
+# one-time paste. NOTHING is stored or committed — values only ever go to your
+# terminal / clipboard. The Keychain read may trigger a one-time "allow" prompt.
+#
+#   slk-auth          # print the d cookie + xoxc token(s), labelled by workspace
+#   slk-auth --copy   # clipboard flow: copy cookie, then the chosen token
+#
+# Then:  slk --add-workspace   → paste cookie at "Cookie (d)", token at "Token (xoxc)".
+#
+# macOS only for now (Linux Slack stores the cookie via libsecret/kwallet, not
+# the macOS Keychain — not implemented).
+set -euo pipefail
+
+copy=0
+[ "${1:-}" = "--copy" ] && copy=1
+
+[ "$(uname -s)" = Darwin ] || {
+  echo "slk-auth: macOS only for now (Linux Slack uses libsecret/kwallet)." >&2; exit 1; }
+
+# Locate the Slack app data: sandboxed Mac App Store build first, then the
+# direct-download path.
+BASE=""
+for b in \
+  "$HOME/Library/Containers/com.tinyspeck.slackmacgap/Data/Library/Application Support/Slack" \
+  "$HOME/Library/Application Support/Slack"; do
+  [ -d "$b" ] && { BASE="$b"; break; }
+done
+[ -n "$BASE" ] || {
+  echo "slk-auth: Slack app data not found — desktop app installed + signed in?" >&2; exit 1; }
+
+# ── d cookie: decrypt from the Cookies DB using the Keychain key ──
+cookie="$(uv run --with pycryptodome python - "$BASE" <<'PY'
+import sys, sqlite3, subprocess, hashlib
+from pathlib import Path
+from Crypto.Cipher import AES
+base = Path(sys.argv[1])
+ck = next((p for p in [base/"Cookies", base/"Network/Cookies"] if p.exists()), None)
+if not ck: sys.exit("no Cookies DB under the Slack data dir")
+pw  = subprocess.check_output(["security","find-generic-password","-s","Slack Safe Storage","-w"]).strip()
+key = hashlib.pbkdf2_hmac("sha1", pw, b"saltysalt", 1003, 16)
+row = sqlite3.connect(f"file:{ck}?mode=ro", uri=True).execute(
+    "select encrypted_value from cookies where name='d' order by length(encrypted_value) desc limit 1").fetchone()
+if not row: sys.exit("no 'd' cookie in the Cookies DB")
+dec = AES.new(key, AES.MODE_CBC, b" "*16).decrypt(row[0][3:])   # strip v10/v11 prefix
+dec = dec[:-dec[-1]]                                            # PKCS7 unpad
+if not dec.startswith(b"xoxd-"): dec = dec[32:]                 # newer Chromium 32-byte hash prefix
+print(dec.decode("utf-8", "replace"))
+PY
+)"
+[ -n "$cookie" ] || { echo "slk-auth: failed to decrypt the d cookie" >&2; exit 1; }
+
+# ── xoxc token(s): scrape the Local Storage leveldb (find avoids glob pitfalls;
+#    BSD grep -oE is fine) ──
+toks=()
+while IFS= read -r line; do [ -n "$line" ] && toks+=("$line"); done < <(
+  find "$BASE/Local Storage/leveldb" -type f \( -name '*.ldb' -o -name '*.log' \) \
+    -exec strings {} + 2>/dev/null | grep -oE 'xoxc-[0-9A-Za-z-]{20,}' | sort -u)
+[ "${#toks[@]}" -gt 0 ] || { echo "slk-auth: no xoxc token found in leveldb" >&2; exit 1; }
+
+# Label each token by workspace via auth.test (also confirms the creds work).
+label() {
+  curl -s --max-time 8 --cookie "d=$cookie" -d "token=$1" https://slack.com/api/auth.test 2>/dev/null \
+    | { command -v jq >/dev/null 2>&1 \
+          && jq -r 'if .ok then "\(.team)  (\(.url))" else "auth.test: \(.error)" end' \
+          || echo "(install jq to label/validate)"; }
+}
+
+echo "Slack data : $BASE"
+echo "d cookie   : ${cookie:0:8}… (${#cookie} chars) ✓"
+echo
+echo "Token(s) found:"
+i=1
+for t in "${toks[@]}"; do
+  printf "  [%d] %s\n      %s… (%d chars)\n" "$i" "$(label "$t")" "${t:0:12}" "${#t}"
+  i=$((i + 1))
+done
+echo
+
+# Pick the workspace token.
+sel="${toks[0]}"
+if [ "${#toks[@]}" -gt 1 ]; then
+  printf "Pick workspace [1-%d]: " "${#toks[@]}"
+  read -r idx
+  sel="${toks[$((idx - 1))]:-}"
+  [ -n "$sel" ] || { echo "slk-auth: invalid choice" >&2; exit 1; }
+fi
+
+if [ "$copy" -eq 1 ]; then
+  printf '%s' "$cookie" | pbcopy
+  echo "→ d cookie copied. Run \`slk --add-workspace\`, paste (⌘V) at 'Cookie (d)',"
+  echo "  then press Enter HERE to copy the token."
+  read -r _
+  printf '%s' "$sel" | pbcopy
+  echo "→ xoxc token copied. Paste it at slk's 'Token (xoxc)' prompt."
+else
+  echo "Run:  slk --add-workspace"
+  echo "Paste the COOKIE at 'Cookie (d)', the TOKEN at 'Token (xoxc)':"
+  echo
+  echo "  cookie (d) : $cookie"
+  echo "  token      : $sel"
+fi

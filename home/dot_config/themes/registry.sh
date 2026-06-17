@@ -38,6 +38,20 @@ theme_nvim() {
   esac
 }
 
+# btop bundled .theme names as "LIGHT DARK" (btop has no native dual-theme, so the
+# picker writes the one matching the current OS appearance). Families btop doesn't
+# ship fall back to gruvbox — same "where possible" rule as bat/delta/zed.
+theme_btop() {
+  case "$1" in
+    gruvbox)    echo "gruvbox_light gruvbox_dark" ;;
+    everforest) echo "everforest-light-medium everforest-dark-medium" ;;
+    kanagawa)   echo "kanagawa-lotus kanagawa-wave" ;;
+    tokyonight) echo "gruvbox_light tokyo-night" ;;   # no bundled tokyo-light → gruvbox in light mode
+    catppuccin) echo "gruvbox_light gruvbox_dark" ;;  # not bundled → gruvbox
+    rose-pine)  echo "gruvbox_light gruvbox_dark" ;;  # not bundled → gruvbox
+  esac
+}
+
 # Light pill palettes (the bar floats on the transparent terminal bg, so these
 # are the LIGHT-mode accents; the terminal itself follows ghostty's dark/light).
 theme_tmux() {

@@ -39,6 +39,7 @@ common:
   # stays in the per-OS lists because rbw needs a pinentry program.
   - rbw            # Bitwarden CLI with agent (replaces pass + gpg-agent caching)
   - git-crypt      # transparent file encryption for the secrets-vault repo (versioned, encrypted off-site backup; key lives in Bitwarden). See docs/secrets.md → Model B
+  - btop           # resource monitor (TUI). NOT in mise: its only mise backend (aqua:aristocratos/btop) is linux-only — btop ships no macOS binary (Homebrew builds from source), so it can't be the cross-platform mise tool that `bottom`/btm is. Same name on brew + pacman(extra); Fedora dnf entry below.
 
 # macOS / Homebrew specifics
 darwin:
@@ -197,6 +198,7 @@ fedora:
     - syncthing
     - ImageMagick
     - libjxl
+    - btop                         # resource monitor TUI (Fedora main repo); Arch/mac get it via `common` (not mise — linux-only backend)
     - git-crypt
     - gitleaks                     # if absent in dnf → `go:` via mise (load-bearing, keep on PATH)
     - rbw                          # if absent in dnf → `cargo:rbw` via mise

@@ -1,26 +1,35 @@
 #!/usr/bin/env bash
-# slk-auth — import Slack workspaces into slk straight from the desktop app.
+# slk-auth — import Slack workspaces into slk without the interactive paste.
 #
-# slk (gammons/slk) reads JSON token files from ~/.local/share/slk/tokens/
-# {TeamID}.json plus [workspaces.<slug>] blocks in ~/.config/slk/config.toml.
-# This reproduces what `slk --add-workspace` writes — no interactive paste:
+# The hard, tedious part is the `d` cookie (a 233-char blob, AES-encrypted in the
+# Slack app's Cookies DB behind the macOS Keychain). slk-auth always handles that
+# for you. The xoxc TOKEN can't be read reliably from the desktop app (its
+# leveldb is Snappy-compressed and Slack rotates the live token in memory), so
+# you supply the token — it's a trivial copy from Slack's own one-liner — and
+# slk-auth does the rest: auth.test for team_id/name/slug, then writes slk's
+# files (~/.local/share/slk/tokens/{TeamID}.json + config.toml block).
 #
-#   1. decrypt the `d` cookie from the Slack app's Cookies DB via the
-#      "Slack Safe Storage" macOS Keychain key (one-time "Always Allow" prompt)
-#   2. find your workspace domains in the app's Local Storage leveldb
-#   3. MINT a fresh xoxc token per workspace by fetching its page with the cookie
-#      — the desktop app's stored token rotates/goes stale, the cookie doesn't
-#   4. auth.test each → team_id / name / slug (validates), then write slk's files
+#   slk-auth                       # decrypt the cookie + print the token one-liner to run
+#   slk-auth <xoxc-…> [<xoxc-…>]   # import: auto cookie + the token(s) you pass
+#   slk-auth --print               # just print the decrypted cookie (manual paste path)
 #
-# Nothing is committed; secrets only touch ~/.local/share/slk (slk's own store).
-# macOS only for now.
-#
-#   slk-auth           # auto-import every workspace the cookie can reach
-#   slk-auth --print   # don't write; just print creds for a manual paste
+# Get the token: open Slack in your browser, DevTools console, run:
+#   Object.entries(JSON.parse(localStorage.localConfig_v2).teams).forEach(([i,t])=>console.log(t.name,t.token))
+# Nothing is committed; secrets only touch ~/.local/share/slk. macOS only.
 set -euo pipefail
 
 mode=import
-[ "${1:-}" = "--print" ] && mode=print
+toks=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --print) mode=print ;;
+    --token) shift; [ $# -gt 0 ] && toks+=("$1") ;;
+    xoxc-*)  toks+=("$1") ;;
+    -h|--help) sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) echo "slk-auth: unknown arg '$1' (need an xoxc- token, --print, or no args)" >&2; exit 1 ;;
+  esac
+  shift
+done
 
 [ "$(uname -s)" = Darwin ] || {
   echo "slk-auth: macOS only for now (Linux Slack uses libsecret/kwallet)." >&2; exit 1; }
@@ -34,22 +43,24 @@ done
 [ -n "$BASE" ] || {
   echo "slk-auth: Slack app data not found — desktop app installed + signed in?" >&2; exit 1; }
 
-uv run --with pycryptodome python - "$mode" "$BASE" <<'PY'
+uv run --with pycryptodome python - "$mode" "$BASE" ${toks[@]+"${toks[@]}"} <<'PY'
 import sys, os, re, json, sqlite3, subprocess, hashlib, urllib.request, urllib.parse
 from pathlib import Path
 from Crypto.Cipher import AES
 
 mode, base = sys.argv[1], Path(sys.argv[2])
-TOK = re.compile(r'xoxc-[0-9A-Za-z-]{20,}')
+toks = list(dict.fromkeys(sys.argv[3:]))
+ONELINER = ("Object.entries(JSON.parse(localStorage.localConfig_v2).teams)"
+            ".forEach(([i,t])=>console.log(t.name,t.token))")
 
-# ── 1. decrypt the d cookie (the durable credential) ──
+# ── decrypt the d cookie (the durable, tedious credential) ──
 ck = next((p for p in [base/"Cookies", base/"Network/Cookies"] if p.exists()), None)
 if not ck: sys.exit("slk-auth: no Cookies DB under the Slack data dir")
 try:
     pw = subprocess.check_output(
         ["security","find-generic-password","-s","Slack Safe Storage","-w"]).strip()
 except subprocess.CalledProcessError:
-    sys.exit("slk-auth: Keychain read denied — re-run and click 'Always Allow' (enter your Mac password once).")
+    sys.exit("slk-auth: Keychain read denied — re-run and click 'Always Allow' (Mac password once).")
 key = hashlib.pbkdf2_hmac("sha1", pw, b"saltysalt", 1003, 16)
 row = sqlite3.connect(f"file:{ck}?mode=ro", uri=True).execute(
     "select encrypted_value from cookies where name='d' order by length(encrypted_value) desc limit 1").fetchone()
@@ -58,51 +69,23 @@ dec = AES.new(key, AES.MODE_CBC, b" "*16).decrypt(row[0][3:])
 dec = dec[:-dec[-1]]
 if not dec.startswith(b"xoxd-"): dec = dec[32:]
 cookie = dec.decode("utf-8", "replace")
+print(f"d cookie ✓ decrypted ({len(cookie)} chars)")
 
-print(f"Slack data : {base}")
-print(f"d cookie   : {cookie[:8]}… ({len(cookie)} chars) ✓ decrypted")
+# ── no token supplied: hand over the cookie + how to get the token ──
+if not toks and mode != "print":
+    print("\nThe xoxc token can't be auto-read from the desktop app (compressed store +")
+    print("rotation). Grab it in 5s — open Slack in your browser, DevTools console, run:\n")
+    print(f"  {ONELINER}\n")
+    print("then re-run with the token(s) it prints:\n")
+    print("  slk-auth xoxc-…  [xoxc-…]\n")
+    sys.exit(0)
 
-# ── 2. workspace domains from leveldb (decode Latin-1 + UTF-16LE; the app stores
-#       localStorage in either). The token there may be stale — we only trust the
-#       DOMAINS, then mint fresh tokens below. ──
-DOM = re.compile(r'\b([a-z0-9][a-z0-9-]{1,})\.slack\.com\b')
-DENY = {"app","files","edgeapi","slack","api","downloads","ca","status","wss-primary",
-        "wss-backup","slack-edge","slack-imgs","emoji","a","b"}
-text = ""
-lsdir = base/"Local Storage/leveldb"
-for f in sorted(lsdir.glob("*")) if lsdir.is_dir() else []:
-    if f.suffix in (".ldb", ".log"):
-        raw = f.read_bytes()
-        text += raw.decode("latin-1","ignore") + raw.decode("utf-16-le","ignore")
-domains = sorted({d for d in DOM.findall(text)
-                  if d not in DENY and not d.startswith("wss")})
-stale = list(dict.fromkeys(TOK.findall(text)))   # leveldb tokens, as a fallback
+if mode == "print":
+    print(f"\ncookie (d): {cookie}")
+    print("\nRun `slk --add-workspace`, paste this cookie at 'Cookie (d)', your token at 'Token (xoxc)'.")
+    sys.exit(0)
 
-# ── 3. mint a fresh xoxc per domain by fetching its boot page with the cookie ──
-def mint(domain):
-    try:
-        req = urllib.request.Request(
-            f"https://{domain}/", headers={"Cookie": f"d={cookie}", "User-Agent": "Mozilla/5.0"})
-        body = urllib.request.urlopen(req, timeout=12).read().decode("utf-8", "ignore")
-    except Exception:
-        return None
-    m = TOK.search(body)
-    return m.group(0) if m else None
-
-print(f"domains    : {', '.join(domains) or '(none found)'}")
-candidates = []
-for d in domains:
-    t = mint(f"{d}.slack.com")
-    if t and t not in candidates:
-        candidates.append(t)
-for t in stale:                      # last-resort: maybe a leveldb token still lives
-    if t not in candidates:
-        candidates.append(t)
-if not candidates:
-    sys.exit("slk-auth: couldn't mint or find any token — is the Slack app signed in?")
-print(f"tokens     : {len(candidates)} candidate(s) (minted + leveldb)\n")
-
-# ── 4. validate via auth.test ──
+# ── import: validate each supplied token with the cookie, write slk's files ──
 def auth_test(tok):
     req = urllib.request.Request("https://slack.com/api/auth.test",
         data=urllib.parse.urlencode({"token": tok}).encode(),
@@ -110,32 +93,25 @@ def auth_test(tok):
     with urllib.request.urlopen(req, timeout=10) as r:
         return json.load(r)
 
-valid, seen_team = [], set()
-for tok in candidates:
+valid, seen = [], set()
+for tok in toks:
+    if not tok.startswith("xoxc-"):
+        print(f"  {tok[:12]}…  not an xoxc- token, skipped"); continue
     try:
         info = auth_test(tok)
     except Exception as e:
         print(f"  {tok[:12]}…  auth.test failed: {e}"); continue
     if not info.get("ok"):
-        print(f"  {tok[:12]}…  invalid ({info.get('error')})"); continue
-    if info["team_id"] in seen_team:
-        continue
-    seen_team.add(info["team_id"])
+        print(f"  {tok[:12]}…  invalid ({info.get('error')}) — token stale? re-copy from the console one-liner"); continue
+    if info["team_id"] in seen: continue
+    seen.add(info["team_id"])
     slug = re.sub(r"^https?://", "", info.get("url","")).split(".")[0] or info["team_id"].lower()
     valid.append({"token": tok, "team_id": info["team_id"], "name": info.get("team",""), "slug": slug})
     print(f"  ✓ {info.get('team','?'):<24} [{slug}]  {info['team_id']}")
 
 if not valid:
-    sys.exit("\nslk-auth: no usable workspace. Open the Slack app, make sure you're signed in, retry.")
+    sys.exit("\nslk-auth: no token validated. Re-copy from the browser console one-liner (above) and retry.")
 
-if mode == "print":
-    print("\nManual paste — `slk --add-workspace`, cookie first then token:")
-    print(f"  cookie (d) : {cookie}")
-    for w in valid:
-        print(f"  {w['name']} token : {w['token']}")
-    sys.exit(0)
-
-# ── 5. import: write slk's own files ──
 xdg_data = Path(os.environ.get("XDG_DATA_HOME",   Path.home()/".local/share"))/"slk"
 xdg_cfg  = Path(os.environ.get("XDG_CONFIG_HOME", Path.home()/".config"))/"slk"
 tokdir   = xdg_data/"tokens"; cfgfile = xdg_cfg/"config.toml"

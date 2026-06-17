@@ -28,12 +28,15 @@ theme name is written to **`~/.config/themes/active`**.
 | **ghostty** | picker rewrites the live `theme = dark:…,light:…` line and hot-reloads it with `SIGUSR2` — no restart, no ⌘⇧, |
 | **tmux** | pills read `@theme_*` user options; `apply-tmux.sh` sets them live, `tmux.conf` restores the pick on a fresh server |
 | **nvim** | 6 colorscheme plugins, all deriving light/dark from `vim.opt.background`; `config/theme.lua` reads `active` and fs-watches it, so open nvims switch instantly. `auto-dark-mode.nvim` still owns the OS toggle |
-| **btop** | picker rewrites `color_theme` to the bundled `.theme` matching the current OS appearance (btop has no native dual-theme). Applies on the **next** btop launch — a running btop ignores config changes and rewrites `btop.conf` on exit, so switch with btop closed. `theme_background = false` keeps its bg transparent so it follows the terminal |
+| **btm** (bottom) | **not switched** — its config styles everything with ANSI `Reset` + named accent colours, so it follows the terminal's active palette automatically (any family, light or dark). See `dot_config/bottom/bottom.toml` |
 | **bat / delta / zed** | stay **gruvbox** — the only family all three bundle (bat ships no everforest/catppuccin/etc.) |
 
-btop ships gruvbox / everforest / kanagawa (light+dark) + tokyo-night (dark). It
-does **not** bundle catppuccin, rose-pine, or a tokyonight-light — those fall
-back to gruvbox, same "where possible" rule as bat/delta/zed.
+btm (bottom) replaced btop. Rather than per-theme `.theme` files it colours every
+element with ANSI `Reset` (the terminal's own foreground) + named accents, so it
+tracks whatever ghostty palette is live across all six families with no rewrite
+and no OS-appearance branch. (btop washed out on the light themes because, with
+`theme_background = false`, it painted its own light foreground on the transparent
+terminal background — `Reset` can't.)
 
 ## Runtime-only
 

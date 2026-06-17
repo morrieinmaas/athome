@@ -23,13 +23,6 @@ dir="${HOME}/.config/themes"
 self="$(command -v theme 2>/dev/null || echo "$HOME/.local/bin/theme")"
 current() { cat "$dir/active" 2>/dev/null || echo gruvbox; }
 
-is_dark() {  # current OS appearance (same detection as the tmux pet glyph)
-  if [ "$(uname -s)" = Darwin ]; then
-    [ "$(defaults read -g AppleInterfaceStyle 2>/dev/null)" = Dark ]
-  else
-    [ "$(gsettings get org.gnome.desktop.interface color-scheme 2>/dev/null)" = "'prefer-dark'" ]
-  fi
-}
 hex2rgb() { local h="${1#\#}"; printf '%d;%d;%d' "$((16#${h:0:2}))" "$((16#${h:2:2}))" "$((16#${h:4:2}))"; }
 
 swatch() {
@@ -85,15 +78,8 @@ if command -v tmux >/dev/null 2>&1 && tmux info >/dev/null 2>&1; then
   "$dir/apply-tmux.sh" || true
 fi
 
-# ── btop: no native dual-theme — write the variant matching OS appearance.
-#    Applies to the NEXT btop launch (a running btop ignores config changes and
-#    rewrites btop.conf on exit, so switch with btop closed). ──
-bcfg="${HOME}/.config/btop/btop.conf"
-if [ -f "$bcfg" ]; then
-  read -r blight bdark <<<"$(theme_btop "$name")"
-  bt="$blight"; is_dark && bt="$bdark"
-  sed -i.bak -E "s|^color_theme = .*|color_theme = \"$bt\"|" "$bcfg" && rm -f "$bcfg.bak"
-fi
+# ── btm (bottom): nothing to do — its config follows the terminal's ANSI palette
+#    automatically, so it recolours with ghostty/tmux above. See registry.sh. ──
 
 # ── nvim: live instances re-apply via their fs-watch on ~/.config/themes;
 #          new instances read active on startup. ──

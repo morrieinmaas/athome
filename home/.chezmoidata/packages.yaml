@@ -39,7 +39,8 @@ common:
   # stays in the per-OS lists because rbw needs a pinentry program.
   - rbw            # Bitwarden CLI with agent (replaces pass + gpg-agent caching)
   - git-crypt      # transparent file encryption for the secrets-vault repo (versioned, encrypted off-site backup; key lives in Bitwarden). See docs/secrets.md → Model B
-  - btop           # resource monitor (TUI). NOT in mise: its only mise backend (aqua:aristocratos/btop) is linux-only — btop ships no macOS binary (Homebrew builds from source), so it can't be the cross-platform mise tool that `bottom`/btm is. Same name on brew + pacman(extra); Fedora dnf entry below.
+  # resource monitor: btm (bottom) — cross-platform, so it lives in mise [tools],
+  # not here. Replaced btop, which had no macOS mise backend (linux-only aqua).
 
 # macOS / Homebrew specifics
 darwin:
@@ -57,6 +58,7 @@ darwin:
     - prettierd                      # persistent prettier daemon (JS/TS/JSON/MD/YAML) — npm-backed
     - wush                           # P2P file transfer + ad-hoc SSH (coder/wush)
     - defaultbrowser                 # CLI to set the default browser — run_once_after_20 flips it to Zen (Linux uses xdg-settings instead)
+    - podman-tui                     # podman/containers TUI (containers/podman-tui). NATIVE, not mise: its GitHub releases are amd64-only (darwin_amd64/linux_amd64, no arm64), so on Apple Silicon ubi/mise can't fetch a matching build, which is why it stays native rather than a mise [tools] entry. brew formula (mac) covers arm64; Arch via AUR, Fedora via dnf (both below). No theme/keybind config exists — its sole config file (~/.config/podman-tui/podman-tui.json) only stores podman connections, which it auto-discovers from podman's own connection list, so we intentionally ship none.
     # `bw` (bitwarden-cli) retired to on-demand (D3): rbw is the primary client.
     # Install only if an admin task rbw can't do comes up: `nb install bitwarden-cli`.
   brew_casks:
@@ -155,6 +157,7 @@ linux:
     - trippy                         # ICMP; kept native
     - prettierd                      # via npm under the hood; AUR wrapper
     - wush-bin                       # P2P file transfer + ad-hoc SSH (coder/wush)
+    - podman-tui                     # podman/containers TUI — AUR only (not in extra). macOS: brew formula; Fedora: dnf. Native, not mise (amd64-only releases).
     # `bw` (bitwarden-cli-bin) retired to on-demand (D3): rbw is the primary
     # client. Install only for an admin task rbw can't do: `paru -S bitwarden-cli-bin`.
 
@@ -194,11 +197,11 @@ fedora:
     - xonsh
     - podman
     - podman-docker                # `docker` → podman shim (matches the Arch docker→podman shim)
+    - podman-tui                   # podman/containers TUI (Fedora main repo). Arch: AUR; macOS: brew formula. Native, not mise (amd64-only releases).
     - docker-compose-plugin        # Compose v2 (Go) as podman's compose provider — NOT the buggy python podman-compose
     - syncthing
     - ImageMagick
     - libjxl
-    - btop                         # resource monitor TUI (Fedora main repo); Arch/mac get it via `common` (not mise — linux-only backend)
     - git-crypt
     - gitleaks                     # if absent in dnf → `go:` via mise (load-bearing, keep on PATH)
     - rbw                          # if absent in dnf → `cargo:rbw` via mise

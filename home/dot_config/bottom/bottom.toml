@@ -1,0 +1,62 @@
+# bottom (btm) — cross-platform system monitor. github.com/ClementTsang/bottom
+# Installed via mise (see home/dot_config/mise/config.toml [tools]); replaced btop.
+#
+# THEME STRATEGY — mirrors slk's "ANSI" trick (see dot_config/slk/config.toml):
+# every colour is either "Reset" (the terminal's own foreground — legible on
+# light OR dark by construction) or an ANSI accent name (Red/Green/Blue/…), which
+# maps to the terminal's 16-colour palette. So btm automatically follows whatever
+# ghostty/tmux theme is active (gruvbox · everforest · catppuccin · tokyonight ·
+# rose-pine · kanagawa, light or dark) with NO per-theme switching. That's why
+# btm — unlike btop — is intentionally NOT wired into ~/.config/themes: it needs
+# no rewrite on `theme` change. (btop washed out because it painted its own light
+# foreground on the transparent terminal bg; "Reset" can't do that.)
+#
+# tmux-safe: btm's keys (q quit · dd kill · / search · hjkl/arrows · ? help · e
+# expand · +/- zoom) are self-contained and never touch the tmux prefix.
+#
+# Managed by athome — keep identical to ~/.config/bottom/bottom.toml.
+
+[flags]
+temperature_type = "celsius"
+hide_table_gap   = true        # drop the blank line under table headers
+
+[styles]
+# No `theme =` — fully custom below so the ANSI palette drives every colour.
+
+[styles.cpu]
+all_entry_colour = "Reset"
+avg_entry_colour = "Red"
+cpu_core_colours = ["Green", "Blue", "Cyan", "Magenta", "Yellow",
+                    "LightGreen", "LightBlue", "LightCyan", "LightMagenta", "LightYellow"]
+
+[styles.memory]
+ram_colour   = "Blue"
+swap_colour  = "Yellow"
+cache_colour = "Cyan"
+arc_colour   = "Magenta"
+
+[styles.network]
+rx_colour       = "Green"
+tx_colour       = "Blue"
+rx_total_colour = "LightGreen"
+tx_total_colour = "LightBlue"
+
+[styles.battery]
+high_battery_colour   = "Green"
+medium_battery_colour = "Yellow"
+low_battery_colour    = "Red"
+
+[styles.tables]
+headers = { colour = "Blue", bold = true }
+
+[styles.graphs]
+graph_colour = "DarkGray"
+legend_text  = { colour = "Reset" }
+
+[styles.widgets]
+border_colour          = "DarkGray"
+selected_border_colour = "Blue"
+widget_title           = { colour = "Reset", bold = true }
+text                   = { colour = "Reset" }
+selected_text          = { colour = "Black", bg_colour = "Blue", bold = true }
+disabled_text          = { colour = "DarkGray" }

@@ -1,22 +1,22 @@
 #!/usr/bin/env bash
 # slk-auth — import Slack workspaces into slk straight from the desktop app.
 #
-# slk (gammons/slk) has no non-interactive auth, BUT it just reads JSON token
-# files from ~/.local/share/slk/tokens/{TeamID}.json plus [workspaces.<slug>]
-# blocks in ~/.config/slk/config.toml. This helper reproduces exactly what
-# `slk --add-workspace` writes — no interactive paste:
+# slk (gammons/slk) reads JSON token files from ~/.local/share/slk/tokens/
+# {TeamID}.json plus [workspaces.<slug>] blocks in ~/.config/slk/config.toml.
+# This reproduces what `slk --add-workspace` writes — no interactive paste:
 #
-#   1. extracts the xoxc token(s) from the Slack app's Local Storage leveldb
-#   2. decrypts the `d` cookie from the app's Cookies DB via the "Slack Safe
-#      Storage" macOS Keychain key (one-time "allow" prompt)
-#   3. calls auth.test for each token → team_id / name / slug (validates too)
-#   4. writes the {TeamID}.json token files (0600) + config.toml workspace blocks
+#   1. decrypt the `d` cookie from the Slack app's Cookies DB via the
+#      "Slack Safe Storage" macOS Keychain key (one-time "Always Allow" prompt)
+#   2. find your workspace domains in the app's Local Storage leveldb
+#   3. MINT a fresh xoxc token per workspace by fetching its page with the cookie
+#      — the desktop app's stored token rotates/goes stale, the cookie doesn't
+#   4. auth.test each → team_id / name / slug (validates), then write slk's files
 #
-# Nothing is committed; secrets only ever touch ~/.local/share/slk (slk's own
-# store, already git-ignored / outside chezmoi). macOS only for now.
+# Nothing is committed; secrets only touch ~/.local/share/slk (slk's own store).
+# macOS only for now.
 #
-#   slk-auth           # auto-import every workspace you're signed into
-#   slk-auth --print   # don't write anything; just print creds for a manual paste
+#   slk-auth           # auto-import every workspace the cookie can reach
+#   slk-auth --print   # don't write; just print creds for a manual paste
 set -euo pipefail
 
 mode=import
@@ -25,7 +25,6 @@ mode=import
 [ "$(uname -s)" = Darwin ] || {
   echo "slk-auth: macOS only for now (Linux Slack uses libsecret/kwallet)." >&2; exit 1; }
 
-# Locate Slack app data: sandboxed Mac App Store build first, then direct-download.
 BASE=""
 for b in \
   "$HOME/Library/Containers/com.tinyspeck.slackmacgap/Data/Library/Application Support/Slack" \
@@ -35,44 +34,22 @@ done
 [ -n "$BASE" ] || {
   echo "slk-auth: Slack app data not found — desktop app installed + signed in?" >&2; exit 1; }
 
-# Everything (token scrape, cookie decrypt, auth.test, file writes) happens in
-# Python: stdlib urllib/json/sqlite3 + pycryptodome (pulled on demand by uv).
 uv run --with pycryptodome python - "$mode" "$BASE" <<'PY'
 import sys, os, re, json, sqlite3, subprocess, hashlib, urllib.request, urllib.parse
 from pathlib import Path
 from Crypto.Cipher import AES
 
 mode, base = sys.argv[1], Path(sys.argv[2])
+TOK = re.compile(r'xoxc-[0-9A-Za-z-]{20,}')
 
-# ── xoxc token(s) from the Local Storage leveldb. Chromium stores localStorage
-# values as UTF-16LE (unicode) OR Latin-1 (ascii-only), so a plain `strings`
-# scan misses the live token. Scan each .ldb/.log decoded as Latin-1 AND as
-# UTF-16LE at both byte alignments, union the hits, then let auth.test pick the
-# valid one(s). ──
-tok_re = re.compile(r'xoxc-[0-9A-Za-z-]{20,}')
-tokens = []
-seen = set()
-lsdir = base/"Local Storage/leveldb"
-for f in sorted(lsdir.glob("*")) if lsdir.is_dir() else []:
-    if f.suffix not in (".ldb", ".log"):
-        continue
-    try:
-        raw = f.read_bytes()
-    except OSError:
-        continue
-    for text in (raw.decode("latin-1", "ignore"),
-                 raw.decode("utf-16-le", "ignore"),
-                 raw[1:].decode("utf-16-le", "ignore")):
-        for m in tok_re.findall(text):
-            if m not in seen:
-                seen.add(m); tokens.append(m)
-if not tokens:
-    sys.exit("slk-auth: no xoxc token found in the Slack leveldb")
-
-# ── decrypt the d cookie ──
+# ── 1. decrypt the d cookie (the durable credential) ──
 ck = next((p for p in [base/"Cookies", base/"Network/Cookies"] if p.exists()), None)
 if not ck: sys.exit("slk-auth: no Cookies DB under the Slack data dir")
-pw  = subprocess.check_output(["security","find-generic-password","-s","Slack Safe Storage","-w"]).strip()
+try:
+    pw = subprocess.check_output(
+        ["security","find-generic-password","-s","Slack Safe Storage","-w"]).strip()
+except subprocess.CalledProcessError:
+    sys.exit("slk-auth: Keychain read denied — re-run and click 'Always Allow' (enter your Mac password once).")
 key = hashlib.pbkdf2_hmac("sha1", pw, b"saltysalt", 1003, 16)
 row = sqlite3.connect(f"file:{ck}?mode=ro", uri=True).execute(
     "select encrypted_value from cookies where name='d' order by length(encrypted_value) desc limit 1").fetchone()
@@ -82,63 +59,101 @@ dec = dec[:-dec[-1]]
 if not dec.startswith(b"xoxd-"): dec = dec[32:]
 cookie = dec.decode("utf-8", "replace")
 
+print(f"Slack data : {base}")
+print(f"d cookie   : {cookie[:8]}… ({len(cookie)} chars) ✓ decrypted")
+
+# ── 2. workspace domains from leveldb (decode Latin-1 + UTF-16LE; the app stores
+#       localStorage in either). The token there may be stale — we only trust the
+#       DOMAINS, then mint fresh tokens below. ──
+DOM = re.compile(r'\b([a-z0-9][a-z0-9-]{1,})\.slack\.com\b')
+DENY = {"app","files","edgeapi","slack","api","downloads","ca","status","wss-primary",
+        "wss-backup","slack-edge","slack-imgs","emoji","a","b"}
+text = ""
+lsdir = base/"Local Storage/leveldb"
+for f in sorted(lsdir.glob("*")) if lsdir.is_dir() else []:
+    if f.suffix in (".ldb", ".log"):
+        raw = f.read_bytes()
+        text += raw.decode("latin-1","ignore") + raw.decode("utf-16-le","ignore")
+domains = sorted({d for d in DOM.findall(text)
+                  if d not in DENY and not d.startswith("wss")})
+stale = list(dict.fromkeys(TOK.findall(text)))   # leveldb tokens, as a fallback
+
+# ── 3. mint a fresh xoxc per domain by fetching its boot page with the cookie ──
+def mint(domain):
+    try:
+        req = urllib.request.Request(
+            f"https://{domain}/", headers={"Cookie": f"d={cookie}", "User-Agent": "Mozilla/5.0"})
+        body = urllib.request.urlopen(req, timeout=12).read().decode("utf-8", "ignore")
+    except Exception:
+        return None
+    m = TOK.search(body)
+    return m.group(0) if m else None
+
+print(f"domains    : {', '.join(domains) or '(none found)'}")
+candidates = []
+for d in domains:
+    t = mint(f"{d}.slack.com")
+    if t and t not in candidates:
+        candidates.append(t)
+for t in stale:                      # last-resort: maybe a leveldb token still lives
+    if t not in candidates:
+        candidates.append(t)
+if not candidates:
+    sys.exit("slk-auth: couldn't mint or find any token — is the Slack app signed in?")
+print(f"tokens     : {len(candidates)} candidate(s) (minted + leveldb)\n")
+
+# ── 4. validate via auth.test ──
 def auth_test(tok):
-    req = urllib.request.Request(
-        "https://slack.com/api/auth.test",
+    req = urllib.request.Request("https://slack.com/api/auth.test",
         data=urllib.parse.urlencode({"token": tok}).encode(),
         headers={"Cookie": f"d={cookie}"})
     with urllib.request.urlopen(req, timeout=10) as r:
         return json.load(r)
 
-xdg_data = Path(os.environ.get("XDG_DATA_HOME",   Path.home()/".local/share"))/"slk"
-xdg_cfg  = Path(os.environ.get("XDG_CONFIG_HOME", Path.home()/".config"))/"slk"
-tokdir   = xdg_data/"tokens"
-cfgfile  = xdg_cfg/"config.toml"
-
-print(f"Slack data : {base}")
-print(f"d cookie   : {cookie[:8]}… ({len(cookie)} chars) ✓ decrypted")
-print(f"tokens     : {len(tokens)} candidate(s) found in leveldb\n")
-
-valid = []
-for tok in tokens:
+valid, seen_team = [], set()
+for tok in candidates:
     try:
         info = auth_test(tok)
     except Exception as e:
         print(f"  {tok[:12]}…  auth.test failed: {e}"); continue
     if not info.get("ok"):
         print(f"  {tok[:12]}…  invalid ({info.get('error')})"); continue
+    if info["team_id"] in seen_team:
+        continue
+    seen_team.add(info["team_id"])
     slug = re.sub(r"^https?://", "", info.get("url","")).split(".")[0] or info["team_id"].lower()
     valid.append({"token": tok, "team_id": info["team_id"], "name": info.get("team",""), "slug": slug})
     print(f"  ✓ {info.get('team','?'):<24} [{slug}]  {info['team_id']}")
 
 if not valid:
-    sys.exit("\nslk-auth: no usable workspace (all tokens stale?) — re-sign-in the Slack app and retry.")
+    sys.exit("\nslk-auth: no usable workspace. Open the Slack app, make sure you're signed in, retry.")
 
 if mode == "print":
-    print("\nManual paste — run `slk --add-workspace`, cookie first then token:")
+    print("\nManual paste — `slk --add-workspace`, cookie first then token:")
     print(f"  cookie (d) : {cookie}")
     for w in valid:
         print(f"  {w['name']} token : {w['token']}")
     sys.exit(0)
 
-# ── import: write slk's own files ──
+# ── 5. import: write slk's own files ──
+xdg_data = Path(os.environ.get("XDG_DATA_HOME",   Path.home()/".local/share"))/"slk"
+xdg_cfg  = Path(os.environ.get("XDG_CONFIG_HOME", Path.home()/".config"))/"slk"
+tokdir   = xdg_data/"tokens"; cfgfile = xdg_cfg/"config.toml"
 tokdir.mkdir(parents=True, exist_ok=True); os.chmod(tokdir, 0o700)
 existing = cfgfile.read_text() if cfgfile.exists() else ""
-added_blocks = []
+blocks = []
 for w in valid:
-    f = tokdir/f"{w['team_id']}.json"
-    f.write_text(json.dumps(
+    fp = tokdir/f"{w['team_id']}.json"
+    fp.write_text(json.dumps(
         {"access_token": w["token"], "cookie": cookie, "team_id": w["team_id"], "team_name": w["name"]},
-        indent=2))
-    os.chmod(f, 0o600)
+        indent=2)); os.chmod(fp, 0o600)
     if f'team_id = "{w["team_id"]}"' not in existing and f"[workspaces.{w['slug']}]" not in existing:
-        added_blocks.append(f"# {w['name'] or w['team_id']}\n[workspaces.{w['slug']}]\nteam_id = \"{w['team_id']}\"\n")
-
-if added_blocks:
+        blocks.append(f"# {w['name'] or w['team_id']}\n[workspaces.{w['slug']}]\nteam_id = \"{w['team_id']}\"\n")
+if blocks:
     xdg_cfg.mkdir(parents=True, exist_ok=True)
     sep = "" if (not existing or existing.endswith("\n")) else "\n"
     with cfgfile.open("a") as fh:
-        for blk in added_blocks:
+        for blk in blocks:
             fh.write(sep + "\n" + blk); sep = ""
 
 print(f"\n✓ imported {len(valid)} workspace(s) → {tokdir}")

@@ -378,7 +378,7 @@ archinstall's GNOME spin installs GNOME + GDM at install time (see Step 2 in
 | `dogenpunk` zsh theme | `zinit snippet OMZT::dogenpunk` in `home/dot_zshrc.tmpl` | git-status-aware prompt |
 | zoxide + shell completions | [`home/dot_zsh/completions.zsh`](home/dot_zsh/completions.zsh) | `z <dir>` instead of `cd ~/long/path` |
 | themes | no external fetches | bat, bottom, and zed use **built-in** gruvbox; ghostty (`Everforest Light/Dark - Medium`), tmux (native everforest pill bar), and nvim (`sainnhe/everforest`) are themed inline — all OS dark/light-aware |
-| `mise` (toolchain) | curl-bootstrapped via `mise.run` in [`run_once_06-setup-mise.sh`](home/.chezmoiscripts/run_once_06-setup-mise.sh) | **owns ALL portable CLI tooling** on both OSes — runtimes (node/go/rust/deno/bun) + the modern-CLI set (rg, fd, bat, eza, fzf, jq, lazygit, delta, ruff, …). Declared in [`home/dot_config/mise/config.toml`](home/dot_config/mise/config.toml); per-project `.mise.toml` / `.tool-versions` override |
+| `mise` (toolchain) | curl-bootstrapped via `mise.run` in [`run_once_06-setup-mise.sh`](home/.chezmoiscripts/run_once_06-setup-mise.sh) | **owns ALL portable CLI tooling** on both OSes — runtimes (node/go/rust/deno/bun) + the modern-CLI set (rg, fd, bat, eza, fzf, jq, lazygit, ruff, …). Declared in [`home/dot_config/mise/config.toml`](home/dot_config/mise/config.toml); per-project `.mise.toml` / `.tool-versions` override |
 | portable CLI tools | [`home/dot_config/mise/config.toml`](home/dot_config/mise/config.toml) `[tools]` | bare names resolve via mise's registry — no more per-OS name translation (choose vs choose-rust, jj vs jujutsu, taplo vs taplo-cli) |
 | native / GUI / system packages | [`home/.chezmoidata/packages.yaml`](home/.chezmoidata/packages.yaml) | only the non-portable residue: casks, the niri/Noctalia desktop stack, fonts, libraries, podman/syncthing, and `uv` (Python) |
 
@@ -767,9 +767,9 @@ on Apple Silicon it builds the amd64 image under emulation). Fedora + a macOS
 runner are the planned follow-on legs.
 
 **Task wrapper:** common commands are mise tasks (in [`mise.toml`](mise.toml)) —
-`mise run bootstrap`, `update`, `status`, `lint`, `test`, `e2e`, `teardown`
-(`mise tasks` lists them). No extra tool: mise is already the dependency. Each
-task just wraps a script you can still call directly.
+`mise run bootstrap`, `update`, `status`, `lint`, `test`, `e2e`, `e2e-clean`,
+`teardown` (`mise tasks` lists them). No extra tool: mise is already the
+dependency. Each task just wraps a script you can still call directly.
 
 ## Further reading
 

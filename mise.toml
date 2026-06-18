@@ -44,6 +44,10 @@ run = "bats test"
 description = "build + run the Linux bootstrap e2e in a container (docker/podman)"
 run = "./test/e2e/run.sh"
 
+[tasks.e2e-clean]
+description = "remove the e2e container image + any leftover containers"
+run = "./test/e2e/run.sh --clean"
+
 [tasks.teardown]
 description = "reset for a from-scratch retry (dry-run by default; --all --execute to wipe)"
 run = "./scripts/teardown.sh"

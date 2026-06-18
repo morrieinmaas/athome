@@ -108,6 +108,15 @@ tier_all() {
   tier_dotfiles
   section "mise (tools + config)"
   run rm -rf "$HOME/.local/share/mise" "$HOME/.config/mise" "$HOME/.local/bin/mise"
+  section "chezmoi externals + app data (not 'managed files')"
+  # zinit/TPM/agents are git-repo externals; nvim plugins + bat cache are
+  # app-generated. None show in `chezmoi managed`, so they'd survive otherwise
+  # and a re-bootstrap would reuse stale state. NOT ~/.claude — that's your real
+  # Claude Code data, never athome's.
+  run rm -rf "$HOME/.local/share/zinit" "$HOME/.config/tmux/plugins" \
+             "$HOME/.config/agents" \
+             "$HOME/.local/share/nvim" "$HOME/.local/state/nvim" \
+             "$HOME/.cache/bat"
   section "nanobrew casks (GUI apps in /Applications)"
   # Uninstall casks first — that removes the .app bundles. Nuking the prefix
   # below would leave them behind, so a re-bootstrap hits "refusing to overwrite

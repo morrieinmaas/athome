@@ -12,13 +12,23 @@ fi
 
 {{ if eq .chezmoi.os "darwin" -}}
 # macOS: podman needs a Linux VM
-if ! podman machine list --format '{{`{{.Name}}`}}' | grep -q .; then
+# Init a VM ONLY if there's truly no podman setup. `machine list` can read empty
+# while a working machine + its system connections exist (created under a
+# different provider, or already installed + running) — so check connections too;
+# otherwise `machine init` aborts "connection podman-machine-default already
+# exists" (exit 125). Init/start are non-fatal: an already-configured podman is
+# handled gracefully and must never abort the whole apply.
+if ! podman machine list --format '{{`{{.Name}}`}}' | grep -q . \
+   && ! podman system connection list --format '{{`{{.Name}}`}}' 2>/dev/null | grep -q .; then
   echo "==> podman machine init"
-  podman machine init
+  podman machine init || echo "   podman machine init failed — configure manually later"
+else
+  echo "==> podman already configured (machine/connection present) — skipping init"
 fi
-if ! podman machine list --format '{{`{{.Running}}`}}' | grep -q true; then
+if podman machine list --format '{{`{{.Name}}`}}' | grep -q . \
+   && ! podman machine list --format '{{`{{.Running}}`}}' | grep -q true; then
   echo "==> podman machine start"
-  podman machine start
+  podman machine start || echo "   podman machine start failed — start manually later"
 fi
 # Stable docker.sock so DOCKER_HOST=unix:///var/run/docker.sock works for
 # docker-API clients (SDKs, testcontainers, lazydocker). podman-mac-helper

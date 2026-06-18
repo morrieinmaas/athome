@@ -146,6 +146,14 @@ the chezmoi run-once scripts, package install via pacman (official repos) +
 paru (AUR), niri + Noctalia shell setup. Secrets aren't part of bootstrap: log
 in to Bitwarden once afterwards with `bw-setup` (registers the device + unlocks; the agent caches your key).
 
+> **Heads-up on that first login:** Bitwarden's cloud blocks plain-password
+> logins from CLIs, so a new device must register once with a **personal API
+> key** — `bw-setup`/`rbw login` will fail (you'll see an HTTP **400**) until
+> you do. Grab the key from the web vault → **Settings → Security → Keys → "View
+> API Key"** (`client_id` + `client_secret`), then `rbw register`. After that
+> it's master-password-only on this machine. Full walkthrough (incl. EU /
+> self-hosted Vaultwarden): [docs/secrets.md](docs/secrets.md).
+
 After bootstrap finishes, **log out (or reboot)** — GDM now defaults to the
 **niri** session (set by `run_once_11`); GNOME stays on the GDM gear menu
 whenever you want the "it just works" fallback (external displays, floating).
@@ -230,7 +238,7 @@ Bootstrap detects Fedora (`dnf` present, no `pacman`) and:
 11. **Pin `sourceDir`** so future plain `chezmoi apply` uses the canonical repo location.
 12. **Install global git hooks** into the in-repo `.git/hooks/` (matches what chezmoi deploys to `~/.config/git/hooks/`).
 13. **Recover from detached HEAD** in the chezmoi repo if any prior weirdness left it that way.
-14. **Offer to run `bw-setup`** (Bitwarden) — secrets aren't part of `chezmoi apply`; bootstrap runs the interactive login (register on a new device + unlock) at the end, and the rbw agent caches your key.
+14. **Offer to run `bw-setup`** (Bitwarden) — secrets aren't part of `chezmoi apply`; bootstrap runs the interactive login at the end, and the rbw agent caches your key. A **new device** needs a one-time **personal API key** (`client_id`/`client_secret` from the web vault → Settings → Security → Keys) for `rbw register` — plain-password login returns a **400** by design. After that it's master-password-only. See [docs/secrets.md](docs/secrets.md).
 
 The script is **idempotent** — re-run any time. Each step detects existing state and skips or proceeds accordingly. The per-package install loop means a single bad AUR package logs and continues instead of cascade-failing.
 

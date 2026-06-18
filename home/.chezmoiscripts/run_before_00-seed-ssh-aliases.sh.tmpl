@@ -6,14 +6,14 @@
 #     https://github.com/`, so any github.com clone/pull becomes SSH.
 #   • Our key is ~/.ssh/<hostname>_ed25519 — NOT a default ssh identity name,
 #     so ssh only offers it if ~/.ssh/config pins it via IdentityFile.
-#   • chezmoi writes dot_gitconfig.tmpl BEFORE private_dot_ssh/config.tmpl
+#   • chezmoi writes dot_gitconfig.tmpl BEFORE private_dot_ssh/private_config.tmpl
 #     (depth 2). If an apply crashes between the two, `git pull` in the chezmoi
 #     repo rewrites to git@github.com but ssh has no IdentityFile yet → you
 #     can't pull the fix.
 #
 # Solution: this runs on EVERY apply, before any file deploys. If ~/.ssh/config
 # doesn't already pin github.com to our key, append a minimal Host block. The
-# canonical private_dot_ssh/config.tmpl overwrites it idempotently later in the
+# canonical private_dot_ssh/private_config.tmpl overwrites it idempotently later in the
 # same apply; subsequent applies match the marker and no-op.
 #
 # scripts/bootstrap.sh does the same seeding for the bootstrap path.

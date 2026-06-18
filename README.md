@@ -336,7 +336,7 @@ needed per repo.
 | What | How | Where |
 | --- | --- | --- |
 | Git author email + signing key per directory | `includeIf "gitdir:~/work/"` etc. in `~/.gitconfig` | [`home/dot_gitconfig.tmpl`](home/dot_gitconfig.tmpl) |
-| SSH key | one `~/.ssh/<hostname>_ed25519` (auth + signing); per-tree *email* still routes via `includeIf` | [`home/private_dot_ssh/config.tmpl`](home/private_dot_ssh/config.tmpl) |
+| SSH key | one `~/.ssh/<hostname>_ed25519` (auth + signing); per-tree *email* still routes via `includeIf` | [`home/private_dot_ssh/private_config.tmpl`](home/private_dot_ssh/private_config.tmpl) |
 | HTTPS GitHub URLs → SSH | `url."git@github.com:" insteadOf https://github.com/` catch-all in `~/.gitconfig` | `home/dot_gitconfig.tmpl` |
 | SSH commit signing | `gpg.format = ssh` reuses each identity's ed25519 key; verified via `allowed_signers` | [`home/dot_gitconfig-*.tmpl`](home/dot_gitconfig-personal.tmpl) |
 | rbw agent caches the Bitwarden key | so direnv's per-cd `rbw get` calls don't re-prompt — `rbw unlock` once per session | [`home/dot_config/direnv/direnvrc`](home/dot_config/direnv/direnvrc) |
@@ -657,7 +657,7 @@ athome/
     │   └── {bat,btm,lazygit,yazi}/
     │
     ├── private_dot_aws/config.tmpl   # region only — creds come from Bitwarden via direnv + rbw
-    ├── private_dot_ssh/config.tmpl   # github-{personal,work,sidebiz} host aliases
+    ├── private_dot_ssh/private_config.tmpl  # github host aliases (file 600, dir 700)
     │
     └── Library/LaunchAgents/com.local.caps-to-control.plist   # macOS only
 ```

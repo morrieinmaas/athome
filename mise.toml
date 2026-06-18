@@ -1,0 +1,49 @@
+# athome repo tasks — run with `mise run <task>` (or `mise tasks` to list).
+# mise is already the toolchain dependency, so the command wrapper lives here
+# as native mise tasks instead of a separate justfile / extra tool.
+#
+# On a fresh checkout, `mise trust` this file once. Extra args pass through after
+# the task name, e.g. `mise run teardown --all --execute`.
+#
+# Tasks only — no [tools] here, so this merges cleanly with the global
+# ~/.config/mise/config.toml (which owns the installed toolchain).
+
+[tasks.bootstrap]
+description = "Provision this machine (args pass through, e.g. --config bootstrap.local.toml)"
+run = "./scripts/bootstrap.sh"
+
+[tasks.bootstrap-work]
+description = "Provision as a work machine"
+run = "./scripts/bootstrap.sh --machine work"
+
+[tasks.update]
+description = "chezmoi update -v (pull + apply, the daily sync)"
+run = "chezmoi update -v"
+
+[tasks.apply]
+description = "chezmoi apply -v (render source -> $HOME)"
+run = "chezmoi apply -v"
+
+[tasks.status]
+description = "chezmoi status"
+run = "chezmoi status"
+
+[tasks.diff]
+description = "chezmoi diff"
+run = "chezmoi diff"
+
+[tasks.lint]
+description = "shellcheck the shell scripts (same config as CI)"
+run = "pre-commit run shellcheck --all-files"
+
+[tasks.test]
+description = "run the bats test suite"
+run = "bats test"
+
+[tasks.e2e]
+description = "build + run the Linux bootstrap e2e in a container (docker/podman)"
+run = "./test/e2e/run.sh"
+
+[tasks.teardown]
+description = "reset for a from-scratch retry (dry-run by default; --all --execute to wipe)"
+run = "./scripts/teardown.sh"

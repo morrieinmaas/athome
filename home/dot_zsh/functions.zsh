@@ -100,14 +100,19 @@ rgf() {
   [[ -n "$file" && -n "$line" ]] && command nvim "+${line}" "$file"
 }
 
-# ── tmux cockpit: on a fresh interactive shell with NO tmux sessions, offer to
-# bootstrap the 4 context sessions. Stays quiet once continuum has restored
-# sessions (tmux ls succeeds). [[ added by athome cockpit feature ]]
+# ── tmux cockpit: on a fresh interactive shell with NO tmux sessions, offer
+# ONCE to bootstrap the 4 context sessions. Asks at most once per boot — a marker
+# in $TMPDIR (cleared on reboot) suppresses the repeat prompt every new terminal
+# would otherwise show. Re-offer sooner with `rm $TMPDIR/.athome-cockpit-asked`.
+# Always available manually: the `cockpit` command or tmux `prefix B`.
 cockpit_offer() {
   [[ -o interactive ]] || return
   [[ -n "$TMUX" ]] && return
   command -v tmux cockpit >/dev/null 2>&1 || return
   tmux ls >/dev/null 2>&1 && return        # sessions exist → quiet
+  local marker="${TMPDIR:-/tmp}/.athome-cockpit-asked"
+  [[ -f "$marker" ]] && return             # already offered this boot → quiet
+  : > "$marker" 2>/dev/null                 # remember, so new shells don't re-ask
   printf "bootstrap cockpit (work/personal/sidebiz/misc)? [y/N] "
   local ans; read -r ans
   [[ "$ans" == [yY]* ]] && { cockpit; tmux attach -t work; }

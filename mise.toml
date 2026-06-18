@@ -8,6 +8,14 @@
 # Tasks only — no [tools] here, so this merges cleanly with the global
 # ~/.config/mise/config.toml (which owns the installed toolchain).
 
+[settings]
+# Never auto-install missing tools when running a task in this repo. mise
+# otherwise installs the whole toolset before a task by default — which made
+# `mise run teardown` REINSTALL everything only for teardown to remove it again
+# ("teardown starts installing stuff"). Tools are provisioned by bootstrap /
+# explicit `mise install`, never implicitly on task-run.
+auto_install = false
+
 [tasks.bootstrap]
 description = "Provision this machine (args pass through, e.g. --config bootstrap.local.toml)"
 run = "./scripts/bootstrap.sh"

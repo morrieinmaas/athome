@@ -37,6 +37,12 @@ install_one() {
   if out=$("${cmd[@]}" 2>&1); then
     printf '  ✓ %s: %s\n' "$label" "$pkg"
     INSTALL_OK=$((INSTALL_OK + 1))
+  elif [[ "$pm" == nb_cask ]] && printf '%s' "$out" | grep -q 'refusing to overwrite existing app'; then
+    # The app is already in /Applications (installed outside nb, or a prior run
+    # nb didn't record). nb won't clobber it — that's fine, not a failure. Skip
+    # gracefully and keep the existing app instead of flagging a bogus failure.
+    printf '  ✓ %s: %s (already present — kept existing app)\n' "$label" "$pkg"
+    INSTALL_OK=$((INSTALL_OK + 1))
   else
     printf '  ! %s: %s — install failed (continuing)\n' "$label" "$pkg" >&2
     printf '%s\n' "$out" | tail -8 | sed 's/^/      /' >&2

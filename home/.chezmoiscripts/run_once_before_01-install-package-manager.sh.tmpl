@@ -78,14 +78,18 @@ build_paru() {
   echo "  build dir: $tmp"
   echo "  build log: $build_log"
 
-  if ! git clone --depth 1 https://aur.archlinux.org/paru.git "$tmp/paru" 2>&1 | tee -a "$build_log"; then
+  # paru-bin (not `paru`): it ships a PREBUILT binary, so makepkg just repackages
+  # it — no Rust toolchain, no multi-minute compile (which is brutal under qemu in
+  # the e2e). Same `paru` command + AUR support; only the build is fast. base-devel
+  # already pulls makepkg's needs; no rust/cargo makedepend.
+  if ! git clone --depth 1 https://aur.archlinux.org/paru-bin.git "$tmp/paru-bin" 2>&1 | tee -a "$build_log"; then
     rm -rf "$tmp"; rm -f "$build_log"
     return 1
   fi
 
   # Run makepkg in subshell with -si (install + skipped-pgp checks via -s deps).
   # Errors stream to build_log so the user can see exactly what failed.
-  if ! (cd "$tmp/paru" && makepkg -si --noconfirm 2>&1 | tee -a "$build_log"); then
+  if ! (cd "$tmp/paru-bin" && makepkg -si --noconfirm 2>&1 | tee -a "$build_log"); then
     echo ""
     echo "!! makepkg failed. Last 30 lines of build log:"
     tail -n 30 "$build_log" | sed 's/^/   /'

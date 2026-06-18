@@ -781,12 +781,16 @@ fi
 # secrets-restore guards on `rbw unlocked` itself; we only offer it here when
 # unlocked so a fresh machine recovers env files in one step.
 secrets_restore="$HOME/.local/bin/secrets-restore"
-if [[ -x "$secrets_restore" ]] && rbw unlocked >/dev/null 2>&1; then
-  if confirm "restore your encrypted secrets now (secrets-restore)?" y; then
+# Only relevant when Bitwarden is actually unlocked. If the user declined / never
+# set up bw-setup, rbw is locked and secrets-restore can NEVER work — so say
+# nothing here; the bw-setup follow-up above already covers "set up Bitwarden to
+# access secrets", and secrets-restore is strictly downstream of that.
+if rbw unlocked >/dev/null 2>&1; then
+  if [[ -x "$secrets_restore" ]] && confirm "restore your encrypted secrets now (secrets-restore)?" y; then
     "$secrets_restore" || c_yellow "  secrets-restore had issues — run it manually later."
+  else
+    [[ -n "${ATHOME_FOLLOWUP_LOG:-}" ]] && printf '  • %s\n' "Secrets: run \`secrets-restore\` to recover ~/.config env files from the encrypted vault. See docs/secrets.md." >> "$ATHOME_FOLLOWUP_LOG"
   fi
-else
-  [[ -n "${ATHOME_FOLLOWUP_LOG:-}" ]] && printf '  • %s\n' "Secrets: run \`secrets-restore\` (after \`rbw unlock\`) to recover ~/.config env files from the encrypted vault. See docs/secrets.md." >> "$ATHOME_FOLLOWUP_LOG"
 fi
 
 # ── 8. recover from detached HEAD in the chezmoi repo, if any ──────────────

@@ -27,7 +27,11 @@
     autoPush   = false
 
 [diff]
-    pager = "delta"
+    # delta for syntax-highlighted diffs, but --paging=never so it never spawns
+    # `less`. Without this, chezmoi's interactive "file changed, what now?" prompts
+    # get trapped behind less (full-screen pager grabs the keyboard) and you can't
+    # answer the prompt. paging=never dumps the colored diff inline and returns.
+    pager = "delta --paging=never"
 
 [data]
     machineType  = {{ $machineType | quote }}

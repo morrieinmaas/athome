@@ -57,23 +57,14 @@ if [[ "$current_shell" != "$zsh_bin" ]]; then
   fi
 fi
 
-# zinit bootstrap — belt+braces backup for `dot_zshrc.tmpl`'s self-bootstrap
-# and the declarative .chezmoiexternal entry. Three paths fetch zinit, so be
-# careful NOT to fight any of them:
+# zinit is NOT cloned here. It has a single declarative owner — the
+# `.chezmoiexternal.toml.tmpl` entry (type = git-repo) — which chezmoi clones
+# on first apply and `git pull`s thereafter. `dot_zshrc.tmpl` self-bootstraps it
+# on first interactive shell launch as a defensive backup.
 #
-#   • chezmoi external (type = git-repo) materializes ZINIT_HOME with .git/
-#   • this script ran historically with `[[ ! -d "$ZINIT_HOME/.git" ]]` — and
-#     hit exit 128 ("destination path exists / not empty") when chezmoi had
-#     materialized the dir without a .git/ subdir yet (mid-apply race).
-#   • dot_zshrc.tmpl self-bootstraps at first interactive shell launch
-#
-# Rule: if ANY zinit dir exists, leave it alone. zshrc will fix it if broken.
-ZINIT_HOME="${XDG_DATA_HOME:-$HOME/.local/share}/zinit/zinit.git"
-if [[ -e "$ZINIT_HOME" ]]; then
-  echo "✓ zinit dir present at $ZINIT_HOME (chezmoi external or prior clone) — skipping clone"
-else
-  echo "==> bootstrapping zinit (plugin manager — includes fish-style autosuggestions)"
-  mkdir -p "$(dirname "$ZINIT_HOME")"
-  git clone --depth 1 https://github.com/zdharma-continuum/zinit.git "$ZINIT_HOME"
-fi
-echo "✓ zinit ready (autosuggestions + completions + syntax-highlighting load on first zsh launch)"
+# This script used to ALSO `git clone` it. That fought the external: chezmoi
+# plans a clone at apply start (dir absent), then this script created the dir
+# mid-apply, so the external's hard `git clone` then failed with exit 128
+# ("destination path already exists / not empty") and aborted bootstrap. One
+# owner = no race. See git history if you ever need the old belt+braces block.
+echo "✓ zinit managed by chezmoi external (.chezmoiexternal.toml) + zshrc self-bootstrap"

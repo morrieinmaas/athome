@@ -172,10 +172,15 @@ git -C "$repo_root" worktree prune 2>/dev/null || true
 # ── 0.5 normalize to ~/.local/share/chezmoi if we're elsewhere ──────────────
 expected="$HOME/.local/share/chezmoi"
 if [[ "$repo_root" != "$expected" ]]; then
-  c_yellow "==> repo at $repo_root, chezmoi expects $expected"
-  if confirm "symlink it?" y; then
-    if [[ -e "$expected" ]]; then
-      c_red "$expected already exists — resolve manually"; exit 1
+  # Idempotent re-run: a prior bootstrap already created the symlink. Detect the
+  # correct link and no-op instead of erroring "resolve manually" (which made a
+  # second run from the same repo dir fail outright).
+  if [[ -L "$expected" && "$(readlink "$expected")" == "$repo_root" ]]; then
+    c_green "✓ $expected already symlinked → $repo_root"
+  elif confirm "==> repo at $repo_root, chezmoi expects $expected. symlink it?" y; then
+    # Only bail if something OTHER than our correct link is in the way.
+    if [[ -e "$expected" || -L "$expected" ]]; then
+      c_red "$expected exists and isn't a link to $repo_root — resolve manually"; exit 1
     fi
     mkdir -p "$(dirname "$expected")"
     ln -s "$repo_root" "$expected"
@@ -654,7 +659,20 @@ cat > "$chezmoi_config" <<TOMLSEED
     includeAgents        = $INCLUDE_AGENTS
 TOMLSEED
 
-chezmoi init --apply --force --source="$SOURCE_FOR_CHEZMOI"
+# Non-fatal: a single failing run_once/run_onchange script (or a transient
+# external fetch) must NOT abort bootstrap and swallow the next-steps footer.
+# chezmoi apply is idempotent — re-running converges — so we record the failure,
+# surface it in the follow-up log, and carry on. Steps below already guard on
+# whether their artifacts (bw-setup, secrets-restore, hooks) actually deployed.
+chezmoi_rc=0
+chezmoi init --apply --force --source="$SOURCE_FOR_CHEZMOI" || chezmoi_rc=$?
+if (( chezmoi_rc != 0 )); then
+  c_yellow ""
+  c_yellow "⚠ chezmoi apply exited non-zero ($chezmoi_rc) — bootstrap will continue."
+  c_yellow "  It's idempotent: re-run to finish the remaining steps —"
+  c_yellow "      chezmoi apply        # or: ./scripts/bootstrap.sh"
+  printf '  • %s\n' "chezmoi apply exited $chezmoi_rc during bootstrap — re-run \`chezmoi apply\` (idempotent) to finish remaining steps." >> "$ATHOME_FOLLOWUP_LOG"
+fi
 
 # ── 6. set chezmoi's permanent sourceDir so future plain `chezmoi apply`
 #       calls (without --source) use the real cloned repo's home/ subdir.
@@ -733,7 +751,11 @@ if [[ "$current_branch" == "HEAD" ]]; then
 fi
 
 c_green ""
-c_green "✓ bootstrap done."
+if (( chezmoi_rc == 0 )); then
+  c_green "✓ bootstrap done."
+else
+  c_yellow "✓ bootstrap finished WITH WARNINGS (chezmoi apply rc=$chezmoi_rc — see follow-ups below)."
+fi
 
 # ── Print any follow-up actions chezmoi scripts logged ────────────────────
 if [[ -s "$ATHOME_FOLLOWUP_LOG" ]]; then

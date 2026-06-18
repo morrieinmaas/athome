@@ -27,7 +27,17 @@ _nb_cask_present() {
     _NB_CASKS="$(nb list 2>/dev/null | awk '/\(cask\)/{print $1}')"
     _NB_CASKS_FETCHED=1
   fi
-  printf '%s\n' "$_NB_CASKS" | grep -qxF "$1"
+  # nb already tracks it → installed.
+  printf '%s\n' "$_NB_CASKS" | grep -qxF "$1" && return 0
+  # Untracked but its .app artifact is already in /Applications (app installed
+  # outside nb, or left by a prior teardown that wiped nb's state). `nb info` is
+  # metadata only — NO binary download — so this still dodges the slow
+  # install-then-refuse round-trip (and the sudo-hang on .pkg casks).
+  local app
+  while IFS= read -r app; do
+    [[ -n "$app" && -e "/Applications/$app" ]] && return 0
+  done < <(nb info --cask "$1" 2>/dev/null | awk -F'app: ' '/app: /{print $2}')
+  return 1
 }
 
 # install_one <package-manager> <package> — install one package, log result.

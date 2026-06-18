@@ -21,7 +21,6 @@ common:
   - bash             # modern 5.x — macOS stock is GPL2-era 3.2; Arch has it already
   - git              # system VCS
   - git-lfs          # large-file storage (kept with git)
-  - git-delta        # syntax-highlighting diff pager — used by git, jj, lazygit AND chezmoi's [diff] pager (.chezmoi.toml.tmpl). Referenced everywhere but was missing here, so `czu`/diffs failed with "delta: not found". Binary is `delta`.
   - neovim           # editor — native: LSP/treesitter/lua compile against system libs
   - lua              # explicit so /usr/lib/lua/* exists for plugin require() paths
   - luarocks         # for :checkhealth lua + native deps if a plugin needs them

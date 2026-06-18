@@ -14,7 +14,6 @@ gui:
 git:
   paging:
     colorArg: always
-    pager: delta --paging=never --side-by-side
   commit:
     signOff: false
   autoFetch: true

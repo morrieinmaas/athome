@@ -56,7 +56,6 @@ viddy      = "latest"        # modern watch(1)
 # ── Git / VCS ────────────────────────────────────────────────────────────────
 lazygit    = "latest"
 difftastic = "latest"   # difft
-delta      = "latest"   # git-delta — syntax-highlighting pager
 jj         = "latest"   # Jujutsu (was jj / jujutsu)
 # gitleaks is NOT here — it's native (packages.yaml). The global git pre-commit
 # hook shells out to `gitleaks` and runs in contexts where mise isn't activated

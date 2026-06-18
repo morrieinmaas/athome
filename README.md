@@ -33,6 +33,11 @@ cd ~/.local/share/chezmoi
 # or:  ./scripts/bootstrap.sh --machine work    # 9-to-5 employer mac
 ```
 
+Want a fully hands-off run (no prompts)? Copy
+[`examples/bootstrap.toml.example`](examples/bootstrap.toml.example) →
+`bootstrap.local.toml` (gitignored), fill it in, and bootstrap auto-loads it
+(or pass `--config <path>`). Everything else is still automatic.
+
 > **At the `gh auth login` "HTTPS or SSH?" prompt, choose HTTPS.** A fresh
 > machine has no SSH key on GitHub yet — picking SSH would deadlock you.
 > Bootstrap generates SSH keys + uploads them + flips you to SSH everywhere
@@ -199,6 +204,7 @@ Bootstrap detects Fedora (`dnf` present, no `pacman`) and:
 | Flag | Default | Effect |
 | --- | --- | --- |
 | `--machine personal\|work` | `personal` | Sets chezmoi `machineType`. `personal` covers sidehustle too — per-directory git identity routing handles the distinction. |
+| `--config <file.toml>` | auto-discovered | A TOML answers file for a fully hands-off run (see [First-run prompts](#first-run-prompts-all-pre-filled-by-bootstrap-no-manual-entry-needed)). If omitted, bootstrap auto-loads `./bootstrap.local.toml` (gitignored) or `~/.config/athome/bootstrap.toml` when present. Template: [`examples/bootstrap.toml.example`](examples/bootstrap.toml.example). |
 | `--ref <tag\|branch>` | latest tag via `git describe --tags` (currently `v0.1.0`) | Materializes the ref in a throwaway worktree (no detached HEAD ever), runs chezmoi from there, leaves your main checkout untouched. Use `--ref main` for tip. Bootstrap refuses a ref that has no chezmoi sources under `home/`. |
 | `--no-agents` | off (i.e. include agents) | Skips the `~/.config/agents` skills+instructions sync. Use on machines that don't need agentic tooling. |
 | `--import-from <dir>` | none | Restore from a key-backup directory you transported yourself (secondary path; only with `--import-ssh`). The primary cross-machine path is `--import-ssh-bw` (Bitwarden). |
@@ -220,7 +226,7 @@ Bootstrap detects Fedora (`dnf` present, no `pacman`) and:
 7. **Query-then-upload** SSH keys: queries `gh api user/keys` and `gh api user/ssh_signing_keys` before uploading, so re-runs don't spam duplicates on your GitHub account.
 8. **Switch chezmoi repo remote HTTPS → SSH** as soon as keys are on GH, so subsequent `git pull` uses SSH (no HTTPS-password prompt — GitHub doesn't accept those anymore).
 9. **Flip `gh config git_protocol` to `ssh`** so future `gh repo clone foo/bar` defaults to SSH.
-10. **`chezmoi init --apply`** with all prompts pre-filled — non-interactive on first run, cached for re-runs.
+10. **`chezmoi init --apply`** non-interactively: bootstrap resolves every first-run answer (env var → `--config` TOML → `gh`/public-API derivation) and writes them into your private `~/.config/chezmoi/chezmoi.toml` `[data]` before init, so chezmoi reuses them instead of prompting. (It seeds `[data]` rather than passing `--promptString`, because chezmoi matches `--promptString` on the prompt's display text, not the field name.)
 11. **Pin `sourceDir`** so future plain `chezmoi apply` uses the canonical repo location.
 12. **Install global git hooks** into the in-repo `.git/hooks/` (matches what chezmoi deploys to `~/.config/git/hooks/`).
 13. **Recover from detached HEAD** in the chezmoi repo if any prior weirdness left it that way.
@@ -481,6 +487,14 @@ Who reads it:
 To skip: `./scripts/bootstrap.sh --no-agents`.
 
 ## First-run prompts (all pre-filled by bootstrap, no manual entry needed)
+
+Each answer is resolved in priority order: **`ATHOME_*` env var → `--config` TOML
+file → derivation (`gh`/public API) → one interactive prompt**. For a fully
+hands-off run, copy [`examples/bootstrap.toml.example`](examples/bootstrap.toml.example)
+to a gitignored `bootstrap.local.toml`, fill it in, and bootstrap picks it up
+automatically (or pass `--config <path>`). The work/sidebiz identity fields
+(`workEmail`, `workName`, `sidebizEmail`, `sidebizName`) live there too — kept
+out of the repo, written only into your private `~/.config/chezmoi/chezmoi.toml`.
 
 | Prompt | Default | Notes |
 | --- | --- | --- |

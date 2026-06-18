@@ -1,0 +1,60 @@
+# bootstrap.toml — non-interactive answers for scripts/bootstrap.sh
+#
+# Copy this to a gitignored file and fill it in, then point bootstrap at it:
+#
+#   cp examples/bootstrap.toml.example bootstrap.local.toml
+#   $EDITOR bootstrap.local.toml
+#   ./scripts/bootstrap.sh --config bootstrap.local.toml
+#
+# bootstrap auto-discovers (no --config needed) the first readable of:
+#   1. the path you pass to --config
+#   2. ./bootstrap.local.toml      (repo root — gitignored)
+#   3. ~/.config/athome/bootstrap.toml
+#
+# Precedence: an ATHOME_* env var or a CLI flag (--machine, --no-agents) always
+# wins over this file; this file only fills blanks. Every value is OPTIONAL —
+# anything omitted/empty falls back to a sensible default (personal everywhere).
+#
+# This file never lands in the repo. bootstrap copies the answers into your OWN
+# private ~/.config/chezmoi/chezmoi.toml — the same place chezmoi caches prompt
+# answers — so nothing personal is ever committed.
+#
+# Parser is intentionally simple: `key = "value"`, one per line, and comments
+# only on their own line (don't put a trailing `# …` after a value).
+
+# personal | work. "personal" also covers sidehustle (per-dir git routing
+# handles that separately). Same as the --machine flag.
+machine = "personal"
+
+# Your GitHub username. Empty = derived from the logged-in `gh` account.
+githubHandle = ""
+
+# Your GitHub numeric id (`gh api user -q .id`). Empty = fetched from the public
+# api.github.com profile. Used to build the <id>+<handle>@users.noreply commit
+# email; if it can't be resolved the plain <handle>@users.noreply form is used.
+githubId = ""
+
+# Personal git display name. Empty = your GitHub handle.
+personalName = ""
+
+# Work identity — only materialized on machine = "work".
+# Empty = use your personal identity everywhere.
+workEmail = ""
+workName = ""
+
+# Side-business identity (routed for repos under ~/sidebiz/).
+# Empty = use your personal identity everywhere.
+sidebizEmail = ""
+sidebizName = ""
+
+# Sync ~/.config/agents skills + instructions (agent-agnostic). true | false.
+includeAgents = "true"
+
+# Skills/agents repo to sync into ~/.config/agents as owner/repo. Empty = none.
+agentsRepo = ""
+
+# VPN (optional). Empty = service default.
+# NetBird management URL — empty = NetBird Cloud SaaS; set when self-hosting.
+netbirdManagementUrl = ""
+# NordVPN auto-connect country — empty = NordVPN picks best.
+nordvpnCountry = ""

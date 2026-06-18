@@ -109,6 +109,7 @@ gone after the history squash; the fixes live in the current tree).
 | Noctalia bar says "wifi disabled" but `nmcli` works | Noctalia shells out to `nmcli` (not D-Bus); needs to be RESTARTED after switching backend so `nmcli -t monitor` re-attaches | `networkmanager` is pinned; recover with `pkill -f "qs.*noctalia-shell" && qs -c noctalia-shell &` |
 | Noctalia never spawns on niri start | `noctalia-shell` is a Quickshell config NAME, not a binary — must launch via `qs -c noctalia-shell` | spawn-at-startup uses `qs -c noctalia-shell` |
 | Bootstrap installs an outdated shell stack on a fresh box | bootstrap defaulted `--ref` to a stale tag | tag after every shell-stack change |
+| `--machine work` / `ATHOME_WORK_EMAIL` ignored; chezmoi prompts for every value on first `init` despite "pre-filled" flags | `chezmoi --promptString KEY=VAL` matches on the prompt's **display text**, not the field name (`promptStringOnce . "machineType" "Machine type …"`) — so `--promptString machineType=…` was silently dropped | bootstrap seeds answers into `~/.config/chezmoi/chezmoi.toml` `[data]` **before** `chezmoi init` (`promptStringOnce` reuses existing data → no prompt), resolved `ATHOME_*` env → `--config` TOML (`examples/bootstrap.toml.example`) → derivation. Don't reintroduce `--promptString field=…`. |
 
 ## Things Noctalia replaces — don't double-spawn
 

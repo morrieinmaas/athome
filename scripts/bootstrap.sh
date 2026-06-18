@@ -51,15 +51,19 @@ short_hostname() {
 # ── arg parsing ─────────────────────────────────────────────────────────────
 REF=""
 MACHINE="personal"
+MACHINE_FROM_FLAG="false"  # true once --machine is passed (so a config file can't override an explicit flag)
 INCLUDE_AGENTS="true"   # set to "false" by --no-agents
+AGENTS_FROM_FLAG="false"   # true once --no-agents is passed (config can't override an explicit flag)
+CONFIG_FILE_ARG=""      # set by --config: a TOML file of answers for a non-interactive run
 IMPORT_FROM=""          # set to a backup-dir path by --import-from
 IMPORT_SSH="false"      # set to "true" by --import-ssh (opt-in: SSH keys are usually per-machine)
 IMPORT_SSH_BW=""        # set to a Bitwarden item name by --import-ssh-bw (restore the key via rbw)
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --ref)           REF="$2"; shift 2 ;;
-    --machine)       MACHINE="$2"; shift 2 ;;
-    --no-agents)     INCLUDE_AGENTS="false"; shift ;;  # skip ~/.config/agents skills sync
+    --machine)       MACHINE="$2"; MACHINE_FROM_FLAG="true"; shift 2 ;;
+    --config)        CONFIG_FILE_ARG="$2"; shift 2 ;;   # TOML answers file (see examples/bootstrap.toml.example)
+    --no-agents)     INCLUDE_AGENTS="false"; AGENTS_FROM_FLAG="true"; shift ;;  # skip ~/.config/agents skills sync
     --import-from)   IMPORT_FROM="$2"; shift 2 ;;      # restore SSH key from a prior key-backup dir (with --import-ssh)
     --import-ssh)    IMPORT_SSH="true"; shift ;;       # opt in to restoring SSH from --import-from
     --import-ssh-bw) IMPORT_SSH_BW="$2"; shift 2 ;;    # restore the SSH key from a Bitwarden secure note (rbw get)
@@ -70,10 +74,6 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-case "$MACHINE" in
-  personal|work) ;;
-  *) c_red "--machine must be personal|work (got: $MACHINE)"; exit 2 ;;
-esac
 # personal covers everything that isn't 9-to-5 work — including sidehustle.
 # Per-directory git identity routing handles sidehustle separately.
 
@@ -88,7 +88,6 @@ esac
 # One SSH key per machine (single GitHub account) does auth + commit signing —
 # see the keygen section below. --machine still selects which context *dirs* get
 # created (run_once_03); the per-tree git email routing is independent of keys.
-c_blue "==> machine context: $MACHINE"
 
 # ── 0. resolve the repo location from script path ───────────────────────────
 # The chezmoi source dir lives at $repo_root/home (pointed at by .chezmoiroot).
@@ -107,6 +106,63 @@ if [[ ! -f "$repo_root/.chezmoiroot" ]] || [[ ! -d "$chezmoi_source/.chezmoiscri
   c_red "    ~/.local/share/chezmoi/scripts/bootstrap.sh"
   exit 1
 fi
+
+# ── 0.2 load a non-interactive config file (optional) ───────────────────────
+# Everything the first-run prompts ask for can live in a TOML answers file so a
+# fresh box can be provisioned hands-off. Resolution order (first readable wins):
+#   1. --config <path>
+#   2. $repo_root/bootstrap.local.toml   (gitignored — your filled-in copy)
+#   3. ~/.config/athome/bootstrap.toml
+# Values here only fill BLANKS: an explicit env var (ATHOME_*) or flag always
+# wins. Nothing from this file is committed — it seeds chezmoi's own private
+# ~/.config/chezmoi/chezmoi.toml at apply time, exactly where chezmoi already
+# caches answers. Template: examples/bootstrap.toml.example.
+#
+# Parser is deliberately minimal: `key = value` or `key = "value"`, one per
+# line, comments on their OWN line (no inline `#` after a value).
+cfg_get() {
+  sed -n "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*//p" "$CONFIG_FILE" 2>/dev/null \
+    | head -1 | sed 's/[[:space:]]*$//; s/^"\(.*\)"$/\1/'
+}
+load_config() {
+  CONFIG_FILE="$1"
+  c_blue "==> non-interactive config: $CONFIG_FILE"
+  : "${ATHOME_GITHUB_HANDLE:=$(cfg_get githubHandle)}"
+  : "${ATHOME_GITHUB_ID:=$(cfg_get githubId)}"
+  : "${ATHOME_PERSONAL_NAME:=$(cfg_get personalName)}"
+  : "${ATHOME_WORK_EMAIL:=$(cfg_get workEmail)}"
+  : "${ATHOME_WORK_NAME:=$(cfg_get workName)}"
+  : "${ATHOME_SIDEBIZ_EMAIL:=$(cfg_get sidebizEmail)}"
+  : "${ATHOME_SIDEBIZ_NAME:=$(cfg_get sidebizName)}"
+  : "${ATHOME_AGENTS_REPO:=$(cfg_get agentsRepo)}"
+  : "${ATHOME_NETBIRD_MGMT_URL:=$(cfg_get netbirdManagementUrl)}"
+  : "${ATHOME_NORDVPN_COUNTRY:=$(cfg_get nordvpnCountry)}"
+  if [[ "$MACHINE_FROM_FLAG" == false ]]; then
+    local m; m="$(cfg_get machine)"; [[ -n "$m" ]] && MACHINE="$m"
+  fi
+  if [[ "$AGENTS_FROM_FLAG" == false ]]; then
+    local a; a="$(cfg_get includeAgents)"; [[ -n "$a" ]] && INCLUDE_AGENTS="$a"
+  fi
+}
+if [[ -n "$CONFIG_FILE_ARG" ]]; then
+  [[ -r "$CONFIG_FILE_ARG" ]] || { c_red "--config: file not readable: $CONFIG_FILE_ARG"; exit 2; }
+  load_config "$CONFIG_FILE_ARG"
+elif [[ -r "$repo_root/bootstrap.local.toml" ]]; then
+  load_config "$repo_root/bootstrap.local.toml"
+elif [[ -r "$HOME/.config/athome/bootstrap.toml" ]]; then
+  load_config "$HOME/.config/athome/bootstrap.toml"
+fi
+
+# Validate machine context now that flags AND the config file have had their say.
+case "$MACHINE" in
+  personal|work) ;;
+  *) c_red "machine must be personal|work (got: $MACHINE)"; exit 2 ;;
+esac
+case "$INCLUDE_AGENTS" in
+  true|false) ;;
+  *) c_red "includeAgents must be true|false (got: $INCLUDE_AGENTS)"; exit 2 ;;
+esac
+c_blue "==> machine context: $MACHINE"
 
 # Prune any leaked worktrees from previous hard-killed bootstrap runs.
 # (EXIT trap normally removes them on Ctrl-C, but SIGKILL bypasses it.)
@@ -523,10 +579,10 @@ export ATHOME_FOLLOWUP_LOG="${TMPDIR:-/tmp}/athome-bootstrap-followup.log"
 export ATHOME_BOOTSTRAP=1
 
 c_blue "==> chezmoi init --apply --force (source: $SOURCE_FOR_CHEZMOI, ref: $REF)"
-# Work / sidebiz emails ride in via env vars (so they aren't hardcoded in
-# the template). On first run, export them in your shell before running
-# bootstrap.sh, OR let chezmoi prompt interactively and remember the answer
-# in ~/.config/chezmoi/chezmoi.toml. Empty value = "use personal everywhere".
+# Work / sidebiz emails (and every other answer) ride in via, in priority order:
+# an ATHOME_* env var → the --config TOML answers file → interactive prompt.
+# None are hardcoded in the template or committed anywhere. Empty value = "use
+# personal everywhere". See examples/bootstrap.toml.example for the file form.
 #
 # --force: on a re-run / partial-state machine, some managed files may
 # already exist with local edits (e.g. ssh config got seeded by an earlier
@@ -568,20 +624,37 @@ if [[ -z "$gh_id" && -n "$gh_handle" ]]; then
 fi
 c_green "✓ GitHub identity: $gh_handle${gh_id:+ (id $gh_id)} → commit email ${gh_id:+${gh_id}+}${gh_handle}@users.noreply.github.com"
 
-chezmoi init --apply --force --source="$SOURCE_FOR_CHEZMOI" \
-  --promptString machineType="$MACHINE" \
-  --promptString hostname="$(short_hostname)" \
-  --promptString githubHandle="$gh_handle" \
-  --promptString githubId="$gh_id" \
-  --promptString personalName="${ATHOME_PERSONAL_NAME:-}" \
-  --promptString netbirdManagementUrl="" \
-  --promptString nordvpnCountry="" \
-  --promptString workEmail="${ATHOME_WORK_EMAIL:-}" \
-  --promptString sidebizEmail="${ATHOME_SIDEBIZ_EMAIL:-}" \
-  --promptString workName="${ATHOME_WORK_NAME:-}" \
-  --promptString sidebizName="${ATHOME_SIDEBIZ_NAME:-}" \
-  --promptString agentsRepo="${ATHOME_AGENTS_REPO:-}" \
-  --promptBool   includeAgents="$INCLUDE_AGENTS"
+# Seed chezmoi's own config [data] BEFORE init so first-run is non-interactive.
+# Why not --promptString? chezmoi matches `--promptString K=V` on the prompt's
+# *display text*, NOT the field name — so `--promptString machineType=…` is
+# silently ignored and chezmoi falls back to interactive prompts (dropping every
+# value we computed here). The robust, version-proof path is the documented
+# "promptStringOnce reads pre-existing config [data]" behavior: we write the
+# answers into ~/.config/chezmoi/chezmoi.toml first, and init reuses them without
+# prompting, then re-renders the file from the template (so this seed is replaced
+# by the full config). This is the user's OWN private file — the same place
+# chezmoi caches interactive answers — never the repo.
+chezmoi_config="$HOME/.config/chezmoi/chezmoi.toml"
+mkdir -p "$(dirname "$chezmoi_config")"
+toml_str() { printf '%s' "${1:-}" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
+cat > "$chezmoi_config" <<TOMLSEED
+[data]
+    machineType          = "$(toml_str "$MACHINE")"
+    hostname             = "$(toml_str "$(short_hostname)")"
+    githubHandle         = "$(toml_str "$gh_handle")"
+    githubId             = "$(toml_str "$gh_id")"
+    personalName         = "$(toml_str "${ATHOME_PERSONAL_NAME:-}")"
+    workEmail            = "$(toml_str "${ATHOME_WORK_EMAIL:-}")"
+    workName             = "$(toml_str "${ATHOME_WORK_NAME:-}")"
+    sidebizEmail         = "$(toml_str "${ATHOME_SIDEBIZ_EMAIL:-}")"
+    sidebizName          = "$(toml_str "${ATHOME_SIDEBIZ_NAME:-}")"
+    netbirdManagementUrl = "$(toml_str "${ATHOME_NETBIRD_MGMT_URL:-}")"
+    nordvpnCountry       = "$(toml_str "${ATHOME_NORDVPN_COUNTRY:-}")"
+    agentsRepo           = "$(toml_str "${ATHOME_AGENTS_REPO:-}")"
+    includeAgents        = $INCLUDE_AGENTS
+TOMLSEED
+
+chezmoi init --apply --force --source="$SOURCE_FOR_CHEZMOI"
 
 # ── 6. set chezmoi's permanent sourceDir so future plain `chezmoi apply`
 #       calls (without --source) use the real cloned repo's home/ subdir.

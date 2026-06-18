@@ -40,6 +40,12 @@ archinstall-creds.json
 !.env.sample
 *.envrc.local
 
+# Non-interactive bootstrap answers (may hold work/sidebiz emails + names).
+# The committed template is examples/bootstrap.toml.example.
+bootstrap.local.toml
+bootstrap.*.toml
+!examples/bootstrap.toml.example
+
 # Password store (sometimes accidentally cloned into repo)
 .password-store/
 

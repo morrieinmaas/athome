@@ -273,14 +273,29 @@ live file?"; col 2 = "what would `apply` do?". Codes: `A`dd, `M`odify, `D`elete,
 - ` R .chezmoiscripts/00-…` — a script `apply` would **R**un; expected, scripts
   re-run by design (most are idempotent / no-op on a settled machine).
 
-> If `czu`/`czd` ever looks frozen, you're probably inside the diff pager
-> (`less`) — press `q`. The `[diff] pager` is set to `delta --paging=never` to
-> avoid this, but `$PAGER` elsewhere can still page.
+> If `czu`/`czd` ever looks frozen, you're probably inside the `less` pager —
+> press `q`. Diffs render stock (no delta); `git difftool` gives difftastic
+> side-by-side on demand.
+
+## Reset / start over
+
+To re-test a clean bootstrap, use [`scripts/teardown.sh`](scripts/teardown.sh)
+— **dry-run by default**, tiered, and destructive runs need a typed confirm:
+
+```bash
+./scripts/teardown.sh --state                 # preview: reset chezmoi state only
+./scripts/teardown.sh --dotfiles --execute    # + remove managed files (type to confirm)
+./scripts/teardown.sh --all --execute         # + uninstall mise/nanobrew/rbw/SSH key
+```
+
+`--state` < `--dotfiles` < `--all` (cumulative). The source repo is always
+preserved so you can re-bootstrap. Safer still: run `bootstrap.sh` in a fresh
+macOS user account or VM rather than wiping your working machine.
 
 ## What's already wired up after bootstrap
 
-`run_once_03-setup-project-dirs.sh.tmpl` pre-creates the per-context
-roots based on `machineType`:
+`run_03-setup-project-dirs.sh.tmpl` pre-creates the per-context roots based on
+`machineType` (macOS + Linux):
 
 - **Personal machine** (`--machine personal`): `~/personal/` + `~/sidebiz/`
   (each with a seeded `.envrc` containing `use ctx <name>`)

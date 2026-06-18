@@ -17,6 +17,19 @@ set -euo pipefail
 INSTALL_OK=0
 INSTALL_FAIL=0
 
+# Cached list of installed nb casks (filled once, lazily). `nb install --cask`
+# re-DOWNLOADS the app before it'll even refuse to overwrite an existing one, so
+# checking this first skips already-present casks without the slow round-trip.
+_NB_CASKS=""
+_NB_CASKS_FETCHED=0
+_nb_cask_present() {
+  if [[ "$_NB_CASKS_FETCHED" -eq 0 ]]; then
+    _NB_CASKS="$(nb list 2>/dev/null | awk '/\(cask\)/{print $1}')"
+    _NB_CASKS_FETCHED=1
+  fi
+  printf '%s\n' "$_NB_CASKS" | grep -qxF "$1"
+}
+
 # install_one <package-manager> <package> — install one package, log result.
 # Never fails the whole script: a single bad package logs and continues.
 # On failure, surface the tail of the package manager's output so the
@@ -33,6 +46,14 @@ install_one() {
     dnf)       label=dnf;    cmd=(sudo dnf install -y "$pkg") ;;
     *)         printf '  ! unknown pm: %s\n' "$pm" >&2; return 0 ;;
   esac
+  # Fast skip: a cask nb already lists is installed — don't re-run `nb install`
+  # just to have it re-download the app and refuse to overwrite (slow). Unmanaged
+  # but present apps still hit the overwrite-skip fallback below.
+  if [[ "$pm" == nb_cask ]] && _nb_cask_present "$pkg"; then
+    printf '  ✓ %s: %s (already installed)\n' "$label" "$pkg"
+    INSTALL_OK=$((INSTALL_OK + 1))
+    return 0
+  fi
   local out
   if out=$("${cmd[@]}" 2>&1); then
     printf '  ✓ %s: %s\n' "$label" "$pkg"

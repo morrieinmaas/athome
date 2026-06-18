@@ -583,6 +583,23 @@ export ATHOME_FOLLOWUP_LOG="${TMPDIR:-/tmp}/athome-bootstrap-followup.log"
 # won't have this set, so they DO get the (non-interactive) nudge.
 export ATHOME_BOOTSTRAP=1
 
+# Feed mise a GitHub token for THIS apply. run_once_06 runs `mise install`
+# inside apply — a non-interactive env that never sources exports.zsh — so
+# without this it hits the anonymous 60-req/hr limit and fails to resolve tools
+# (helm/ruff/shfmt) with 403s. If gh is authed (now a native package, present
+# before apply), mint the token here so mise's github backend authenticates.
+if command -v gh >/dev/null 2>&1; then
+  _gh_token="$(gh auth token 2>/dev/null || true)"
+  if [[ -n "$_gh_token" ]]; then
+    export GITHUB_TOKEN="$_gh_token" MISE_GITHUB_TOKEN="$_gh_token"
+    c_green "✓ mise will use gh's GitHub token (avoids the anon API rate limit)"
+  else
+    c_yellow "==> gh not logged in — \`gh auth login\` first to avoid mise hitting the"
+    c_yellow "    anonymous GitHub rate limit (helm/ruff/shfmt may fail to resolve)."
+  fi
+  unset _gh_token
+fi
+
 c_blue "==> chezmoi init --apply --force (source: $SOURCE_FOR_CHEZMOI, ref: $REF)"
 # Work / sidebiz emails (and every other answer) ride in via, in priority order:
 # an ATHOME_* env var → the --config TOML answers file → interactive prompt.

@@ -6,6 +6,7 @@
 {{- $githubId            := promptStringOnce . "githubId"            "GitHub numeric user ID (`gh api user -q .id`; empty = plain noreply email)" "" -}}
 {{- $netbirdMgmtUrl      := promptStringOnce . "netbirdManagementUrl" "NetBird management URL (empty = NetBird Cloud SaaS, e.g. https://netbird.example.com when self-hosting)" "" -}}
 {{- $nordvpnCountry      := promptStringOnce . "nordvpnCountry"      "NordVPN auto-connect country (empty = NordVPN picks best, e.g. Netherlands)" "" -}}
+{{- $bitwardenUrl        := promptStringOnce . "bitwardenUrl"        "Bitwarden server URL (empty = US cloud bitwarden.com; EU = https://vault.bitwarden.eu; or your self-hosted Vaultwarden URL)" "" -}}
 {{/* Work + sidebiz emails are prompted (not hardcoded) so the template
      stays publishable. bootstrap.sh forwards real values via
      --promptString on init, then chezmoi.toml caches them. */ -}}
@@ -63,6 +64,10 @@
     # VPN config (empty = service default)
     netbird_management_url = {{ $netbirdMgmtUrl | quote }}
     nordvpn_country        = {{ $nordvpnCountry | quote }}
+
+    # Bitwarden server (empty = US cloud bitwarden.com; EU = vault.bitwarden.eu;
+    # or a self-hosted Vaultwarden URL). bw-setup runs `rbw config set base_url`.
+    bitwarden_url          = {{ $bitwardenUrl | quote }}
 
     # Sync ~/.claude (skills + CLAUDE.md + AGENTIC-SYSTEMS.md + RTK.md) via
     # chezmoi external. Editor/agent-agnostic — opencode reads it directly,

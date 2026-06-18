@@ -137,6 +137,7 @@ load_config() {
   : "${ATHOME_AGENTS_REPO:=$(cfg_get agentsRepo)}"
   : "${ATHOME_NETBIRD_MGMT_URL:=$(cfg_get netbirdManagementUrl)}"
   : "${ATHOME_NORDVPN_COUNTRY:=$(cfg_get nordvpnCountry)}"
+  : "${ATHOME_BW_BASE_URL:=$(cfg_get bitwardenUrl)}"
   if [[ "$MACHINE_FROM_FLAG" == false ]]; then
     local m; m="$(cfg_get machine)"; [[ -n "$m" ]] && MACHINE="$m"
   fi
@@ -681,6 +682,7 @@ cat > "$chezmoi_config" <<TOMLSEED
     sidebizName          = "$(toml_str "${ATHOME_SIDEBIZ_NAME:-}")"
     netbirdManagementUrl = "$(toml_str "${ATHOME_NETBIRD_MGMT_URL:-}")"
     nordvpnCountry       = "$(toml_str "${ATHOME_NORDVPN_COUNTRY:-}")"
+    bitwardenUrl         = "$(toml_str "${ATHOME_BW_BASE_URL:-}")"
     agentsRepo           = "$(toml_str "${ATHOME_AGENTS_REPO:-}")"
     includeAgents        = $INCLUDE_AGENTS
 TOMLSEED
@@ -690,9 +692,13 @@ TOMLSEED
 # chezmoi apply is idempotent — re-running converges — so we record the failure,
 # surface it in the follow-up log, and carry on. Steps below already guard on
 # whether their artifacts (bw-setup, secrets-restore, hooks) actually deployed.
+# Count non-fatal problems so the final summary reports honestly instead of a
+# blanket "✓ done" when a step actually failed (chezmoi apply, bw-setup, …).
+BOOTSTRAP_WARNINGS=0
 chezmoi_rc=0
 chezmoi init --apply --force --source="$SOURCE_FOR_CHEZMOI" || chezmoi_rc=$?
 if (( chezmoi_rc != 0 )); then
+  BOOTSTRAP_WARNINGS=$((BOOTSTRAP_WARNINGS + 1))
   c_yellow ""
   c_yellow "⚠ chezmoi apply exited non-zero ($chezmoi_rc) — bootstrap will continue."
   c_yellow "  It's idempotent: re-run to finish the remaining steps —"
@@ -734,7 +740,14 @@ bw_setup="$HOME/.local/bin/bw-setup"
 export PATH="/opt/nanobrew/prefix/bin:/usr/local/bin:$HOME/.local/bin:$PATH"
 if [[ -x "$bw_setup" ]]; then
   if confirm "log in to Bitwarden now (rbw)?" y; then
-    "$bw_setup" || true   # bw-setup logs its own result; never fail bootstrap on it
+    # Don't abort bootstrap on a Bitwarden hiccup, but DON'T pretend it worked
+    # either — record a follow-up so the final summary reflects reality (e.g.
+    # missing pinentry, wrong API key, unreachable server).
+    if ! "$bw_setup"; then
+      BOOTSTRAP_WARNINGS=$((BOOTSTRAP_WARNINGS + 1))
+      c_yellow "  Bitwarden login didn't complete — see the message above."
+      [[ -n "${ATHOME_FOLLOWUP_LOG:-}" ]] && printf '  • %s\n' "Bitwarden: \`bw-setup\` did NOT finish (see output above — often a missing pinentry or API key). Re-run \`bw-setup\` once fixed. docs/secrets.md." >> "$ATHOME_FOLLOWUP_LOG"
+    fi
   else
     c_yellow "  Skipped — run \`bw-setup\` anytime to log in to Bitwarden."
     [[ -n "${ATHOME_FOLLOWUP_LOG:-}" ]] && printf '  • %s\n' "Bitwarden: run \`bw-setup\` (register once + unlock) to access secrets. See docs/secrets.md." >> "$ATHOME_FOLLOWUP_LOG"
@@ -777,10 +790,11 @@ if [[ "$current_branch" == "HEAD" ]]; then
 fi
 
 c_green ""
-if (( chezmoi_rc == 0 )); then
+if (( BOOTSTRAP_WARNINGS == 0 )); then
   c_green "✓ bootstrap done."
 else
-  c_yellow "✓ bootstrap finished WITH WARNINGS (chezmoi apply rc=$chezmoi_rc — see follow-ups below)."
+  c_yellow "⚠ bootstrap finished WITH ${BOOTSTRAP_WARNINGS} WARNING(S) — NOT fully complete."
+  c_yellow "  See the follow-up actions below; re-run \`./scripts/bootstrap.sh\` after fixing."
 fi
 
 # ── Print any follow-up actions chezmoi scripts logged ────────────────────

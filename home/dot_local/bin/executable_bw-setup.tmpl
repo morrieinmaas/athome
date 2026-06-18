@@ -31,10 +31,29 @@ case "$(uname -s)" in
   Darwin) rbw_pinentry="pinentry-mac" ;;
   *)      rbw_pinentry="pinentry-curses" ;;   # terminal-native; works headless + any terminal
 esac
+# rbw shells out to the pinentry program to read the master password / API key.
+# If it's missing, `rbw login`/`register` fail deep inside with a cryptic
+# "error spawning pinentry: No such file or directory". Catch it up front with
+# an actionable message and a non-zero exit so callers (bootstrap) can surface it.
+if ! command -v "$rbw_pinentry" >/dev/null 2>&1; then
+  y "pinentry program '$rbw_pinentry' not found — rbw can't prompt for the master password."
+  case "$(uname -s)" in
+    Darwin) y "  Install it:  nb install pinentry-mac" ;;
+    *)      y "  Install it:  pacman -S pinentry   (Arch)  /  dnf install pinentry   (Fedora)" ;;
+  esac
+  exit 1
+fi
 rbw config set pinentry "$rbw_pinentry" >/dev/null 2>&1 || true
 rbw config set lock_timeout 28800       >/dev/null 2>&1 || true   # 8h, like the old gpg-agent cache
-if [[ -n "${ATHOME_BW_BASE_URL:-}" ]]; then
-  rbw config set base_url "$ATHOME_BW_BASE_URL" >/dev/null 2>&1 || true
+
+# Bitwarden server URL. Resolution order: ATHOME_BW_BASE_URL env (ad-hoc
+# override) → the chezmoi-configured value (prompted at init / set in the
+# bootstrap TOML as `bitwardenUrl`). Empty = US cloud (bitwarden.com), so we
+# only call `rbw config set base_url` for a non-default server (EU =
+# https://vault.bitwarden.eu, or a self-hosted Vaultwarden URL).
+bw_base_url="${ATHOME_BW_BASE_URL:-{{ if hasKey . "bitwarden_url" }}{{ .bitwarden_url }}{{ end }}}"
+if [[ -n "$bw_base_url" ]]; then
+  rbw config set base_url "$bw_base_url" >/dev/null 2>&1 || true
 fi
 
 # ── already good? ───────────────────────────────────────────────────────────

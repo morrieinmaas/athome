@@ -58,3 +58,8 @@ agentsRepo = ""
 netbirdManagementUrl = ""
 # NordVPN auto-connect country — empty = NordVPN picks best.
 nordvpnCountry = ""
+
+# Bitwarden server URL (optional). Empty = US cloud (bitwarden.com).
+# EU cloud: "https://vault.bitwarden.eu". Self-hosted Vaultwarden: your URL.
+# bw-setup runs `rbw config set base_url` with this value.
+bitwardenUrl = ""

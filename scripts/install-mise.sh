@@ -1,33 +1,42 @@
 #!/usr/bin/env bash
-# install-mise.sh — the ONE prerequisite the mise-task front door can't install
-# itself: mise. After this, `mise run bootstrap` provisions the machine and
-# `mise run <task>` runs everything else.
+# install-mise.sh — the ONE prerequisite the mise front door can't self-install:
+# mise. It installs mise, trusts this repo's mise.toml, and wires `mise activate`
+# into ~/.zshrc IF it isn't already active — then STOPS. You run the rest:
 #
-# This is bootstrapping the bootstrapper — the same irreducible first step as
-# `curl https://sh.rustup.rs | sh` before you can use cargo, or nvm before npm.
+#   ./scripts/install-mise.sh
+#   source ~/.zshrc          # (or open a new shell)
+#   mise run bootstrap
 #
-# Standalone alternative (no mise needed, single command): ./scripts/bootstrap.sh
+# Bootstrapping the bootstrapper, like `curl rustup | sh` before cargo.
+# Standalone alternative (one command, no mise-routing): ./scripts/bootstrap.sh
 set -euo pipefail
 
 if command -v mise >/dev/null 2>&1; then
   echo "✓ mise already installed: $(mise --version)"
 else
   echo "==> installing mise via mise.run"
-  curl -fsSL https://mise.run | sh
+  # MISE_INSTALL_HELP=0 silences mise.run's "echo … >> ~/.zshrc" hint — we wire
+  # activation ourselves below (and athome's dotfiles own it after bootstrap).
+  curl -fsSL https://mise.run | MISE_INSTALL_HELP=0 sh
 fi
 
-# Trust this repo's mise.toml so `mise run` works without a prompt. Use the
-# resolved binary path — a freshly-installed mise (~/.local/bin/mise) isn't on
-# the CURRENT shell's PATH yet (mise.run wires that into your shell rc).
 mise_bin="$(command -v mise || echo "$HOME/.local/bin/mise")"
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 "$mise_bin" trust "$repo_root/mise.toml" >/dev/null 2>&1 || true
 
-echo
-echo "✓ mise ready. Next:"
-if command -v mise >/dev/null 2>&1; then
-  echo "    mise run bootstrap"
+# Wire activation for new shells so the next `mise run bootstrap` finds mise.
+# Skip if it's already active anywhere ~/.zshrc sources (athome's completions.zsh
+# activates it once dotfiles are deployed) — avoids a duplicate line. Uses the
+# absolute mise path so it works even before ~/.local/bin is on PATH. The
+# bootstrap's `chezmoi apply --force` later replaces ~/.zshrc with the template,
+# so anything added here is only a pre-bootstrap stopgap.
+rc="$HOME/.zshrc"
+if grep -rqs "mise activate zsh" "$rc" "$HOME/.zsh" 2>/dev/null; then
+  echo "✓ mise activation already wired — nothing added to ~/.zshrc"
 else
-  echo "    open a new shell (or run: export PATH=\"\$HOME/.local/bin:\$PATH\"), then:"
-  echo "    mise run bootstrap"
+  printf 'eval "$(%s activate zsh)"\n' "$mise_bin" >> "$rc"
+  echo "✓ wired mise activation into ~/.zshrc"
 fi
+
+echo
+echo "Next:  source ~/.zshrc   (or open a new shell), then:  mise run bootstrap"

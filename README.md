@@ -33,13 +33,15 @@ cd ~/.local/share/chezmoi
 # or:  ./scripts/bootstrap.sh --machine work    # 9-to-5 employer mac
 
 # ── or the mise-first front door (everything is `mise run` after this) ──
-./scripts/install-mise.sh                       # the one prereq mise can't self-install
-mise run bootstrap                              # = ./scripts/bootstrap.sh, then mise owns the rest
+./scripts/install-mise.sh                       # installs mise + wires activation, then stops
+source ~/.zshrc                                 # (or open a new shell)
+mise run bootstrap                              # = ./scripts/bootstrap.sh; mise owns the rest
 ```
 
 Both reach the same place. `install-mise.sh` is the irreducible first step
-(bootstrapping the bootstrapper — like `curl rustup | sh` before `cargo`); after
-it, `mise run <task>` is the universal verb (`mise tasks` to list).
+(bootstrapping the bootstrapper — like `curl rustup | sh` before `cargo`); it
+installs mise and stops, so you stay in control. After it, `mise run <task>` is
+the universal verb (`mise tasks` to list).
 
 Want a fully hands-off run (no prompts)? Copy
 [`examples/bootstrap.toml.example`](examples/bootstrap.toml.example) →
@@ -302,7 +304,7 @@ with the standalone entry or the mise-first prereq:
 
 ```bash
 ./scripts/bootstrap.sh                          # standalone
-# or:  ./scripts/install-mise.sh && mise run bootstrap
+# or, mise-first:  ./scripts/install-mise.sh  →  source ~/.zshrc  →  mise run bootstrap
 ```
 
 Safer still: run `bootstrap.sh` in a fresh macOS user account or VM rather than

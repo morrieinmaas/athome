@@ -57,7 +57,22 @@ setopt NO_BEEP
 # keeps the token in the OS keyring; we materialize it into the env at shell
 # start. Guarded, so a machine without gh — or not logged in — gets an empty
 # value, never an error.
-command -v gh >/dev/null 2>&1 && export GITHUB_PERSONAL_ACCESS_TOKEN="$(gh auth token 2>/dev/null)"
+#
+# We resolve the token ONCE and fan it out to every name consumers expect:
+#   • GITHUB_PERSONAL_ACCESS_TOKEN — GitHub MCP server
+#   • GITHUB_TOKEN / GH_TOKEN      — gh, hub, most CLIs
+#   • MISE_GITHUB_TOKEN            — mise's github backend (release/version
+#     lookups). WITHOUT this, mise hits the anonymous 60-req/hr limit and
+#     `mise install` fails to resolve tools (helm/ruff/shfmt …) with 403s.
+if command -v gh >/dev/null 2>&1; then
+  __gh_token="$(gh auth token 2>/dev/null)"
+  if [[ -n "$__gh_token" ]]; then
+    export GITHUB_PERSONAL_ACCESS_TOKEN="$__gh_token"
+    export GITHUB_TOKEN="$__gh_token"
+    export MISE_GITHUB_TOKEN="$__gh_token"
+  fi
+  unset __gh_token
+fi
 
 # ─── SSH keys (no agent required) ────────────────────────────────────────────
 # GPG / gpg-agent retired (Phase 5). The ed25519 identity keys are generated

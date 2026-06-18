@@ -86,14 +86,15 @@ helm       = "latest"   # k8s package manager
 jqp        = "latest"   # interactive jq playground
 act        = "latest"   # run GitHub Actions locally
 
-# ── GitHub CLI + terminal UIs ────────────────────────────────────────────────
-# gh is the auth source for the two GitHub TUIs below — they read its stored
-# token (`gh auth login`), so no API tokens live in their configs. All three
-# TUIs are portable Go binaries pulled straight from GitHub releases via mise's
-# github backend (verifies checksums + SLSA provenance; no gh-extension
-# machinery, no per-OS package names). gh-dash binds `T` to launch
-# gh-enhance/ENHANCE in a new tmux window — see dot_config/gh-dash/config.yml.
-gh                         = "latest"   # GitHub CLI (registry alias for cli/cli)
+# ── GitHub terminal UIs ──────────────────────────────────────────────────────
+# gh itself is NOT here — it's a NATIVE package (packages.yaml) so it's present
+# before mise runs and so mise's github backend can read `gh auth token` to
+# avoid the anonymous 60-req/hr rate limit (a mise-installed gh would be a
+# cycle). These two TUIs read gh's stored token (`gh auth login`), so no API
+# tokens live in their configs; they're portable Go binaries pulled straight
+# from GitHub releases via mise's github backend (verifies checksums + SLSA
+# provenance). gh-dash binds `T` to launch gh-enhance/ENHANCE in a new tmux
+# window — see dot_config/gh-dash/config.yml.
 "github:dlvhdr/gh-dash"    = "latest"   # gh-dash — PR/issue dashboard TUI (binary: gh-dash)
 "github:dlvhdr/gh-enhance" = "latest"   # ENHANCE — GitHub Actions TUI (binary: gh-enhance)
 "github:gammons/slk"       = "latest"   # slk — Slack TUI; browser-session auth, tokens in ~/.local/share/slk/tokens (never tracked)

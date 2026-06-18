@@ -45,6 +45,7 @@ common:
 # macOS / Homebrew specifics
 darwin:
   brew_formulae:
+    - gh                             # GitHub CLI — NATIVE (not mise) on purpose: bootstrap needs it EARLY (uploads the SSH key, derives the GitHub identity) and mise's github backend reads `gh auth token` to avoid the anonymous 60-req/hr rate limit that otherwise breaks `mise install`. If gh lived in mise we'd have a cycle: mise needs gh's token, gh is installed by mise. gh-dash/gh-enhance TUIs stay in mise. Arch: github-cli; Fedora: gh.
     - coreutils
     - gnu-sed
     - gawk
@@ -79,6 +80,7 @@ darwin:
 linux:
   pacman:
     - base-devel
+    - github-cli                     # GitHub CLI (`gh`) — NATIVE, not mise: bootstrap needs it early + mise reads `gh auth token` to dodge the anon rate limit (see darwin note). Fedora/macOS: gh.
     - zsh                            # macOS ships zsh; Arch needs it explicitly
     - openssh
     - zed                            # Zed editor (GUI; in extra). macOS: `zed` cask. Config under dot_config/zed/.
@@ -184,6 +186,7 @@ fedora:
   dnf:
     # ── core dev/system (Arch common+pacman equivalents, Fedora names) ──
     - '@development-tools'         # ≈ base-devel
+    - gh                           # GitHub CLI — NATIVE, not mise: bootstrap needs it early + mise reads `gh auth token` to dodge the anon rate limit (see darwin note). Arch: github-cli.
     - git
     - git-lfs
     - zsh

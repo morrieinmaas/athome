@@ -108,7 +108,17 @@ tier_all() {
   tier_dotfiles
   section "mise (tools + config)"
   run rm -rf "$HOME/.local/share/mise" "$HOME/.config/mise" "$HOME/.local/bin/mise"
-  section "nanobrew (needs sudo)"
+  section "nanobrew casks (GUI apps in /Applications)"
+  # Uninstall casks first — that removes the .app bundles. Nuking the prefix
+  # below would leave them behind, so a re-bootstrap hits "refusing to overwrite
+  # existing app". List is read-only, safe in dry-run.
+  if command -v nb >/dev/null 2>&1; then
+    local cask
+    while IFS= read -r cask; do
+      [[ -n "$cask" ]] && run nb uninstall "$cask"
+    done < <(nb list 2>/dev/null | awk '/\(cask\)/{print $1}')
+  fi
+  section "nanobrew prefix (needs sudo)"
   run sudo rm -rf /opt/nanobrew
   section "rbw / Bitwarden local data"
   if command -v rbw >/dev/null 2>&1; then run rbw stop-agent || true; fi

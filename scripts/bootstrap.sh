@@ -373,26 +373,31 @@ c_green "✓ ssh public key: $(cat "${ssh_key}.pub")"
 if (( ssh_keys_were_generated )); then
   bw_item="ssh/${ssh_host}_ed25519"
   store_ok=false
-  if command -v bw >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
-    c_blue "==> storing SSH key in Bitwarden as secure note '$bw_item'"
-    bw_sess="$(bw unlock --raw 2>/dev/null)" \
-      || { bw login >/dev/null 2>&1 && bw_sess="$(bw unlock --raw 2>/dev/null)"; } \
-      || bw_sess=""
-    if [[ -n "$bw_sess" ]] \
-       && jq -n --arg name "$bw_item" --arg notes "$(cat "$ssh_key")" \
-              '{type:2,name:$name,notes:$notes,secureNote:{type:0}}' \
-            | bw encode | bw create item --session "$bw_sess" >/dev/null 2>&1; then
+  # rbw is the only Bitwarden client we ship (bw was retired, D3). rbw has no
+  # "secure note" create, but `rbw add` stores a login whose NOTES we read back
+  # with `rbw get --field notes` — which is exactly what `--import-ssh-bw` uses.
+  # rbw add takes the entry via $EDITOR (line 1 = password, the rest = notes), so
+  # drive it with a throwaway editor that writes a label on line 1 and the full
+  # key as the notes. Only runs when rbw is already unlocked.
+  if command -v rbw >/dev/null 2>&1 && rbw unlocked >/dev/null 2>&1; then
+    c_blue "==> storing SSH key in Bitwarden (rbw) as '$bw_item'"
+    ed="$(mktemp)"
+    printf '#!/usr/bin/env bash\nprintf "ssh-key-backup\\n%%s\\n" "$(cat %q)" > "$1"\n' "$ssh_key" > "$ed"
+    chmod +x "$ed"
+    if EDITOR="$ed" VISUAL="$ed" rbw add "$bw_item" >/dev/null 2>&1; then
       c_green "  ✓ stored in Bitwarden: $bw_item"
       store_ok=true
     fi
+    rm -f "$ed"
   fi
   if ! $store_ok; then
     c_yellow ""
     c_yellow "  ── back up this machine's SSH key to Bitwarden (recommended) ──"
-    c_yellow "  Once \`bw\` is installed + unlocked, store the private key as a secure note:"
+    c_yellow "  Once rbw is unlocked (run \`bw-setup\`), store the key — rbw add opens an"
+    c_yellow "  editor: keep line 1 as a label, then paste the FULL key below it (restore"
+    c_yellow "  reads the key from the NOTES field):"
     c_yellow ""
-    c_yellow "    jq -n --arg name '$bw_item' --arg notes \"\$(cat $ssh_key)\" \\"
-    c_yellow "      '{type:2,name:\$name,notes:\$notes,secureNote:{type:0}}' | bw encode | bw create item"
+    c_yellow "    rbw add '$bw_item'        # line 1: ssh-key-backup  ·  line 2+: paste $(basename "$ssh_key")"
     c_yellow ""
     c_yellow "  Restore it on another machine:  ./scripts/bootstrap.sh --import-ssh-bw $bw_item"
     c_yellow ""

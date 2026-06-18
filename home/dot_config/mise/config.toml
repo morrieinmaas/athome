@@ -73,6 +73,7 @@ chezmoi    = "latest"          # dotfile manager (also self-bootstrapped by boot
 gum        = "latest"          # shell-script UI
 just       = "latest"          # command runner
 "cargo:just-lsp" = "latest"  # LSP for justfiles (not in registry)
+usage      = "latest"          # CLI-spec engine that powers mise's dynamic shell completion (e.g. `mise run <tab>` task names)
 task       = "latest"          # go-task (binary `task`)
 "ubi:ivaaaan/smug" = "latest"  # tmux session manager — drives the cockpit bootstrap (not in registry)
 

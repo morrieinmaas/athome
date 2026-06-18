@@ -16,6 +16,10 @@ command -v fzf     >/dev/null && source <(fzf --zsh)
 command -v uv       >/dev/null && eval "$(uv generate-shell-completion zsh 2>/dev/null)"
 command -v uvx      >/dev/null && eval "$(uvx --generate-shell-completion zsh 2>/dev/null)"
 command -v chezmoi  >/dev/null && eval "$(chezmoi completion zsh)"
+# `mise activate` (above) does NOT register completions — source them explicitly
+# so `mise run <tab>`, `mise use <tab>` etc. complete. Task-name completion needs
+# the `usage` CLI (installed via mise config); without it the rest still works.
+command -v mise     >/dev/null && eval "$(mise completion zsh)"
 command -v gh       >/dev/null && eval "$(gh completion -s zsh)"
 command -v just     >/dev/null && eval "$(just --completions zsh 2>/dev/null)"
 command -v task     >/dev/null && eval "$(task --completion zsh 2>/dev/null)"

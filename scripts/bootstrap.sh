@@ -658,6 +658,22 @@ if [[ -z "$gh_id" && -n "$gh_handle" ]]; then
 fi
 c_green "✓ GitHub identity: $gh_handle${gh_id:+ (id $gh_id)} → commit email ${gh_id:+${gh_id}+}${gh_handle}@users.noreply.github.com"
 
+# ── Bitwarden server URL ─────────────────────────────────────────────────────
+# Default Bitwarden is US cloud (bitwarden.com). EU users and self-hosters need
+# a different server, so ask — unless it's already supplied via ATHOME_BW_BASE_URL
+# (env) or the --config TOML's `bitwardenUrl` (both land in ATHOME_BW_BASE_URL
+# above). The `-t 0` guard keeps headless/--config runs fully non-interactive:
+# no TTY → keep whatever's set (possibly empty = US). Empty answer = US cloud.
+if [[ -z "${ATHOME_BW_BASE_URL:-}" && -t 0 ]]; then
+  echo ""
+  c_blue "Bitwarden server (for rbw secrets):"
+  c_yellow "  • empty  = US cloud (bitwarden.com)"
+  c_yellow "  • EU     = https://vault.bitwarden.eu"
+  c_yellow "  • self-hosted Vaultwarden = your URL (https://vault.example.com)"
+  read -r -p "Bitwarden server URL [empty = US cloud]: " ATHOME_BW_BASE_URL || ATHOME_BW_BASE_URL=""
+fi
+[[ -n "${ATHOME_BW_BASE_URL:-}" ]] && c_green "✓ Bitwarden server: $ATHOME_BW_BASE_URL"
+
 # Seed chezmoi's own config [data] BEFORE init so first-run is non-interactive.
 # Why not --promptString? chezmoi matches `--promptString K=V` on the prompt's
 # *display text*, NOT the field name — so `--promptString machineType=…` is

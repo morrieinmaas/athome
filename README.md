@@ -244,13 +244,38 @@ The script is **idempotent** — re-run any time. Each step detects existing sta
 
 ## Day-to-day flow after bootstrap
 
+**Mental model:** chezmoi has two sides — the **source** (this repo's `home/`
+dir, the source of truth) and the **target** (your live files in `$HOME`). Every
+command compares the two or renders source → target.
+
 ```bash
-czu                      # = chezmoi update -v  (git pull + apply, the daily sync)
-czd                      # = chezmoi diff       (preview before apply)
-cze ~/.zshrc             # edit a tracked file (auto-applies on save)
-czdoc                    # = chezmoi doctor
-czc                      # = chezmoi cd         (jump into the source repo)
+czs                      # = chezmoi status     (what differs — START HERE)
+czd                      # = chezmoi diff       (the actual line-by-line diffs)
+cza                      # = chezmoi apply -v    (render source → $HOME, no pull)
+czu                      # = chezmoi update -v   (git pull + apply, the daily sync)
+cze ~/.zshrc             # = chezmoi edit        (edit a tracked file's SOURCE, then cza)
+czc                      # = chezmoi cd          (jump into the source repo)
+czdoc                    # = chezmoi doctor      (health check)
+chezmoi init             # re-render the config from .chezmoi.toml.tmpl (clears the
+                         #   "config file template has changed" warning after edits)
 ```
+
+**The loop you'll actually use:** `czs` (what changed?) → `czd` (show me) →
+`cza` (apply). Reach for `czu` when you also want to pull remote changes.
+
+**Reading `czs` output** — two columns per line. Col 1 = "did *you* change the
+live file?"; col 2 = "what would `apply` do?". Codes: `A`dd, `M`odify, `D`elete,
+`R`un (script), space = nothing. Examples:
+
+- `MM .config/nvim/lazy-lock.json` — modified on both sides: `lazy.nvim` bumped
+  plugins locally **and** the source pins different versions. Routine churn (see
+  [docs/lazy-lock-workflow.md](docs/lazy-lock-workflow.md)), not a problem.
+- ` R .chezmoiscripts/00-…` — a script `apply` would **R**un; expected, scripts
+  re-run by design (most are idempotent / no-op on a settled machine).
+
+> If `czu`/`czd` ever looks frozen, you're probably inside the diff pager
+> (`less`) — press `q`. The `[diff] pager` is set to `delta --paging=never` to
+> avoid this, but `$PAGER` elsewhere can still page.
 
 ## What's already wired up after bootstrap
 

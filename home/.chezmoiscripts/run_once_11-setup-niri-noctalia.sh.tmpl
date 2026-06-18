@@ -10,7 +10,7 @@ set -euo pipefail
 
 # Headless CI/e2e (ATHOME_CI=1): systemd, GUI and hardware are absent —
 # skip cleanly so the e2e exercises the rest of the bootstrap. See test/e2e/.
-[ -n "${ATHOME_CI:-}" ] && { echo "ATHOME_CI: skipping headless setup ($(basename "$0"))"; exit 0; }
+if [ -n "${ATHOME_CI:-}" ]; then echo "ATHOME_CI: skipping headless setup ($(basename "$0"))"; exit 0; fi
 
 followup() {
   if [[ -n "${ATHOME_FOLLOWUP_LOG:-}" ]]; then

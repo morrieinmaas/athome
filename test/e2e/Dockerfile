@@ -21,23 +21,26 @@ RUN sed -i '/^\[options\]/a DisableSandbox' /etc/pacman.conf
 RUN pacman -Syu --noconfirm --needed git curl sudo base-devel openssh which rust \
     && pacman -Scc --noconfirm
 
+# Install paru as a BINARY from chaotic-aur — NO source compile (building paru
+# under qemu takes ages). chaotic-aur rebuilds against current Arch, so unlike
+# the raw paru-bin AUR package it tracks the libalpm soname and just works. The
+# bootstrap then skips its own paru build (`command -v paru`). Cached layer →
+# done once at image build, never per `podman run`.
+RUN pacman-key --init \
+    && pacman-key --recv-key 3056513887B78AEB --keyserver keyserver.ubuntu.com \
+    && pacman-key --lsign-key 3056513887B78AEB \
+    && pacman -U --noconfirm \
+         'https://cdn-mirror.chaotic.cx/chaotic-aur/chaotic-keyring.pkg.tar.zst' \
+         'https://cdn-mirror.chaotic.cx/chaotic-aur/chaotic-mirrorlist.pkg.tar.zst' \
+    && printf '\n[chaotic-aur]\nInclude = /etc/pacman.d/chaotic-mirrorlist\n' >> /etc/pacman.conf \
+    && pacman -Sy --noconfirm paru
+
 # makepkg/paru refuse to run as root → a passwordless-sudo build user.
 RUN useradd -m -G wheel ci \
     && echo 'ci ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/ci \
     && chmod 0440 /etc/sudoers.d/ci
 
 USER ci
-
-# Pre-build paru from source ONCE here, as a cached image layer BEFORE the repo
-# COPY (so editing the repo doesn't invalidate it). The Rust compile is paid once
-# at image-build, never on `podman run`: the bootstrap's run_once_before_01 sees
-# `command -v paru` and skips its own build. Source — not paru-bin — so it links
-# against THIS image's libalpm; paru-bin's prebuilt binary dies the moment pacman
-# bumps the libalpm soname ("libalpm.so.15: cannot open shared object file").
-RUN git clone --depth 1 https://aur.archlinux.org/paru.git /tmp/paru \
-    && (cd /tmp/paru && makepkg -si --noconfirm) \
-    && rm -rf /tmp/paru
-
 WORKDIR /home/ci/athome
 COPY --chown=ci:ci . /home/ci/athome
 

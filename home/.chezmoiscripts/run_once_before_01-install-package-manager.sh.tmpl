@@ -83,8 +83,10 @@ build_paru() {
   # libalpm it fails to load ("libalpm.so.15: cannot open shared object file"),
   # which broke the e2e and would break any machine ahead of the -bin rebuild.
   # Source compiles against the INSTALLED libalpm, so it always matches. The Rust
-  # compile is the cost of that robustness (the e2e image caches a prebuilt paru
-  # layer so it isn't paid per run — see test/e2e/Dockerfile).
+  # compile is the cost of that robustness on a real machine (one-time). The e2e
+  # installs a binary paru from chaotic-aur — a repo that rebuilds against current
+  # Arch, so it tracks the libalpm soname — so nothing is compiled there
+  # (see test/e2e/Dockerfile).
   if ! git clone --depth 1 https://aur.archlinux.org/paru.git "$tmp/paru" 2>&1 | tee -a "$build_log"; then
     rm -rf "$tmp"; rm -f "$build_log"
     return 1

@@ -4,9 +4,9 @@
 #
 # Usage:
 #
-#   ~/.local/share/chezmoi/scripts/bootstrap.sh             # default: latest tag
-#   ~/.local/share/chezmoi/scripts/bootstrap.sh --ref main  # bootstrap from tip
-#   ~/.local/share/chezmoi/scripts/bootstrap.sh --ref v1.x  # explicit tag/branch
+#   ~/.local/share/chezmoi/scripts/bootstrap.sh             # default: the ref you cloned (current HEAD)
+#   ~/.local/share/chezmoi/scripts/bootstrap.sh --ref main  # explicit branch
+#   ~/.local/share/chezmoi/scripts/bootstrap.sh --ref v1.x  # pin a tagged release
 #
 # Prerequisite: this script must live inside a cloned `athome` repo. If you
 # haven't cloned yet:
@@ -191,22 +191,24 @@ if [[ "$repo_root" != "$expected" ]]; then
   fi
 fi
 
-# ── 0.6 resolve --ref. Default = latest tag. Never touches the user's
-#       working tree: a git worktree materializes the ref in a temp dir
-#       and chezmoi reads from there. Repo stays on whatever branch the
-#       user cloned (typically main).
+# ── 0.6 resolve --ref. Default = the ref you cloned (current HEAD). The whole
+#       point of bootstrap is "clone the repo, run this, done" — so it must use
+#       what you cloned, not silently jump to some older tagged release. Pin a
+#       specific release explicitly with `--ref vX.Y.Z` when you want one.
 ORIGINAL_BRANCH="$(git -C "$repo_root" rev-parse --abbrev-ref HEAD)"
 if [[ -z "$REF" ]]; then
+  REF="$ORIGINAL_BRANCH"   # "HEAD" when detached (e.g. you checked out a tag) — handled below
+  if [[ "$REF" == "HEAD" ]]; then
+    c_blue "==> bootstrapping from the checked-out commit (detached HEAD)"
+  else
+    c_blue "==> bootstrapping from the cloned ref: $REF"
+  fi
+  # Opportunistic FYI only — never changes what we build. Surfaces that a tagged
+  # release exists so you can opt into it with --ref if you'd rather.
   git -C "$repo_root" fetch --tags --quiet 2>/dev/null || true
   LATEST_TAG="$(git -C "$repo_root" describe --tags --abbrev=0 2>/dev/null || true)"
-  if [[ -n "$LATEST_TAG" ]]; then
-    REF="$LATEST_TAG"
-    c_blue "==> defaulting --ref to latest tag: $REF"
-    c_yellow "    (pass --ref $ORIGINAL_BRANCH to bootstrap from current tip instead)"
-  else
-    REF="$ORIGINAL_BRANCH"
-    c_blue "==> no tags found; bootstrapping from $REF"
-  fi
+  [[ -n "$LATEST_TAG" && "$LATEST_TAG" != "$REF" ]] && \
+    c_yellow "    (latest tagged release is $LATEST_TAG — pass --ref $LATEST_TAG to pin it)"
 fi
 
 # If pinning to a different ref than what's checked out, build a throwaway

@@ -1,0 +1,35 @@
+# bootstrap.toml — non-interactive answers for the Docker e2e run (CI).
+#
+# Used as: ./scripts/bootstrap.sh --config test/e2e/bootstrap.toml
+# Everything here is a DUMMY value so the e2e never needs a real GitHub login,
+# never touches Bitwarden, and never blocks on a prompt. The container sets
+# GITHUB_TOKEN (Actions provides it) so mise's GitHub backend avoids the anon
+# rate limit without `gh auth login`.
+#
+# Same minimal parser as examples/bootstrap.toml.example: `key = "value"`,
+# one per line, comments on their own line only.
+
+# Personal machine → context dirs ~/personal + ~/sidebiz get created.
+machine = "personal"
+
+# Dummy identity. A fixed id keeps the rendered noreply email deterministic and
+# avoids the bootstrap fetching the real id from api.github.com.
+githubHandle = "athome-ci"
+githubId = "0"
+personalName = "athome ci"
+
+# Unused on a personal machine; kept empty.
+workEmail = ""
+workName = ""
+sidebizEmail = ""
+sidebizName = ""
+
+# No external agents/skills repo to clone — keeps the e2e offline + auth-free.
+includeAgents = "false"
+agentsRepo = ""
+
+# No VPN, no Bitwarden — empty = service/cloud default, and bw-setup is never
+# invoked in the non-interactive (no-TTY) e2e path.
+netbirdManagementUrl = ""
+nordvpnCountry = ""
+bitwardenUrl = ""

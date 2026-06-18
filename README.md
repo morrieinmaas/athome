@@ -749,6 +749,28 @@ and the [layout](#layout); this is the *why*):
 | **Podman** over Docker | Rootless, daemonless, drop-in `DOCKER_HOST` socket; `lazydocker`/compose work unchanged. |
 | **NetBird** mesh / **rbw** secrets / **Noctalia** shell | Each is the FOSS-first pick with a no-penalty self-host or open-source escape hatch — see the relevant sections above. |
 
+## Testing & CI
+
+| What | Where | Runs |
+| --- | --- | --- |
+| **shellcheck** (`-S warning -x`) | `.pre-commit-config.yaml` hook | `lint-test` workflow + `mise run lint` |
+| **bats** unit tests | [`test/*.bats`](test) | `lint-test` workflow + `mise run test` |
+| **e2e bootstrap** (full Arch install) | [`test/e2e/`](test/e2e) | `e2e` workflow + `mise run e2e` |
+| **secrets scan** (gitleaks) | global hook + workflow | every commit + `secrets-scan` workflow |
+
+The **e2e** spins up a clean Arch container and runs the *real* bootstrap
+unattended — no `gh` login, no Bitwarden, dummy answers from
+[`test/e2e/bootstrap.toml`](test/e2e/bootstrap.toml), and `ATHOME_CI=1` so the
+systemd/GUI/hardware scripts skip. CI feeds mise the auto-provided `GITHUB_TOKEN`
+to dodge the anon rate limit. Run it locally with `mise run e2e` (`docker`/`podman`;
+on Apple Silicon it builds the amd64 image under emulation). Fedora + a macOS
+runner are the planned follow-on legs.
+
+**Task wrapper:** common commands are mise tasks (in [`mise.toml`](mise.toml)) —
+`mise run bootstrap`, `update`, `status`, `lint`, `test`, `e2e`, `teardown`
+(`mise tasks` lists them). No extra tool: mise is already the dependency. Each
+task just wraps a script you can still call directly.
+
 ## Further reading
 
 - [docs/secrets.md](docs/secrets.md) — Bitwarden + rbw setup (register/login, EU/Vaultwarden, config knobs, daily use)

@@ -47,6 +47,20 @@ install_one() {
 {{ if eq .chezmoi.os "darwin" -}}
 # nanobrew (`nb`) is the macOS package manager (D6). It reads Homebrew's API
 # live, so there's no index to refresh; `nb update` just self-updates nb.
+#
+# nb lives in /opt/nanobrew/prefix/bin, which is NOT on a default PATH. chezmoi
+# runs every script in its own shell, so run_once_before_01's PATH export never
+# reaches here — without re-adding it, every `install_one nb` below would fail
+# with "command not found" and the whole native toolchain (rbw, tmux, …) would
+# silently not install. Belt + braces: bootstrap also exports this before apply.
+[[ -d /opt/nanobrew/prefix/bin ]] && export PATH="/opt/nanobrew/prefix/bin:$PATH"
+if ! command -v nb >/dev/null 2>&1; then
+  msg="nb (nanobrew) not on PATH — run_once_before_01 must install it first. Native packages skipped; re-run \`chezmoi apply\` once nb is present."
+  echo "!! $msg" >&2
+  [[ -n "${ATHOME_FOLLOWUP_LOG:-}" ]] && printf '  • %s\n' "$msg" >> "$ATHOME_FOLLOWUP_LOG"
+  exit 0
+fi
+
 echo "==> nb self-update"
 nb update >/dev/null 2>&1 || true
 

@@ -583,6 +583,15 @@ export ATHOME_FOLLOWUP_LOG="${TMPDIR:-/tmp}/athome-bootstrap-followup.log"
 # won't have this set, so they DO get the (non-interactive) nudge.
 export ATHOME_BOOTSTRAP=1
 
+# Put nanobrew (`nb`, the macOS package manager) on PATH BEFORE apply. It lives
+# in /opt/nanobrew/prefix/bin, which no default PATH includes; chezmoi runs each
+# script in its own shell, so without this the native-install scripts during
+# apply (run_onchange_02 packages, run_once_after_20 zen cask, …) can't find nb
+# and silently install nothing. Safe to add even pre-install: PATH lookup is
+# dynamic, so it resolves once run_once_before_01 lays nb down mid-apply. (Linux
+# has no such dir — harmless no-op there.)
+export PATH="/opt/nanobrew/prefix/bin:$PATH"
+
 # Feed mise a GitHub token for THIS apply. run_once_06 runs `mise install`
 # inside apply — a non-interactive env that never sources exports.zsh — so
 # without this it hits the anonymous 60-req/hr limit and fails to resolve tools

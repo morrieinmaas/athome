@@ -1,11 +1,33 @@
 #!/usr/bin/env bash
-# cockpit — idempotently bootstrap the 4 context tmux sessions (work/personal/
+# cockpit — idempotently bootstrap the context tmux sessions (work/personal/
 # sidebiz/misc) from their smug configs. Each built DETACHED so re-runs never
 # hijack your client. Safe alongside continuum: existing sessions are untouched.
 # display-popup/run-shell run in the tmux server env (no ~/.zshenv) — harden PATH.
+#
+# A session is only started if its smug `root:` directory exists. Which context
+# dirs exist is decided by machineType in run_03-setup-project-dirs (personal →
+# ~/personal + ~/sidebiz; work → ~/work; misc roots at ~ so it's always present).
+# So cockpit auto-tracks that set instead of blindly trying all four and printing
+# a scary "✗ work (failed)" for a context this machine doesn't have.
 set -uo pipefail
 export PATH="/opt/nanobrew/prefix/bin:$HOME/.local/share/mise/shims:$PATH"
+
+# Read a session's root dir straight from its smug config (single source of
+# truth), expanding a leading ~ / $HOME. Empty if the config is missing.
+root_for() {
+  local cfg="$HOME/.config/smug/$1.yaml" r
+  [[ -f "$cfg" ]] || { echo ""; return; }
+  r="$(awk '/^root:/{print $2; exit}' "$cfg")"
+  r="${r/#\~/$HOME}"
+  echo "${r/#\$HOME/$HOME}"
+}
+
 for s in work personal sidebiz misc; do
+  root="$(root_for "$s")"
+  if [[ -z "$root" || ! -d "$root" ]]; then
+    echo "− $s (skipped — ${root:-no config} not present on this machine)"
+    continue
+  fi
   if tmux has-session -t "$s" 2>/dev/null; then
     echo "✓ $s (exists)"
   elif smug start "$s" --detach >/dev/null 2>&1; then

@@ -19,14 +19,14 @@
 # without needing `direnv allow` per repo. Subdirectories inherit
 # unless they ship their own .envrc.
 #
-# Linux-only (macOS layout is more variable — fold dirs in by hand).
+# Cross-platform: runs on macOS AND Linux. The smug/cockpit configs, the
+# work/pers/side aliases, and the repo() function all reference these dirs
+# unconditionally, so both OSes need them (the old "Linux-only, fold dirs in
+# by hand on macOS" gate left a personal Mac with no project dirs at all).
+# PLAIN run_ (every apply), not run_once_: idempotent + self-healing — it
+# recreates a dir you deleted and applies on a machine where the prior
+# run_once_ was already recorded "done" and would otherwise never re-run.
 set -euo pipefail
-
-{{ if ne .chezmoi.os "linux" -}}
-exit 0
-{{- end }}
-
-{{ if eq .chezmoi.os "linux" -}}
 
 seed_envrc() {
   local dir="$1" ctx="$2"
@@ -36,7 +36,7 @@ seed_envrc() {
     return  # don't clobber user's customization
   fi
   cat > "$envrc" <<EOF
-# Auto-seeded by chezmoi (run_once_03-setup-project-dirs.sh.tmpl).
+# Auto-seeded by chezmoi (run_03-setup-project-dirs.sh.tmpl).
 # Bundles the right rbw/Bitwarden context for anything under $dir/ —
 # subdirectories inherit unless they override with their own .envrc.
 use ctx $ctx
@@ -49,6 +49,4 @@ seed_envrc "$HOME/personal" personal
 seed_envrc "$HOME/sidebiz"  sidebiz
 {{- else if eq .machineType "work" -}}
 seed_envrc "$HOME/work"     work
-{{- end }}
-
 {{- end }}

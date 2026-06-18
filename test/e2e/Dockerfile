@@ -27,6 +27,17 @@ RUN useradd -m -G wheel ci \
     && chmod 0440 /etc/sudoers.d/ci
 
 USER ci
+
+# Pre-build paru from source ONCE here, as a cached image layer BEFORE the repo
+# COPY (so editing the repo doesn't invalidate it). The Rust compile is paid once
+# at image-build, never on `podman run`: the bootstrap's run_once_before_01 sees
+# `command -v paru` and skips its own build. Source — not paru-bin — so it links
+# against THIS image's libalpm; paru-bin's prebuilt binary dies the moment pacman
+# bumps the libalpm soname ("libalpm.so.15: cannot open shared object file").
+RUN git clone --depth 1 https://aur.archlinux.org/paru.git /tmp/paru \
+    && (cd /tmp/paru && makepkg -si --noconfirm) \
+    && rm -rf /tmp/paru
+
 WORKDIR /home/ci/athome
 COPY --chown=ci:ci . /home/ci/athome
 

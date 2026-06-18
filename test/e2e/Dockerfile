@@ -13,8 +13,12 @@ FROM archlinux:latest
 RUN sed -i '/^\[options\]/a DisableSandbox' /etc/pacman.conf
 
 # Base tools the bootstrap assumes present: git/curl/sudo, base-devel for AUR
-# (paru builds), openssh for keygen. Refresh the package DB first.
-RUN pacman -Syu --noconfirm --needed git curl sudo base-devel openssh which \
+# (paru builds), openssh for keygen. `rust` is pre-installed so building paru
+# resolves the `cargo` makedepend unambiguously — otherwise pacman prompts "2
+# providers available for cargo: rust/rustup", which a headless (no-TTY) build
+# can't answer and `[Y/n]` on closed stdin aborts. Bonus: skips a slow ~274 MB
+# emulated rust download mid-bootstrap. Refresh the package DB first.
+RUN pacman -Syu --noconfirm --needed git curl sudo base-devel openssh which rust \
     && pacman -Scc --noconfirm
 
 # makepkg/paru refuse to run as root → a passwordless-sudo build user.

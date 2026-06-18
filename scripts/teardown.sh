@@ -26,6 +26,12 @@
 # script cannot un-delete anything.
 set -euo pipefail
 
+# Use system coreutils for the destructive ops. This script removes nanobrew
+# (/opt/nanobrew), which on macOS puts GNU `rm` first on PATH — deleting it
+# mid-run would break every subsequent `rm` ("No such file or directory").
+# /bin + /usr/bin hold the stable system rm on both macOS and Linux.
+export PATH="/bin:/usr/bin:$PATH"
+
 if [[ -t 1 ]]; then
   c_red=$'\033[31m'; c_grn=$'\033[32m'; c_ylw=$'\033[33m'; c_dim=$'\033[2m'; c_rst=$'\033[0m'
 else
@@ -117,18 +123,31 @@ tier_all() {
              "$HOME/.config/agents" \
              "$HOME/.local/share/nvim" "$HOME/.local/state/nvim" \
              "$HOME/.cache/bat"
-  section "nanobrew casks (GUI apps in /Applications)"
-  # Uninstall casks first — that removes the .app bundles. Nuking the prefix
-  # below would leave them behind, so a re-bootstrap hits "refusing to overwrite
-  # existing app". List is read-only, safe in dry-run.
-  if command -v nb >/dev/null 2>&1; then
-    local cask
-    while IFS= read -r cask; do
-      [[ -n "$cask" ]] && run nb uninstall "$cask"
-    done < <(nb list 2>/dev/null | awk '/\(cask\)/{print $1}')
-  fi
-  section "nanobrew prefix (needs sudo)"
-  run sudo rm -rf /opt/nanobrew
+  # Native package layer is OS-specific: macOS = nanobrew; Linux = pacman/paru
+  # (system-wide — NOT auto-removed, since yanking system packages can break the
+  # box). Only the macOS path touches /opt/nanobrew + casks.
+  case "$(uname -s)" in
+    Darwin)
+      section "nanobrew casks (GUI apps in /Applications)"
+      # Uninstall casks first — that removes the .app bundles. Nuking the prefix
+      # below would leave them behind, so a re-bootstrap hits "refusing to
+      # overwrite existing app". List is read-only, safe in dry-run.
+      if command -v nb >/dev/null 2>&1; then
+        local cask
+        while IFS= read -r cask; do
+          [[ -n "$cask" ]] && run nb uninstall "$cask"
+        done < <(nb list 2>/dev/null | awk '/\(cask\)/{print $1}')
+      fi
+      section "nanobrew prefix (needs sudo)"
+      run sudo rm -rf /opt/nanobrew
+      ;;
+    *)
+      section "Linux system packages (pacman/paru) — left in place"
+      printf '  %snote: packages were installed system-wide via pacman/paru and are%s\n' "$c_dim" "$c_rst"
+      printf '  %sNOT auto-removed (could break the OS). Remove by hand if needed:%s\n' "$c_dim" "$c_rst"
+      printf '  %s  pacman -Qqe  # list explicitly-installed, then  sudo pacman -Rns <pkg>%s\n' "$c_dim" "$c_rst"
+      ;;
+  esac
   section "rbw / Bitwarden local data"
   if command -v rbw >/dev/null 2>&1; then run rbw stop-agent || true; fi
   run rm -rf "$HOME/.config/rbw" "$HOME/.local/share/rbw" "$HOME/.cache/rbw"

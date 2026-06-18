@@ -1,0 +1,23 @@
+name: lint
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      # Reuse the repo's .pre-commit-config.yaml shellcheck hook so the args
+      # (-S warning -x) and pinned version live in exactly one place. .tmpl
+      # scripts are skipped automatically (the hook only matches shell files).
+      - name: shellcheck (via pre-commit)
+        run: pipx run pre-commit run shellcheck --all-files --show-diff-on-failure

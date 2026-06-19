@@ -38,6 +38,27 @@ system/desktop packages, and anything needed outside an interactive shell go in
 > Portable tool instead? Add it to `home/dot_config/mise/config.toml` `[tools]`
 > and `mise run apply` (or `mise install`).
 
+### Extra packages without editing `packages.yaml` (overlay / BYO)
+
+To add packages on a single machine, or in a fork that keeps these dotfiles as
+the default, use either overlay — both install on every `mise run apply` via the
+OS's PM, idempotently (`run_after_05-install-extra-packages.sh`):
+
+- **Per-machine file** (recommended): `~/.config/athome/extra-packages`, one
+  package per line (`#` comments allowed). Never tracked; edits take effect on
+  the next `mise run apply`.
+  ```
+  # ~/.config/athome/extra-packages
+  htop
+  lazygit
+  ```
+- **Bootstrap config / data key**: set `extraPackages = "htop lazygit"` in your
+  `bootstrap.toml` (see `examples/bootstrap.toml.example`) or answer the
+  `extraPackages` prompt — stored in chezmoi `[data].extra_packages`.
+
+Names are **your responsibility per-OS** (the curated cross-OS set stays in
+`packages.yaml`).
+
 ## Adding a config value (chezmoi data key)
 
 Per-machine values (names, emails, URLs, flags) live in chezmoi `[data]`.

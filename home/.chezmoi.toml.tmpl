@@ -17,6 +17,7 @@
 {{- $sidebizName         := promptStringOnce . "sidebizName"         "Side-business git display name (empty = use personal name)" "" -}}
 {{- $includeAgents       := promptBoolOnce   . "includeAgents"       "Sync ~/.config/agents skills + instructions (agent-agnostic; opencode reads it, symlinked into ~/.claude for Claude Code, readable by nvim/aider/cursor)" true -}}
 {{- $agentsRepo          := promptStringOnce . "agentsRepo"          "Skills/agents repo to sync into ~/.config/agents as owner/repo (empty = none; ATHOME_AGENTS_REPO in bootstrap)" "" -}}
+{{- $extraPackages       := promptStringOnce . "extraPackages"       "Extra packages to also install, space-separated (optional overlay on the curated set; or use ~/.config/athome/extra-packages)" "" -}}
 
 # No `encryption` key: age was dropped (D5) — there are no encrypted_* files in
 # this repo, and with `pass` gone there's no driver for encrypted-files-in-repo.
@@ -43,6 +44,11 @@
     hostname     = {{ $hostname | quote }}
     githubHandle = {{ $githubHandle | quote }}
     githubId     = {{ $githubId | quote }}
+
+    # Optional overlay: extra packages installed on top of packages.yaml
+    # (space-separated; or per-machine via ~/.config/athome/extra-packages).
+    # Consumed by run_after_05-install-extra-packages.sh.
+    extra_packages = {{ $extraPackages | quote }}
 
     # Identity emails per context. Personal = the GitHub noreply address derived
     # from your handle (+ numeric id when given). Empty handle = empty personal

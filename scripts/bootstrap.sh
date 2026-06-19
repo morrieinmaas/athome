@@ -163,6 +163,7 @@ load_config() {
   : "${ATHOME_AGENTS_REPO:=$(cfg_get agentsRepo)}"
   : "${ATHOME_NETBIRD_MGMT_URL:=$(cfg_get netbirdManagementUrl)}"
   : "${ATHOME_NORDVPN_COUNTRY:=$(cfg_get nordvpnCountry)}"
+  : "${ATHOME_EXTRA_PACKAGES:=$(cfg_get extraPackages)}"
   : "${ATHOME_BW_BASE_URL:=$(cfg_get bitwardenUrl)}"
   if [[ "$MACHINE_FROM_FLAG" == false ]]; then
     local m; m="$(cfg_get machine)"; [[ -n "$m" ]] && MACHINE="$m"
@@ -771,6 +772,7 @@ cat > "$chezmoi_config" <<TOMLSEED
     nordvpnCountry       = "$(toml_str "${ATHOME_NORDVPN_COUNTRY:-}")"
     bitwardenUrl         = "$(toml_str "${ATHOME_BW_BASE_URL:-}")"
     agentsRepo           = "$(toml_str "${ATHOME_AGENTS_REPO:-}")"
+    extraPackages        = "$(toml_str "${ATHOME_EXTRA_PACKAGES:-}")"
     includeAgents        = $INCLUDE_AGENTS
 TOMLSEED
 

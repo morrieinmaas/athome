@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# run_after_05 — install USER "extra" packages: a personal overlay on top of the
+# curated home/.chezmoidata/packages.yaml set. Two flat sources, both installed
+# via the OS's native package manager and idempotent (--needed = fast no-op):
+#
+#   1. ~/.config/athome/extra-packages — gitignored, per-machine. One package per
+#      line; `#` comments and blank lines ignored. The "bring your own list" path.
+#   2. the chezmoi `extra_packages` data key — space-separated; set via the
+#      bootstrap prompt or examples/bootstrap.toml.example (`extraPackages`).
+#
+# PLAIN run_ (every apply), NOT run_onchange_: so edits to the local file always
+# take effect (run_onchange_02 only re-fires when packages.yaml's hash changes).
+# Names are YOUR responsibility per-OS — the canonical per-OS set lives in
+# packages.yaml. See docs/customizing.md.
+set -euo pipefail
+[[ -d /opt/nanobrew/prefix/bin ]] && export PATH="/opt/nanobrew/prefix/bin:$PATH"
+
+extras=()
+
+# Source 2: the chezmoi data key (hasKey-guarded so machines that predate this
+# key don't error on `.extra_packages`).
+{{- if hasKey . "extra_packages" }}{{ if .extra_packages }}
+extras+=( {{ .extra_packages }} )
+{{- end }}{{ end }}
+
+# Source 1: the per-machine local file.
+local_file="$HOME/.config/athome/extra-packages"
+if [[ -f "$local_file" ]]; then
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    pkg="${line%%#*}"        # drop trailing comment
+    pkg="${pkg//[[:space:]]/}"  # trim all whitespace (package names have none)
+    [[ -n "$pkg" ]] && extras+=("$pkg")
+  done < "$local_file"
+fi
+
+[[ ${#extras[@]} -eq 0 ]] && exit 0
+
+echo "==> extra packages (overlay): ${extras[*]}"
+for pkg in "${extras[@]}"; do
+  if [ "$(uname -s)" = Darwin ]; then
+    nb install "$pkg" || echo "  ! extra: $pkg failed (continuing)"
+  elif command -v dnf >/dev/null 2>&1 && ! command -v pacman >/dev/null 2>&1; then
+    sudo dnf install -y "$pkg" || echo "  ! extra: $pkg failed (continuing)"
+  else
+    yay -S --needed --noconfirm --answerdiff None --answerclean None "$pkg" \
+      || echo "  ! extra: $pkg failed (continuing)"
+  fi
+done

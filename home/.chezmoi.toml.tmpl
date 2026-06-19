@@ -25,6 +25,18 @@
 [git]
     autoCommit = false
     autoPush   = false
+{{- if eq .chezmoi.os "darwin" }}
+    # Pin to Apple's git for cloning git-repo externals (tpm, zinit, ~/.claude).
+    # nanobrew's git symlinks to its Cellar but its compiled-in exec-path points
+    # at /opt/homebrew/opt/git/libexec/git-core (legacy, unpopulated), so its
+    # `git-remote-https` helper is missing → externals fail with
+    #   git: 'remote-https' is not a git command
+    #   fatal: remote helper 'https' aborted session
+    # whenever nanobrew's bin is first on PATH (as it is mid-bootstrap). chezmoi
+    # shells out to this command for externals, so an absolute path to a git with
+    # working helpers sidesteps PATH-order roulette entirely.
+    command = "/usr/bin/git"
+{{- end }}
 
 [data]
     machineType  = {{ $machineType | quote }}

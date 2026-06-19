@@ -811,9 +811,18 @@ fi
 # run_once_16 nudge, since we handle it here.
 bw_setup="$HOME/.local/bin/bw-setup"
 export PATH="/opt/nanobrew/prefix/bin:/usr/local/bin:$HOME/.local/bin:$PATH"
+# rbw writes a device_id into its data dir once a machine has onboarded to
+# Bitwarden. If it's present, this machine is ALREADY set up — don't nag to
+# "log in"; the vault is just locked (unlock on demand). macOS keeps rbw state
+# under ~/Library/Application Support; Linux under XDG_DATA_HOME (~/.local/share).
+rbw_data_dir="${XDG_DATA_HOME:-$HOME/.local/share}/rbw"
+[[ "$(uname -s)" == Darwin ]] && rbw_data_dir="$HOME/Library/Application Support/rbw"
 if [[ -x "$bw_setup" ]]; then
   if command -v rbw >/dev/null 2>&1 && rbw unlocked >/dev/null 2>&1; then
     c_green "✓ Bitwarden already unlocked — skipping login"
+  elif [[ -f "$rbw_data_dir/device_id" ]]; then
+    c_green "✓ Bitwarden already set up here (device registered) — skipping login."
+    c_yellow "  (vault is locked; run \`rbw unlock\` when you need secrets.)"
   elif confirm "log in to Bitwarden now (rbw)?" y; then
     # Don't abort bootstrap on a Bitwarden hiccup, but DON'T pretend it worked
     # either — record a follow-up so the final summary reflects reality (e.g.

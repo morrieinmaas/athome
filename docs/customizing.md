@@ -71,3 +71,18 @@ mise run diff     # exactly what `apply` would change (and would clobber)
 ```
 
 Always `mise run diff` before `apply` if you suspect uncaptured live edits.
+
+## Conventions (for editing scripts)
+
+- **Scripts that run *from the repo*** (`scripts/bootstrap.sh`, `teardown.sh`)
+  share helpers from **`scripts/lib/`** (`colors.sh`, `ssh.sh`, `pm.sh`) — source
+  them; don't re-inline.
+- **chezmoi `run_*` scripts are islands.** They run rendered-standalone in
+  chezmoi's apply context and **cannot `source` `scripts/lib/`**. So each one
+  that needs them carries its *own* small copy of two patterns — by design, not
+  oversight:
+  - **nanobrew on PATH:** `[[ -d /opt/nanobrew/prefix/bin ]] && export PATH="/opt/nanobrew/prefix/bin:$PATH"`
+  - **follow-up note:** `[[ -n "${ATHOME_FOLLOWUP_LOG:-}" ]] && printf '  • %s\n' "…" >> "$ATHOME_FOLLOWUP_LOG"`
+  - and the `ATHOME_CI` skip guard: `if [ -n "${ATHOME_CI:-}" ]; then echo "…skip…"; exit 0; fi`
+  Copy these verbatim into new `run_*` scripts. The github ssh-seed in
+  `run_before_00` likewise **mirrors** `scripts/lib/ssh.sh` — keep the two in sync.

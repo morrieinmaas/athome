@@ -32,11 +32,9 @@ set -euo pipefail
 # /bin + /usr/bin hold the stable system rm on both macOS and Linux.
 export PATH="/bin:/usr/bin:$PATH"
 
-if [[ -t 1 ]]; then
-  c_red=$'\033[31m'; c_grn=$'\033[32m'; c_ylw=$'\033[33m'; c_dim=$'\033[2m'; c_rst=$'\033[0m'
-else
-  c_red=''; c_grn=''; c_ylw=''; c_dim=''; c_rst=''
-fi
+# Colour vars ($c_red $c_grn $c_ylw $c_dim $c_rst, TTY-gated) from the shared lib.
+# shellcheck source=scripts/lib/colors.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/colors.sh"
 
 DRY_RUN=1
 ASSUME_YES=0

@@ -31,11 +31,23 @@
 
 set -euo pipefail
 
+# ── shared libs (sourced from the repo tree; only these tiny, always-present
+#    helpers — NOT a full decomposition, see the PHASES note above) ───────────
+_lib_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib"
+# shellcheck source=scripts/lib/colors.sh
+. "$_lib_dir/colors.sh"
+# shellcheck source=scripts/lib/ssh.sh
+. "$_lib_dir/ssh.sh"
+# shellcheck source=scripts/lib/pm.sh
+. "$_lib_dir/pm.sh"
+
+# Baseline-phase chezmoi scripts run explicitly during bootstrap (the rest run
+# on `mise run apply`). Named here so the boundary is one visible place.
+BASELINE_PM_SCRIPT="run_once_before_01-install-package-manager.sh.tmpl"
+BASELINE_DIRS_SCRIPT="run_03-setup-project-dirs.sh.tmpl"
+
 # ── helpers ─────────────────────────────────────────────────────────────────
-c_red()    { printf '\033[31m%s\033[0m\n' "$*"; }
-c_green()  { printf '\033[32m%s\033[0m\n' "$*"; }
-c_blue()   { printf '\033[34m%s\033[0m\n' "$*"; }
-c_yellow() { printf '\033[33m%s\033[0m\n' "$*"; }
+# (colour helpers c_red/c_green/c_blue/c_yellow now come from lib/colors.sh)
 
 confirm() {
   local prompt="$1" default="${2:-n}" answer
@@ -601,23 +613,11 @@ if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
     # our key. If chezmoi already deployed the full config, the grep below sees
     # the marker and we skip; otherwise append the minimum block. chezmoi's later
     # apply overwrites this file with its full version idempotently.
-    mkdir -p "$HOME/.ssh"
-    chmod 700 "$HOME/.ssh"
-    touch "$HOME/.ssh/config"
-    chmod 600 "$HOME/.ssh/config"
-    if ! grep -q "${ssh_host}_ed25519" "$HOME/.ssh/config" 2>/dev/null; then
-      c_blue "==> seeding github.com Host → ${ssh_host}_ed25519 in ~/.ssh/config"
-      c_yellow "    (chezmoi-managed ~/.ssh/config overwrites this idempotently on first apply)"
-      cat >> "$HOME/.ssh/config" <<SSHSEED
-
-# === bootstrap.sh seed — chezmoi-managed ~/.ssh/config will replace this ===
-Host github.com
-    HostName github.com
-    User git
-    IdentityFile ~/.ssh/id_ed25519
-    IdentityFile ~/.ssh/${ssh_host}_ed25519
-SSHSEED
-    fi
+    # Seed github.com → our key in ~/.ssh/config before the remote→SSH flip (the
+    # full chezmoi-managed config replaces it idempotently on first apply).
+    # Shared with run_before_00 via scripts/lib/ssh.sh — single source of truth.
+    c_blue "==> seeding github.com Host → ${ssh_host}_ed25519 in ~/.ssh/config"
+    seed_github_ssh_config "${ssh_host}_ed25519"
 
     current_remote="$(git -C "$repo_root" remote get-url origin 2>/dev/null || true)"
     if [[ "$current_remote" == https://github.com/* ]]; then
@@ -805,19 +805,13 @@ fi
 # project dirs; install the two named deps inline per-OS.
 deps_rc=0
 c_blue "==> baseline: package manager"
-chezmoi execute-template < "$SOURCE_FOR_CHEZMOI/.chezmoiscripts/run_once_before_01-install-package-manager.sh.tmpl" | bash || deps_rc=$?
+chezmoi execute-template < "$SOURCE_FOR_CHEZMOI/.chezmoiscripts/$BASELINE_PM_SCRIPT" | bash || deps_rc=$?
 # Make a just-installed nb (and mise, below) findable for the rest of bootstrap.
 export PATH="/opt/nanobrew/prefix/bin:$HOME/.local/bin:$PATH"
 c_blue "==> baseline: gh + rbw (the two deps bootstrap's own steps need)"
-if [[ "$(uname -s)" == Darwin ]]; then
-  nb install gh rbw || deps_rc=$?
-elif command -v dnf >/dev/null 2>&1 && ! command -v pacman >/dev/null 2>&1; then
-  sudo dnf install -y gh rbw || deps_rc=$?
-else
-  yay -S --needed --noconfirm --answerdiff None --answerclean None github-cli rbw || deps_rc=$?
-fi
+pm_install gh rbw || deps_rc=$?
 c_blue "==> baseline: project dirs"
-chezmoi execute-template < "$SOURCE_FOR_CHEZMOI/.chezmoiscripts/run_03-setup-project-dirs.sh.tmpl" | bash || deps_rc=$?
+chezmoi execute-template < "$SOURCE_FOR_CHEZMOI/.chezmoiscripts/$BASELINE_DIRS_SCRIPT" | bash || deps_rc=$?
 # Ensure the mise BINARY exists so `mise run apply` works even for a direct
 # ./scripts/bootstrap.sh user (the `mise run bootstrap` front door already has it).
 if ! command -v mise >/dev/null 2>&1; then

@@ -16,7 +16,9 @@
 # canonical private_dot_ssh/private_config.tmpl overwrites it idempotently later in the
 # same apply; subsequent applies match the marker and no-op.
 #
-# scripts/bootstrap.sh does the same seeding for the bootstrap path.
+# This MIRRORS scripts/lib/ssh.sh::seed_github_ssh_config (used by bootstrap.sh).
+# It can't source that lib — it runs rendered-standalone in chezmoi's apply
+# context — so the dual-IdentityFile block below must be KEPT IN SYNC with it.
 
 set -euo pipefail
 

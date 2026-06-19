@@ -48,9 +48,16 @@ if [[ ! -d "$app" ]]; then
   exit 0
 fi
 dist="$app/Contents/Resources/distribution"
-mkdir -p "$dist"
-printf '%s\n' "$POLICIES" > "$dist/policies.json"
-echo "==> wrote Zen extension policy → $dist/policies.json (installed on next launch)"
+# Best-effort: macOS protects/signs app bundles, so writing inside
+# /Applications/Zen.app can fail with EPERM ("Operation not permitted"). Under
+# `set -e` that would abort the whole apply — but this extension policy is a
+# nicety, not load-bearing, so warn and carry on instead of failing bootstrap.
+if mkdir -p "$dist" 2>/dev/null && printf '%s\n' "$POLICIES" > "$dist/policies.json" 2>/dev/null; then
+  echo "==> wrote Zen extension policy → $dist/policies.json (installed on next launch)"
+else
+  echo "   ! couldn't write Zen policy into /Applications/Zen.app (macOS bundle protection) — skipping (optional)."
+  [[ -n "${ATHOME_FOLLOWUP_LOG:-}" ]] && printf '  • %s\n' "Zen: couldn't write policies.json into /Applications/Zen.app (macOS protects app bundles). Optional auto-install of the extension policy was skipped." >> "$ATHOME_FOLLOWUP_LOG"
+fi
 
 if command -v defaultbrowser >/dev/null 2>&1; then
   # Flips the LaunchServices default; macOS pops a one-time confirmation — click "Use Zen".

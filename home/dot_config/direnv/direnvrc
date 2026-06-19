@@ -57,9 +57,20 @@ use_huggingface(){ use_rbw HF_TOKEN           "$1/huggingface-token";  }
 # Apply a full context bundle. Usage: use ctx work
 use_ctx() {
   local ctx="$1"
-  # Every provider call is best-effort: a locked vault (or a missing entry for
-  # a provider you don't use) should NOT abort the whole .envrc under
-  # direnv's strict_env. You'll see a one-line warning; run `rbw unlock`.
+  # Validate first, so a typo'd .envrc still warns even when we skip below.
+  case "$ctx" in
+    work|personal|sidebiz) ;;
+    *) log_error "use_ctx: unknown context '$ctx' (expected work|personal|sidebiz)"; return 1 ;;
+  esac
+  # NEVER block `cd`. rbw is the slow part — against a locked vault its `get`
+  # calls hang ("direnv export zsh is taking a while…"). `rbw unlocked` is
+  # instant and never prompts: if rbw is missing or the vault is locked, skip
+  # silently. Secrets load on the next `cd` into the dir after `rbw unlock`
+  # (re-enter with `cd .` to force direnv to re-evaluate the .envrc).
+  command -v rbw >/dev/null 2>&1 || return 0
+  rbw unlocked   >/dev/null 2>&1 || return 0
+  # Every provider call is best-effort: a missing entry for a provider you
+  # don't use should NOT abort the whole .envrc under direnv's strict_env.
   case "$ctx" in
     work)
       use_aws        work 2>/dev/null || true
@@ -76,10 +87,6 @@ use_ctx() {
       use_github     sidebiz 2>/dev/null || true
       use_openrouter sidebiz 2>/dev/null || true
       use_stripe     sidebiz 2>/dev/null || true
-      ;;
-    *)
-      log_error "use_ctx: unknown context '$ctx' (expected work|personal|sidebiz)"
-      return 1
       ;;
   esac
 }

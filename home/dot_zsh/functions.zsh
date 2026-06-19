@@ -101,18 +101,24 @@ rgf() {
 }
 
 # ── tmux cockpit: on a fresh interactive shell with NO tmux sessions, offer
-# ONCE to bootstrap the 4 context sessions. Asks at most once per boot — a marker
-# in $TMPDIR (cleared on reboot) suppresses the repeat prompt every new terminal
-# would otherwise show. Re-offer sooner with `rm $TMPDIR/.athome-cockpit-asked`.
+# ONCE EVER to bootstrap the 4 context sessions. Two guards keep it from nagging:
+#   1. If the context dirs already exist (~/work, ~/personal, ~/sidebiz), the
+#      machine is already bootstrapped — there's no point asking, so stay quiet.
+#   2. A persistent marker in ~/.local/state (survives reboot, unlike $TMPDIR)
+#      means a "no" answer is remembered forever, not just for this boot.
+# Re-offer with `rm ${XDG_STATE_HOME:-~/.local/state}/athome/cockpit-asked`.
 # Always available manually: the `cockpit` command or tmux `prefix B`.
 cockpit_offer() {
   [[ -o interactive ]] || return
   [[ -n "$TMUX" ]] && return
   command -v tmux cockpit >/dev/null 2>&1 || return
   tmux ls >/dev/null 2>&1 && return        # sessions exist → quiet
-  local marker="${TMPDIR:-/tmp}/.athome-cockpit-asked"
-  [[ -f "$marker" ]] && return             # already offered this boot → quiet
-  : > "$marker" 2>/dev/null                 # remember, so new shells don't re-ask
+  # Already bootstrapped (context dirs present) → nothing to offer.
+  [[ -d "$HOME/work" || -d "$HOME/personal" || -d "$HOME/sidebiz" ]] && return
+  local marker="${XDG_STATE_HOME:-$HOME/.local/state}/athome/cockpit-asked"
+  [[ -f "$marker" ]] && return             # already offered (ever) → quiet
+  mkdir -p "${marker:h}" 2>/dev/null
+  : > "$marker" 2>/dev/null                 # remember, so we never re-ask
   printf "bootstrap cockpit (work/personal/sidebiz/misc)? [y/N] "
   local ans; read -r ans
   [[ "$ans" == [yY]* ]] && { cockpit; tmux attach -t work; }

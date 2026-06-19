@@ -1,4 +1,7 @@
 # ~/.config/direnv/direnvrc — managed by chezmoi
+# shellcheck shell=bash
+# (direnv evaluates this file in bash; the directive silences SC2148 since a
+# sourced config has no shebang.)
 # Helpers for per-project context switching via `rbw` (Bitwarden). Secrets
 # live in Bitwarden and are resolved at `cd`-time via the rbw agent — never
 # written to disk. Run `rbw unlock` once per session; the agent caches the key.

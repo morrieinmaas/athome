@@ -35,14 +35,15 @@ repos:
     hooks:
       - id: shfmt
         args: ['-i', '2', '-ci', '-bn']
-        # chezmoi *.tmpl carry a bash shebang (so pre-commit tags them "shell")
-        # but contain Go-template `{{ … }}` that isn't valid shell. Skip static
-        # shell tooling on them; the e2e renders + runs them for real coverage.
-        exclude: '\.tmpl$'
+        # Skip files static shell tooling can't parse: chezmoi *.tmpl (bash
+        # shebang but Go-template `{{ … }}`) and *.zsh (zsh dialect — shellcheck/
+        # shfmt only do sh/bash/mksh). .tmpl runtime behavior is covered by the
+        # e2e; the zsh config is exercised at shell startup.
+        exclude: '\.(tmpl|zsh)$'
 
   - repo: https://github.com/shellcheck-py/shellcheck-py
     rev: v0.11.0.1
     hooks:
       - id: shellcheck
         args: ['-S', 'warning', '-x']
-        exclude: '\.tmpl$'   # see shfmt note above — *.tmpl aren't raw shell
+        exclude: '\.(tmpl|zsh)$'   # see shfmt note above — *.tmpl/*.zsh aren't raw bash

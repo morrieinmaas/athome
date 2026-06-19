@@ -78,14 +78,28 @@
     unstage   = reset HEAD --
     please    = push --force-with-lease
 
-# ── URL rewrites: force-SSH and route your own namespace through personal alias.
-# Multiple `insteadOf` rules cascade — git picks the LONGEST matching prefix.
-
-# Catch-all: any clone from github.com (HTTPS or default-SSH) becomes SSH.
-# This means `git clone https://github.com/foo/bar` silently turns into
-# `git@github.com:foo/bar` — SSH auth, no HTTPS-token prompt.
+# ── URL rewrites: push over SSH, clone/fetch over the URL as written ─────────
+# `pushInsteadOf` (NOT `insteadOf`): pushes to github.com go over SSH with your
+# key — no HTTPS-token prompt — while clone/fetch use the URL exactly as given.
+#
+# Why not the broader `insteadOf` (which ALSO rewrites clone/fetch to SSH)? It
+# breaks anonymous clones of PUBLIC repos: GitHub requires a registered key for
+# SSH even on public repos, so on any machine whose key isn't on GitHub yet — a
+# fresh box mid-bootstrap, or the keyless CI e2e — a rewritten
+# `https://github.com/<public>/<repo>` clone dies with "Host key verification
+# failed" / "Permission denied (publickey)". chezmoi's git-repo externals
+# (zinit, tpm) clone exactly such public HTTPS URLs during `chezmoi apply`, so
+# `insteadOf` aborted the whole apply before ~/.zshrc and the mise toolchain
+# landed. `pushInsteadOf` keeps those clones on anonymous HTTPS and still routes
+# your own pushes through SSH.
+#
+# Your own repos still go over SSH without the catch-all: `gh repo clone` honours
+# `gh config git_protocol ssh` (set by bootstrap.sh) and bootstrap rewrites this
+# repo's own remote to git@github.com directly. Tradeoff: a bare
+# `git clone https://github.com/<you>/<private-repo>` now fetches over HTTPS
+# (gh's credential helper supplies the token) rather than being forced to SSH.
 [url "git@github.com:"]
-    insteadOf = https://github.com/
+    pushInsteadOf = https://github.com/
 
 # One GitHub account → one SSH key (per machine), so there's no per-account
 # host-alias routing: every github.com repo uses ~/.ssh/<hostname>_ed25519 (see

@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 set -uo pipefail
 # Asserts the BASELINE bootstrap installed ONLY the baseline — and crucially that
 # the full package set / desktop scripts were DEFERRED (not run during bootstrap).

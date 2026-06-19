@@ -26,11 +26,25 @@ run = "./scripts/bootstrap.sh --machine work"
 
 [tasks.update]
 description = "chezmoi update (pull + apply, the daily sync). Preview first with `mise run diff`."
-run = "chezmoi update"
+run = """
+chezmoi update; rc=$?
+if [ "$rc" -eq 0 ]; then
+  echo "✓ update complete — pulled latest and applied; machine matches the repo."
+else
+  echo "✗ update failed (rc=$rc) — see above." >&2; exit "$rc"
+fi
+"""
 
 [tasks.apply]
 description = "chezmoi apply (render source -> $HOME). Preview first with `mise run diff`."
-run = "chezmoi apply"
+run = """
+chezmoi apply; rc=$?
+if [ "$rc" -eq 0 ]; then
+  echo "✓ apply complete — machine matches the repo (no output above = nothing to change)."
+else
+  echo "✗ apply failed (rc=$rc) — see above." >&2; exit "$rc"
+fi
+"""
 
 [tasks.status]
 description = "chezmoi status"

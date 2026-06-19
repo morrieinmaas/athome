@@ -62,6 +62,20 @@ if rbw unlocked >/dev/null 2>&1; then
   exit 0
 fi
 
+# ── already registered, just locked? Unlock — don't re-login/register. ───────
+# A device that has logged in before (rbw stores a device_id) only needs
+# unlocking: `rbw unlock` reads the master password via pinentry and is done.
+# It fails cleanly + instantly on a never-logged-in machine (nothing to unlock,
+# no pinentry prompt), so we only fall through to the login/register path below
+# when this is genuinely a fresh device. This is the key fix for the common
+# re-bootstrap case: previously a locked-but-registered vault wrongly took the
+# `rbw login`→`rbw register` branch and prompted for an API key (which then EOF'd
+# on pinentry) even though the device was already registered.
+if rbw unlock >/dev/null 2>&1; then
+  g "✓ Bitwarden unlocked (device already registered) — rbw get <name> is ready"
+  exit 0
+fi
+
 # ── email ───────────────────────────────────────────────────────────────────
 email="${ATHOME_BW_EMAIL:-}"
 [[ -z "$email" ]] && read -r -p "Bitwarden email: " email

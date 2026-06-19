@@ -452,8 +452,30 @@ add_gh_ssh_key() {
   return 1
 }
 
+# ssh_github_authenticates: does SSH already auth to GitHub with whatever key the
+# agent/~/.ssh/config already provides? BatchMode = no prompts/hangs; accept-new =
+# don't block on the first-connect host-key question.
+ssh_github_authenticates() {
+  # GitHub's SUCCESS response is an exit-1 "successfully authenticated, but …
+  # no shell access" banner. A piped `ssh … | grep` would return ssh's 1 under
+  # this script's `set -o pipefail` (false negative), so capture, then match.
+  local out
+  out="$(ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new \
+    -T git@github.com 2>&1 || true)"
+  [[ "$out" == *"successfully authenticated"* ]]
+}
+
 if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
-  if confirm "Upload SSH public keys to GitHub now (auth + signing)?" y; then
+  # Smart skip: if SSH already authenticates to GitHub, this machine is set up —
+  # don't prompt to upload. Catches an existing key (even one named differently
+  # from this host's ${ssh_host}_ed25519) that's already registered on GitHub.
+  if ssh_github_authenticates; then
+    c_green "✓ SSH already authenticates to GitHub — skipping key upload (already set up)"
+    if (( ssh_keys_were_generated )); then
+      printf '    note: a fresh per-host key was generated at %s\n' "$ssh_key"
+      printf '          upload it later with: gh ssh-key add %s.pub\n' "$ssh_key"
+    fi
+  elif confirm "Upload SSH public keys to GitHub now (auth + signing)?" y; then
     host="$(short_hostname)"
 
     # ── proactive scope check: ensure gh has admin:public_key + admin:ssh_signing_key
@@ -762,7 +784,9 @@ fi
 bw_setup="$HOME/.local/bin/bw-setup"
 export PATH="/opt/nanobrew/prefix/bin:/usr/local/bin:$HOME/.local/bin:$PATH"
 if [[ -x "$bw_setup" ]]; then
-  if confirm "log in to Bitwarden now (rbw)?" y; then
+  if command -v rbw >/dev/null 2>&1 && rbw unlocked >/dev/null 2>&1; then
+    c_green "✓ Bitwarden already unlocked — skipping login"
+  elif confirm "log in to Bitwarden now (rbw)?" y; then
     # Don't abort bootstrap on a Bitwarden hiccup, but DON'T pretend it worked
     # either — record a follow-up so the final summary reflects reality (e.g.
     # missing pinentry, wrong API key, unreachable server).
@@ -791,7 +815,11 @@ secrets_restore="$HOME/.local/bin/secrets-restore"
 # nothing here; the bw-setup follow-up above already covers "set up Bitwarden to
 # access secrets", and secrets-restore is strictly downstream of that.
 if rbw unlocked >/dev/null 2>&1; then
-  if [[ -x "$secrets_restore" ]] && confirm "restore your encrypted secrets now (secrets-restore)?" y; then
+  # Already restored on this machine? Skip the prompt entirely. The vault drops
+  # one ~/.secrets/<repo>/.env per project, so if any exist, secrets are present.
+  if compgen -G "$HOME/.secrets/*/.env" >/dev/null 2>&1; then
+    c_green "✓ secrets already present in ~/.secrets — skipping restore"
+  elif [[ -x "$secrets_restore" ]] && confirm "restore your encrypted secrets now (secrets-restore)?" y; then
     "$secrets_restore" || c_yellow "  secrets-restore had issues — run it manually later."
   else
     [[ -n "${ATHOME_FOLLOWUP_LOG:-}" ]] && printf '  • %s\n' "Secrets: run \`secrets-restore\` to recover ~/.config env files from the encrypted vault. See docs/secrets.md." >> "$ATHOME_FOLLOWUP_LOG"

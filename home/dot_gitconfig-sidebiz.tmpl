@@ -3,7 +3,11 @@
 [user]
     name  = {{ .name_sidebiz  | default .name_personal }}
     email = {{ .email_sidebiz | default .email_personal }}
+{{- /* Sign with ~/.ssh/id_ed25519.pub if present (mirrors the github.com SSH
+       key choice), else this host's per-host key. */ -}}
 {{- $key := joinPath .chezmoi.homeDir (printf ".ssh/%s_ed25519.pub" .chezmoi.hostname) }}
+{{- $idkey := joinPath .chezmoi.homeDir ".ssh/id_ed25519.pub" }}
+{{- if stat $idkey }}{{ $key = $idkey }}{{ end }}
 {{- if stat $key }}
     signingkey = {{ $key }}
 

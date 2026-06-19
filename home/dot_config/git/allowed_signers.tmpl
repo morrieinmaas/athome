@@ -1,9 +1,12 @@
-{{- /* Auto-populated from ~/.ssh/<hostname>_ed25519.pub. ONE key signs every
-       context (single GitHub account), so each non-empty context email maps to
-       that same key — commits verify regardless of which email authored them.
-       Emitted only if the key exists, so it's harmless on a fresh machine and
-       self-fills as bootstrap.sh generates the key. */ -}}
+{{- /* Auto-populated from the same key git signs with: ~/.ssh/id_ed25519.pub if
+       present, else ~/.ssh/<hostname>_ed25519.pub (mirrors the gitconfig signing
+       choice + the github.com SSH key choice). ONE key signs every context
+       (single GitHub account), so each non-empty context email maps to that same
+       key — commits verify regardless of which email authored them. Emitted only
+       if the key exists, so it's harmless on a fresh machine. */ -}}
 {{- $pub := joinPath .chezmoi.homeDir (printf ".ssh/%s_ed25519.pub" .chezmoi.hostname) -}}
+{{- $idpub := joinPath .chezmoi.homeDir ".ssh/id_ed25519.pub" -}}
+{{- if stat $idpub }}{{ $pub = $idpub }}{{ end -}}
 {{- if stat $pub }}
 {{- $k := output "cat" $pub | trim }}
 {{- range $email := (list .email_personal .email_work .email_sidebiz) }}

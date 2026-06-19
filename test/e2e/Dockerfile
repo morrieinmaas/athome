@@ -55,5 +55,9 @@ COPY --chown=ci:ci . /home/ci/athome
 # still installs and validates every package.
 ENV ATHOME_CI=1
 
-# Run the real bootstrap with the dummy answers file, then assert the result.
-CMD ["bash", "-lc", "./scripts/bootstrap.sh --config test/e2e/bootstrap.toml --machine personal && bash test/e2e/verify.sh"]
+# Two-phase, mirroring the real flow: bootstrap = baseline (config files + pkg
+# manager + gh/rbw + project dirs); then `chezmoi apply` = convergence (full
+# package set + mise tools + desktop scripts). verify-baseline.sh (between the
+# phases) proves the split (packages deferred); verify.sh (after apply) proves
+# convergence. chezmoi installs into ~/.local/bin, so put it on PATH for apply.
+CMD ["bash", "-lc", "export PATH=\"$HOME/.local/bin:/opt/nanobrew/prefix/bin:$PATH\"; ./scripts/bootstrap.sh --config test/e2e/bootstrap.toml --machine personal && bash test/e2e/verify-baseline.sh && chezmoi apply && bash test/e2e/verify.sh"]

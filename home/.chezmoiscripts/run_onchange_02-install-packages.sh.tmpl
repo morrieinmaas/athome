@@ -48,6 +48,15 @@ _nb_cask_present() {
 install_one() {
   local pm="$1" pkg="$2" label
   local -a cmd
+  # Opt-in skip list (space/comma-separated package names). The e2e container
+  # sets ATHOME_SKIP_PACKAGES (Dockerfile) to skip pathologically slow
+  # build-from-source AUR packages under qemu emulation — e.g. nirimod-git, the
+  # only `-git` entry, whose emulated compile dominates the e2e runtime and which
+  # verify.sh never asserts. Unset on real machines, so they install everything.
+  if [[ -n "${ATHOME_SKIP_PACKAGES:-}" && " ${ATHOME_SKIP_PACKAGES//,/ } " == *" ${pkg} "* ]]; then
+    printf '  ↷ %s: %s (skipped via ATHOME_SKIP_PACKAGES)\n' "$pm" "$pkg"
+    return 0
+  fi
   case "$pm" in
     nb)        label=nb;     cmd=(nb install "$pkg") ;;
     nb_cask)   label=cask;   cmd=(nb install --cask "$pkg") ;;

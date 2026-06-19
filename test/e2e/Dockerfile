@@ -48,6 +48,11 @@ COPY --chown=ci:ci . /home/ci/athome
 
 # Headless skip-guards on; GITHUB_TOKEN is injected at run time (CI secret or a
 # local `gh auth token`), not baked into the image.
+#
+# NOTE: ATHOME_SKIP_PACKAGES (skipping slow build-from-source AUR packages) is
+# NOT set here — it's injected by test/e2e/run.sh ONLY when the image runs
+# emulated (e.g. an arm64 Mac running this amd64 image). CI runs natively, so it
+# still installs and validates every package.
 ENV ATHOME_CI=1
 
 # Run the real bootstrap with the dummy answers file, then assert the result.

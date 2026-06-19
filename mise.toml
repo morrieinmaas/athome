@@ -46,6 +46,15 @@ else
 fi
 """
 
+[tasks.save]
+description = "Capture live edits to managed dotfiles back into the repo source (chezmoi re-add), then show what to commit."
+run = """
+chezmoi re-add
+echo
+git -C "$(chezmoi source-path)" status --short
+echo "→ review above, then commit + push (e.g. chezmoi git -- add -A && chezmoi git -- commit -m '…' && chezmoi git -- push)."
+"""
+
 [tasks.status]
 description = "chezmoi status"
 run = "chezmoi status"

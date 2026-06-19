@@ -14,6 +14,20 @@
 #   gh repo clone morrieinmaas/athome ~/.local/share/chezmoi
 #
 # Idempotent: re-run any time, skips what's already done.
+#
+# PHASES (top-to-bottom). This is a single self-contained orchestrator ON PURPOSE
+# — it runs before anything is installed, so it is NOT decomposed into sourced
+# lib files (that would break the "clone one file, run it" promise and add
+# file-not-found fragility on a bare machine). The few helpers it CAN safely
+# share once the repo tree is present live under scripts/lib/.
+#   0      resolve repo + optional config + ref/worktree + sudo keep-alive
+#   1      install chezmoi; (1.5/1.6) optional SSH-key restore (dir / Bitwarden)
+#   4      SSH keys: generate, (4.5) back up to Bitwarden, (4.6) upload to GitHub
+#   5      chezmoi: seed [data], (5.1) BASELINE init (--exclude=scripts),
+#          (5.2) baseline deps — package manager + gh + rbw + project dirs + mise
+#   6/7    pin sourceDir; install git hooks
+#   7.5/6  Bitwarden login + secrets-restore
+#   8      detached-HEAD recovery, then summary + "next: mise run apply" footer
 
 set -euo pipefail
 
@@ -404,7 +418,7 @@ if (( ssh_keys_were_generated )); then
   fi
 fi
 
-# ── 4.5 upload SSH keys to GitHub (auth + signing in one shot) ──────────────
+# ── 4.6 upload SSH keys to GitHub (auth + signing in one shot) ──────────────
 # This is what makes the HTTPS-at-gh-auth-login choice safe: we upload SSH
 # keys NOW, before chezmoi apply switches the repo remote to SSH (via
 # run_once_after_99-cleanup.sh). After this block, SSH is end-to-end.
@@ -760,7 +774,7 @@ cat > "$chezmoi_config" <<TOMLSEED
     includeAgents        = $INCLUDE_AGENTS
 TOMLSEED
 
-# ── 5. chezmoi init/apply — BASELINE: deploy config files only ──────────────
+# ── 5.1 chezmoi init/apply — BASELINE: deploy config files only ──────────────
 # --exclude=scripts deploys files/dirs/symlinks/externals but runs NO run_
 # scripts. Crucially that leaves run_onchange_02 (the full package set)
 # UNREALIZED, so chezmoi never records its hash → it runs FRESH on the first
@@ -782,7 +796,7 @@ if (( chezmoi_rc != 0 )); then
   printf '  • %s\n' "chezmoi init exited $chezmoi_rc during bootstrap — re-run \`mise run apply\` (idempotent) to finish." >> "$ATHOME_FOLLOWUP_LOG"
 fi
 
-# ── 5.5 baseline deps: package manager + gh + rbw + project dirs + mise binary ─
+# ── 5.2 baseline deps: package manager + gh + rbw + project dirs + mise binary ─
 # Bootstrap installs ONLY these; the full package set is `mise run apply`'s job
 # (the --exclude=scripts init above left run_onchange_02 to run fresh there).
 # gh + rbw are installed now because bootstrap's own later steps need them

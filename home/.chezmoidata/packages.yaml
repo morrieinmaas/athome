@@ -208,6 +208,7 @@ fedora:
     - git-crypt
     - gitleaks                     # if absent in dnf → `go:` via mise (load-bearing, keep on PATH)
     - rbw                          # if absent in dnf → `cargo:rbw` via mise
+    - uv                           # Astral's Python tool/env manager (Arch+mac get it via `common`; Fedora's list is self-contained so it's listed explicitly). Fedora main repo, F40+. Deliberately NOT the curl|sh installer: that extracts a tarball with GNU tar, which dies under the e2e's qemu emulation — dnf avoids it.
     # ── niri + Noctalia + ghostty + zen + zed + greetd + nerd font ──
     - niri
     - noctalia-shell
@@ -216,7 +217,7 @@ fedora:
     - zed
     - greetd                       # Fedora main repo
     - tuigreet                     # Fedora main repo (Arch: greetd-tuigreet)
-    - nerd-fonts-jetbrains-mono    # from che/nerd-fonts COPR
+    - nerd-fonts-jetbrains-mono    # from che/nerd-fonts COPR. Non-fatal if absent: the nerd-font COPRs often lag the NEWEST Fedora (no F44 build yet as of 2026-06), so this may skip on a bleeding-edge release until the COPR catches up — cosmetic only (ghostty/tmux glyphs).
     # ── wayland / GNOME fallback / desktop (the GNOME spin ships most already) ──
     - NetworkManager
     - iwd

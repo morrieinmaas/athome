@@ -775,8 +775,8 @@ if (( chezmoi_rc != 0 )); then
   c_yellow ""
   c_yellow "⚠ chezmoi apply exited non-zero ($chezmoi_rc) — bootstrap will continue."
   c_yellow "  It's idempotent: re-run to finish the remaining steps —"
-  c_yellow "      chezmoi apply        # or: ./scripts/bootstrap.sh"
-  printf '  • %s\n' "chezmoi apply exited $chezmoi_rc during bootstrap — re-run \`chezmoi apply\` (idempotent) to finish remaining steps." >> "$ATHOME_FOLLOWUP_LOG"
+  c_yellow "      mise run apply       # de facto next step (or: chezmoi apply / ./scripts/bootstrap.sh)"
+  printf '  • %s\n' "chezmoi apply exited $chezmoi_rc during bootstrap — re-run \`mise run apply\` (idempotent) to finish remaining steps." >> "$ATHOME_FOLLOWUP_LOG"
 fi
 
 # ── 6. set chezmoi's permanent sourceDir so future plain `chezmoi apply`
@@ -901,7 +901,14 @@ fi
 
 cat <<EOF
 
-Day-to-day:
+Day-to-day (mise is the front door — run from the repo):
+
+  mise run apply               # render source -> \$HOME (the de facto next step; idempotent)
+  mise run update              # pull latest, then apply
+  mise run diff                # preview pending changes
+  mise run status              # show what has drifted
+
+Shell aliases (anywhere):
 
   czu                          # chezmoi update -v (pull + apply)
   czd                          # chezmoi diff

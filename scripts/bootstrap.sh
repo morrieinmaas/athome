@@ -760,23 +760,59 @@ cat > "$chezmoi_config" <<TOMLSEED
     includeAgents        = $INCLUDE_AGENTS
 TOMLSEED
 
-# Non-fatal: a single failing run_once/run_onchange script (or a transient
-# external fetch) must NOT abort bootstrap and swallow the next-steps footer.
-# chezmoi apply is idempotent — re-running converges — so we record the failure,
-# surface it in the follow-up log, and carry on. Steps below already guard on
-# whether their artifacts (bw-setup, secrets-restore, hooks) actually deployed.
-# Count non-fatal problems so the final summary reports honestly instead of a
-# blanket "✓ done" when a step actually failed (chezmoi apply, bw-setup, …).
+# ── 5. chezmoi init/apply — BASELINE: deploy config files only ──────────────
+# --exclude=scripts deploys files/dirs/symlinks/externals but runs NO run_
+# scripts. Crucially that leaves run_onchange_02 (the full package set)
+# UNREALIZED, so chezmoi never records its hash → it runs FRESH on the first
+# `mise run apply`. The baseline deps we DO need (package manager, gh, rbw,
+# project dirs) are installed explicitly just below, re-using those same scripts
+# via `chezmoi execute-template`. So excluding scripts here loses nothing
+# baseline-critical and defers the heavy package set to `mise run apply`.
+# Non-fatal: a hiccup must NOT abort bootstrap and swallow the next-steps footer;
+# we count problems so the final summary stays honest instead of a blanket "✓".
 BOOTSTRAP_WARNINGS=0
 chezmoi_rc=0
-chezmoi init --apply --force --source="$SOURCE_FOR_CHEZMOI" || chezmoi_rc=$?
+chezmoi init --apply --force --exclude=scripts --source="$SOURCE_FOR_CHEZMOI" || chezmoi_rc=$?
 if (( chezmoi_rc != 0 )); then
   BOOTSTRAP_WARNINGS=$((BOOTSTRAP_WARNINGS + 1))
   c_yellow ""
-  c_yellow "⚠ chezmoi apply exited non-zero ($chezmoi_rc) — bootstrap will continue."
-  c_yellow "  It's idempotent: re-run to finish the remaining steps —"
-  c_yellow "      mise run apply       # de facto next step (or: chezmoi apply / ./scripts/bootstrap.sh)"
-  printf '  • %s\n' "chezmoi apply exited $chezmoi_rc during bootstrap — re-run \`mise run apply\` (idempotent) to finish remaining steps." >> "$ATHOME_FOLLOWUP_LOG"
+  c_yellow "⚠ chezmoi init (config files) exited non-zero ($chezmoi_rc) — bootstrap will continue."
+  c_yellow "  It's idempotent: re-run to finish —"
+  c_yellow "      mise run apply       # installs packages + desktop scripts (or re-run bootstrap)"
+  printf '  • %s\n' "chezmoi init exited $chezmoi_rc during bootstrap — re-run \`mise run apply\` (idempotent) to finish." >> "$ATHOME_FOLLOWUP_LOG"
+fi
+
+# ── 5.5 baseline deps: package manager + gh + rbw + project dirs + mise binary ─
+# Bootstrap installs ONLY these; the full package set is `mise run apply`'s job
+# (the --exclude=scripts init above left run_onchange_02 to run fresh there).
+# gh + rbw are installed now because bootstrap's own later steps need them
+# (gh → SSH-key upload; rbw → Bitwarden bw-setup). Re-use the real scripts via
+# `chezmoi execute-template` (NO logic duplication) for the package manager and
+# project dirs; install the two named deps inline per-OS.
+deps_rc=0
+c_blue "==> baseline: package manager"
+chezmoi execute-template < "$SOURCE_FOR_CHEZMOI/.chezmoiscripts/run_once_before_01-install-package-manager.sh.tmpl" | bash || deps_rc=$?
+# Make a just-installed nb (and mise, below) findable for the rest of bootstrap.
+export PATH="/opt/nanobrew/prefix/bin:$HOME/.local/bin:$PATH"
+c_blue "==> baseline: gh + rbw (the two deps bootstrap's own steps need)"
+if [[ "$(uname -s)" == Darwin ]]; then
+  nb install gh rbw || deps_rc=$?
+elif command -v dnf >/dev/null 2>&1 && ! command -v pacman >/dev/null 2>&1; then
+  sudo dnf install -y gh rbw || deps_rc=$?
+else
+  yay -S --needed --noconfirm --answerdiff None --answerclean None github-cli rbw || deps_rc=$?
+fi
+c_blue "==> baseline: project dirs"
+chezmoi execute-template < "$SOURCE_FOR_CHEZMOI/.chezmoiscripts/run_03-setup-project-dirs.sh.tmpl" | bash || deps_rc=$?
+# Ensure the mise BINARY exists so `mise run apply` works even for a direct
+# ./scripts/bootstrap.sh user (the `mise run bootstrap` front door already has it).
+if ! command -v mise >/dev/null 2>&1; then
+  c_blue "==> baseline: mise (binary)"
+  curl -fsSL https://mise.run | MISE_INSTALL_HELP=0 sh || deps_rc=$?
+fi
+if (( deps_rc != 0 )); then
+  BOOTSTRAP_WARNINGS=$((BOOTSTRAP_WARNINGS + 1))
+  printf '  • %s\n' "a baseline dep (package manager / gh / rbw / project dirs / mise) failed — re-run \`mise run bootstrap\`." >> "$ATHOME_FOLLOWUP_LOG"
 fi
 
 # ── 6. set chezmoi's permanent sourceDir so future plain `chezmoi apply`
@@ -883,10 +919,13 @@ fi
 
 c_green ""
 if (( BOOTSTRAP_WARNINGS == 0 )); then
-  c_green "✓ bootstrap done."
+  c_green "✓ baseline ready — chezmoi, mise, ssh, gh, rbw, config files, project dirs."
+  c_blue  ""
+  c_blue  "── Next: install everything else ──────────────────────────────────────"
+  c_blue  "  mise run apply      # full package set + desktop/shell scripts (re-runnable daily)"
 else
-  c_yellow "⚠ bootstrap finished WITH ${BOOTSTRAP_WARNINGS} WARNING(S) — NOT fully complete."
-  c_yellow "  See the follow-up actions below; re-run \`./scripts/bootstrap.sh\` after fixing."
+  c_yellow "⚠ baseline finished WITH ${BOOTSTRAP_WARNINGS} WARNING(S) — NOT fully ready."
+  c_yellow "  See the follow-up actions below, then run \`mise run apply\` (or re-run bootstrap)."
 fi
 
 # ── Print any follow-up actions chezmoi scripts logged ────────────────────

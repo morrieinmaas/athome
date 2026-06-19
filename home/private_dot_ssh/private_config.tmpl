@@ -8,13 +8,19 @@ Host *
 # IdentityFile below, so ssh reads it directly — no agent, no Keychain.
 
 # ── GitHub ──────────────────────────────────────────────────────────────────
-# ONE key per machine, named after the host ({{ .chezmoi.hostname }}_ed25519) so
-# GitHub's key list shows which box each key is from and you can revoke a single
-# machine cleanly. It does auth AND commit signing for your one GitHub account.
-# Per-directory git *email* still varies (see ~/.gitconfig includeIf) — only the
-# key is shared. If you ever add a second GitHub account, add a `Host
-# github-<that-account>` alias here with its own IdentityFile.
+# Two IdentityFiles, tried in order. Under IdentitiesOnly (Host * above) ssh
+# offers ONLY these two, and GitHub authenticates with whichever is actually
+# registered on your account:
+#   1. the conventional ~/.ssh/id_ed25519 — so a machine that already has it on
+#      GitHub reuses that key (no per-host upload needed);
+#   2. this host's per-host key ({{ .chezmoi.hostname }}_ed25519) — used when
+#      id_ed25519 is absent (fresh machine: missing IdentityFile is silently
+#      skipped) or not registered. The per-host key keeps clean per-machine
+#      revocation when it's the one uploaded.
+# Per-directory git *email* still varies (see ~/.gitconfig includeIf). For a
+# second GitHub account, add a `Host github-<account>` alias with its own key.
 Host github.com
     HostName github.com
     User git
+    IdentityFile ~/.ssh/id_ed25519
     IdentityFile ~/.ssh/{{ .chezmoi.hostname }}_ed25519

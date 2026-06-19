@@ -600,6 +600,7 @@ if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
 Host github.com
     HostName github.com
     User git
+    IdentityFile ~/.ssh/id_ed25519
     IdentityFile ~/.ssh/${ssh_host}_ed25519
 SSHSEED
     fi

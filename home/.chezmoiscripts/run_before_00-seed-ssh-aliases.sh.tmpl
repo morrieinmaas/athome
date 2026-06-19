@@ -34,6 +34,7 @@ if ! grep -q '{{ .chezmoi.hostname }}_ed25519' "$HOME/.ssh/config"; then
 Host github.com
     HostName github.com
     User git
+    IdentityFile ~/.ssh/id_ed25519
     IdentityFile ~/.ssh/{{ .chezmoi.hostname }}_ed25519
 SSHSEED
 fi

@@ -34,8 +34,8 @@ if command -v noctalia-shell >/dev/null 2>&1; then
 else
   echo "!! 'noctalia-shell' binary not found after package install"
   followup "noctalia-shell not on PATH — check the AUR install:"
-  followup "    paru -Q noctalia-shell"
-  followup "    paru -S noctalia-shell    # if missing"
+  followup "    yay -Q noctalia-shell"
+  followup "    yay -S noctalia-shell    # if missing"
 fi
 
 # Display manager: respect whatever's already configured. We ONLY enable

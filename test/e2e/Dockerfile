@@ -13,19 +13,21 @@ FROM archlinux:latest
 RUN sed -i '/^\[options\]/a DisableSandbox' /etc/pacman.conf
 
 # Base tools the bootstrap assumes present: git/curl/sudo, base-devel for AUR
-# (paru builds), openssh for keygen. `rust` is pre-installed so building paru
-# resolves the `cargo` makedepend unambiguously — otherwise pacman prompts "2
+# builds, openssh for keygen. `rust` is pre-installed so any AUR package with a
+# `cargo` makedepend resolves it unambiguously — otherwise pacman prompts "2
 # providers available for cargo: rust/rustup", which a headless (no-TTY) build
 # can't answer and `[Y/n]` on closed stdin aborts. Bonus: skips a slow ~274 MB
 # emulated rust download mid-bootstrap. Refresh the package DB first.
 RUN pacman -Syu --noconfirm --needed git curl sudo base-devel openssh which rust \
     && pacman -Scc --noconfirm
 
-# Install paru as a BINARY from chaotic-aur — NO source compile (building paru
-# under qemu takes ages). chaotic-aur rebuilds against current Arch, so unlike
-# the raw paru-bin AUR package it tracks the libalpm soname and just works. The
-# bootstrap then skips its own paru build (`command -v paru`). Cached layer →
-# done once at image build, never per `podman run`.
+# Install yay as a BINARY from chaotic-aur — NO source compile (building an AUR
+# helper under qemu takes ages). chaotic-aur rebuilds against current Arch, so
+# unlike the raw yay-bin AUR package it tracks the libalpm soname and just works
+# (yay links libalpm dynamically via go-alpm/cgo, so a prebuilt -bin breaks on
+# every libalpm bump — exactly the breakage paru-bin had). The bootstrap then
+# skips its own yay build (`command -v yay`). Cached layer → done once at image
+# build, never per `podman run`.
 RUN pacman-key --init \
     && pacman-key --recv-key 3056513887B78AEB --keyserver keyserver.ubuntu.com \
     && pacman-key --lsign-key 3056513887B78AEB \
@@ -33,9 +35,9 @@ RUN pacman-key --init \
          'https://cdn-mirror.chaotic.cx/chaotic-aur/chaotic-keyring.pkg.tar.zst' \
          'https://cdn-mirror.chaotic.cx/chaotic-aur/chaotic-mirrorlist.pkg.tar.zst' \
     && printf '\n[chaotic-aur]\nInclude = /etc/pacman.d/chaotic-mirrorlist\n' >> /etc/pacman.conf \
-    && pacman -Sy --noconfirm paru
+    && pacman -Sy --noconfirm yay
 
-# makepkg/paru refuse to run as root → a passwordless-sudo build user.
+# makepkg/yay refuse to run as root → a passwordless-sudo build user.
 RUN useradd -m -G wheel ci \
     && echo 'ci ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/ci \
     && chmod 0440 /etc/sudoers.d/ci

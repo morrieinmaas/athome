@@ -14,7 +14,7 @@
 #
 # Rule of thumb: portable & user-space → mise; GUI / OS-integration / library /
 # privileged → here. The install script installs `common` via brew/nb on macOS
-# and via paru on Linux (paru delegates official-repo packages to pacman).
+# and via yay on Linux (yay delegates official-repo packages to pacman).
 
 # Native tools whose package name is the SAME on Homebrew and pacman/AUR.
 common:
@@ -142,9 +142,9 @@ linux:
     # ── go tooling not covered by the mise go runtime ──
     - go-tools                       # gopls, goimports, godoc, etc. — provides `goimports`
   aur:
-    # paru itself is bootstrapped by run_once_before_01; listed here so
+    # yay itself is bootstrapped by run_once_before_01; listed here so
     # subsequent re-runs treat it like any other AUR package.
-    - paru
+    - yay
     - netbird                        # mesh VPN client (replaces tailscale). NetBird Cloud free tier; self-host is a no-penalty future exit. `netbird up` in run_once_08.
     - opencode-bin
     - zen-browser-bin
@@ -161,7 +161,7 @@ linux:
     - wush-bin                       # P2P file transfer + ad-hoc SSH (coder/wush)
     - podman-tui                     # podman/containers TUI — AUR only (not in extra). macOS: brew formula; Fedora: dnf. Native, not mise (amd64-only releases).
     # `bw` (bitwarden-cli-bin) retired to on-demand (D3): rbw is the primary
-    # client. Install only for an admin task rbw can't do: `paru -S bitwarden-cli-bin`.
+    # client. Install only for an admin task rbw can't do: `yay -S bitwarden-cli-bin`.
 
 # ── Fedora (Workstation / GNOME spin) ───────────────────────────────────────
 # Portable CLI tooling still comes from mise (config.toml) — same as Arch +

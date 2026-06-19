@@ -66,7 +66,7 @@ fi
 # ── Linux (Arch: zen-browser-bin) ───────────────────────────────────────────
 zen_bin="$(command -v zen-browser || command -v zen || true)"
 if [[ -z "$zen_bin" ]]; then
-  echo "==> zen not on PATH — install zen-browser-bin (paru), then re-run"
+  echo "==> zen not on PATH — install zen-browser-bin (yay), then re-run"
   exit 0
 fi
 dist="$(dirname "$(readlink -f "$zen_bin")")/distribution"

@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Install the system package manager.
 #  - macOS  -> nanobrew (`nb`, Homebrew-compatible, Zig; canonical PM per D6)
-#  - Linux  -> paru (Rust-based AUR helper) on top of pacman
+#  - Linux  -> yay (Go-based AUR helper) on top of pacman
 #
 # This script is run_once_BEFORE everything else. If it fails, chezmoi
 # bails the whole apply — so it's the most important script to make robust.
-# We retry the paru build on transient failures (mirror flakiness, AUR git
+# We retry the yay build on transient failures (mirror flakiness, AUR git
 # clone races) and surface the actual makepkg error so the user can debug.
 set -euo pipefail
 
@@ -44,7 +44,7 @@ fi
 {{- else if eq .chezmoi.os "linux" -}}
 # ── Fedora: dnf is native — no AUR helper to build. Enable the COPR plugin +
 #    RPM Fusion (free + nonfree) so the COPR desktop stack (run_onchange_02) and
-#    codecs/drivers install cleanly. Then we're done; the paru build below is
+#    codecs/drivers install cleanly. Then we're done; the yay build below is
 #    Arch-only.
 if command -v dnf >/dev/null 2>&1 && ! command -v pacman >/dev/null 2>&1; then
   echo "==> dnf: plugins-core (copr) + RPM Fusion (free + nonfree)"
@@ -58,43 +58,44 @@ if command -v dnf >/dev/null 2>&1 && ! command -v pacman >/dev/null 2>&1; then
   exit 0
 fi
 
-# ── Arch: paru (AUR helper) ──
-if command -v paru >/dev/null 2>&1; then
-  echo "==> paru present ($(paru --version | head -n1))"
+# ── Arch: yay (AUR helper) ──
+if command -v yay >/dev/null 2>&1; then
+  echo "==> yay present ($(yay --version | head -n1))"
   exit 0
 fi
 
-echo "==> installing paru (AUR helper)"
+echo "==> installing yay (AUR helper)"
 
 # Refresh package db + ensure build prerequisites. base-devel is a group;
-# git is standalone. --needed = no-op if already current.
+# git is standalone. --needed = no-op if already current. yay's `go` makedepend
+# is pulled in automatically by makepkg -s during the build below.
 sudo pacman -Sy --noconfirm
 sudo pacman -S --needed --noconfirm base-devel git
 
-build_paru() {
+build_yay() {
   local tmp build_log
   tmp="$(mktemp -d)"
   build_log="$(mktemp)"
   echo "  build dir: $tmp"
   echo "  build log: $build_log"
 
-  # Build `paru` from source — NOT paru-bin. The -bin package ships a prebuilt
-  # binary linked against a fixed libalpm (.so.15); the moment pacman bumps
-  # libalpm it fails to load ("libalpm.so.15: cannot open shared object file"),
-  # which broke the e2e and would break any machine ahead of the -bin rebuild.
-  # Source compiles against the INSTALLED libalpm, so it always matches. The Rust
+  # Build `yay` from source — NOT yay-bin. The -bin package ships a prebuilt
+  # binary; yay links libalpm dynamically (via go-alpm/cgo), so the moment
+  # pacman bumps libalpm it fails to load ("libalpm.so.NN: cannot open shared
+  # object file") until yay-bin is rebuilt — the same breakage paru-bin had.
+  # Source compiles against the INSTALLED libalpm, so it always matches. The Go
   # compile is the cost of that robustness on a real machine (one-time). The e2e
-  # installs a binary paru from chaotic-aur — a repo that rebuilds against current
+  # installs a binary yay from chaotic-aur — a repo that rebuilds against current
   # Arch, so it tracks the libalpm soname — so nothing is compiled there
   # (see test/e2e/Dockerfile).
-  if ! git clone --depth 1 https://aur.archlinux.org/paru.git "$tmp/paru" 2>&1 | tee -a "$build_log"; then
+  if ! git clone --depth 1 https://aur.archlinux.org/yay.git "$tmp/yay" 2>&1 | tee -a "$build_log"; then
     rm -rf "$tmp"; rm -f "$build_log"
     return 1
   fi
 
   # Run makepkg in subshell with -si (install + skipped-pgp checks via -s deps).
   # Errors stream to build_log so the user can see exactly what failed.
-  if ! (cd "$tmp/paru" && makepkg -si --noconfirm 2>&1 | tee -a "$build_log"); then
+  if ! (cd "$tmp/yay" && makepkg -si --noconfirm 2>&1 | tee -a "$build_log"); then
     echo ""
     echo "!! makepkg failed. Last 30 lines of build log:"
     tail -n 30 "$build_log" | sed 's/^/   /'
@@ -113,10 +114,10 @@ build_paru() {
 
 attempt=1
 max_attempts=3
-until build_paru; do
+until build_yay; do
   if (( attempt >= max_attempts )); then
     echo ""
-    echo "!! paru install failed after $max_attempts attempts."
+    echo "!! yay install failed after $max_attempts attempts."
     echo "!! Likely causes:"
     echo "    - mirror flakiness:   sudo pacman -Syyu  &&  retry"
     echo "    - missing base-devel: pacman -Qi base-devel"
@@ -134,5 +135,5 @@ until build_paru; do
   ((attempt++))
 done
 
-echo "==> paru installed: $(paru --version | head -n1)"
+echo "==> yay installed: $(yay --version | head -n1)"
 {{- end }}

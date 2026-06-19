@@ -52,7 +52,7 @@ install_one() {
     nb)        label=nb;     cmd=(nb install "$pkg") ;;
     nb_cask)   label=cask;   cmd=(nb install --cask "$pkg") ;;
     pacman)    label=pacman; cmd=(sudo pacman -S --needed --noconfirm "$pkg") ;;
-    paru)      label=paru;   cmd=(paru -S --needed --noconfirm --skipreview "$pkg") ;;
+    yay)       label=yay;    cmd=(yay -S --needed --noconfirm --answerdiff None --answerclean None "$pkg") ;;
     dnf)       label=dnf;    cmd=(sudo dnf install -y "$pkg") ;;
     *)         printf '  ! unknown pm: %s\n' "$pm" >&2; return 0 ;;
   esac
@@ -130,38 +130,38 @@ if command -v dnf >/dev/null 2>&1 && ! command -v pacman >/dev/null 2>&1; then
   install_one dnf {{ . | quote }}
   {{ end }}
 else
-  # ── Arch: paru/pacman. Refresh + upgrade through paru if available — covers
-  #    repo + AUR in one pass. Falls back to pacman if paru isn't built yet
-  #    (very first run before run_once_before_01 lands paru).
-  if command -v paru >/dev/null 2>&1; then
-    echo "==> paru: refresh + system upgrade (repo + AUR)"
-    paru -Syu --noconfirm --skipreview
+  # ── Arch: yay/pacman. Refresh + upgrade through yay if available — covers
+  #    repo + AUR in one pass. Falls back to pacman if yay isn't built yet
+  #    (very first run before run_once_before_01 lands yay).
+  if command -v yay >/dev/null 2>&1; then
+    echo "==> yay: refresh + system upgrade (repo + AUR)"
+    yay -Syu --noconfirm --answerdiff None --answerclean None
   else
-    echo "==> pacman: refresh + system upgrade (paru not yet installed)"
+    echo "==> pacman: refresh + system upgrade (yay not yet installed)"
     sudo pacman -Syu --noconfirm
   fi
 
-  if ! command -v paru >/dev/null 2>&1; then
-    echo "!! paru missing — re-run after the bootstrap script's run_once_before_01"
-    echo "   has built it. linux.pacman + linux.aur installs both go through paru,"
+  if ! command -v yay >/dev/null 2>&1; then
+    echo "!! yay missing — re-run after the bootstrap script's run_once_before_01"
+    echo "   has built it. linux.pacman + linux.aur installs both go through yay,"
     echo "   so without it we can't install anything."
     exit 1
   fi
 
-  # Every Arch package goes through paru — uniform path. paru delegates to
+  # Every Arch package goes through yay — uniform path. yay delegates to
   # pacman for official-repo entries and handles AUR itself; the pacman/aur
   # split in packages.yaml is an organizational hint, not a behavioral switch.
-  echo "==> paru: official-repo packages (common + linux.pacman)"
+  echo "==> yay: official-repo packages (common + linux.pacman)"
   {{ range .common -}}
-  install_one paru {{ . | quote }}
+  install_one yay {{ . | quote }}
   {{ end -}}
   {{ range .linux.pacman -}}
-  install_one paru {{ . | quote }}
+  install_one yay {{ . | quote }}
   {{ end }}
 
-  echo "==> paru: AUR packages (linux.aur)"
+  echo "==> yay: AUR packages (linux.aur)"
   {{ range .linux.aur -}}
-  install_one paru {{ . | quote }}
+  install_one yay {{ . | quote }}
   {{ end }}
 fi
 {{- end }}
@@ -172,12 +172,12 @@ echo "==> package install complete ($INSTALL_OK ok, $INSTALL_FAIL failed)"
 # failures are normal — a flaky AUR build, a renamed formula. But if EVERY
 # attempted install failed, something systemic is wrong: a broken/empty package
 # manager, no network, or (macOS) a non-writable /opt/nanobrew prefix. Don't
-# leave an empty toolchain silently. `nb install`/`paru -S --needed` both exit
+# leave an empty toolchain silently. `nb install`/`yay -S --needed` both exit
 # 0 for already-installed packages, so re-runs never false-trip this.
 # We exit 0 so the rest of the apply (desktop, shell, …) still converges; the
 # loud banner + the bootstrap follow-up log are the surfacing mechanism.
 if (( INSTALL_FAIL > 0 && INSTALL_OK == 0 )); then
-  msg="ALL ${INSTALL_FAIL} package installs FAILED — toolchain is empty. Check the package manager (nanobrew/paru), network, and (macOS) /opt/nanobrew ownership, then re-run \`chezmoi apply\`."
+  msg="ALL ${INSTALL_FAIL} package installs FAILED — toolchain is empty. Check the package manager (nanobrew/yay), network, and (macOS) /opt/nanobrew ownership, then re-run \`chezmoi apply\`."
   {
     echo ""
     echo "  ############################################################"

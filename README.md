@@ -153,7 +153,7 @@ identity keys from a prior backup dir (see
 
 The whole run is non-interactive — SSH key gen + upload, `chezmoi apply`, all
 the chezmoi run-once scripts, package install via pacman (official repos) +
-paru (AUR), niri + Noctalia shell setup. Secrets aren't part of bootstrap: log
+yay (AUR), niri + Noctalia shell setup. Secrets aren't part of bootstrap: log
 in to Bitwarden once afterwards with `bw-setup` (registers the device + unlocks; the agent caches your key).
 
 > **Heads-up on that first login:** Bitwarden's cloud blocks plain-password
@@ -211,7 +211,7 @@ Arch path.
 
 Bootstrap detects Fedora (`dnf` present, no `pacman`) and:
 
-- `run_once_before_01` enables **RPM Fusion** (free + nonfree) + the COPR plugin — **no `paru`** (dnf is native)
+- `run_once_before_01` enables **RPM Fusion** (free + nonfree) + the COPR plugin — **no `yay`** (dnf is native)
 - `run_onchange_02` `dnf copr enable`s the niri/Noctalia/ghostty/zen/zed/nerd-font/netbird COPRs, then installs the `fedora.dnf` set; **portable CLI tooling still comes from mise** (unchanged across OSes — it pulls release binaries via ubi/github/cargo/go)
 - `run_once_11` installs niri + Noctalia, **respects GDM**, and sets niri as your default login session — GNOME stays one click away at the GDM gear
 
@@ -745,7 +745,7 @@ mise doctor                 # health-check the toolchain
 
 # native/GUI/system packages — the OS PM:
 nb upgrade                  # macOS (nanobrew)
-paru -Syu                   # Arch
+yay -Syu                    # Arch
 
 # force-refresh externals (zinit, TPM, ~/.config/agents) on next apply:
 chezmoi state delete-bucket --bucket=entryState

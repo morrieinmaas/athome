@@ -2,7 +2,7 @@
 #
 # mise is the single cross-platform installer for ALL portable tooling on both
 # macOS and Linux: language runtimes + modern CLI utilities. The OS package
-# managers (nb on macOS, paru on Arch) only handle GUI apps, desktop/system
+# managers (nb on macOS, yay on Arch) only handle GUI apps, desktop/system
 # packages, fonts, libraries, and OS-integrated tools — see
 # home/.chezmoidata/packages.yaml.
 #

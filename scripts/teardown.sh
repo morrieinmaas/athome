@@ -123,7 +123,7 @@ tier_all() {
              "$HOME/.config/agents" \
              "$HOME/.local/share/nvim" "$HOME/.local/state/nvim" \
              "$HOME/.cache/bat"
-  # Native package layer is OS-specific: macOS = nanobrew; Linux = pacman/paru
+  # Native package layer is OS-specific: macOS = nanobrew; Linux = pacman/yay
   # (system-wide — NOT auto-removed, since yanking system packages can break the
   # box). Only the macOS path touches /opt/nanobrew + casks.
   case "$(uname -s)" in
@@ -142,8 +142,8 @@ tier_all() {
       run sudo rm -rf /opt/nanobrew
       ;;
     *)
-      section "Linux system packages (pacman/paru) — left in place"
-      printf '  %snote: packages were installed system-wide via pacman/paru and are%s\n' "$c_dim" "$c_rst"
+      section "Linux system packages (pacman/yay) — left in place"
+      printf '  %snote: packages were installed system-wide via pacman/yay and are%s\n' "$c_dim" "$c_rst"
       printf '  %sNOT auto-removed (could break the OS). Remove by hand if needed:%s\n' "$c_dim" "$c_rst"
       printf '  %s  pacman -Qqe  # list explicitly-installed, then  sudo pacman -Rns <pkg>%s\n' "$c_dim" "$c_rst"
       ;;

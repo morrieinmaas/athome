@@ -130,7 +130,7 @@ Authoritative IPC verb list: [`Services/Control/IPCService.qml`](https://github.
 
 ## Packaging discipline
 
-**Two installers, one dividing line.** Portable & user-space → **mise**; GUI / OS-integration / library / privileged → the **native PM** (`nb`/brew on macOS, `paru` on Arch).
+**Two installers, one dividing line.** Portable & user-space → **mise**; GUI / OS-integration / library / privileged → the **native PM** (`nb`/brew on macOS, `yay` on Arch).
 
 - **mise** (`home/dot_config/mise/config.toml` `[tools]`) owns ALL portable tooling on both OSes: language runtimes + the modern-CLI set. Bare names resolve via mise's registry (aqua/ubi backend) — `cargo:` prefix only for tools not in the registry (procs, tealdeer, just-lsp). This is what killed the old per-OS name-translation lists. mise itself is curl-bootstrapped (`mise.run`), NOT a brew/pacman package — don't re-add it to `packages.yaml`.
 - **`packages.yaml`** is native-only now: casks, the niri/Noctalia desktop stack, fonts, libraries, podman/syncthing, `uv` (Python), and a few OS-integrated CLIs kept native on purpose (ICMP tools needing caps: `bandwhich`/`gping`/`trippy`; npm daemon `prettierd`). **Adding a portable CLI? It goes in mise, not here.**
@@ -138,7 +138,7 @@ Authoritative IPC verb list: [`Services/Control/IPCService.qml`](https://github.
 
 Adding a tool, decide: is it a portable single-binary CLI? → mise `[tools]`. Is it a GUI app, font, library, system service, or something needing root/caps? → `packages.yaml`.
 
-All Linux `packages.yaml` entries go through `paru`. The split between `linux.pacman` and `linux.aur` is an organizational hint (which repo it lives in upstream), not a behavioral switch.
+All Linux `packages.yaml` entries go through `yay`. The split between `linux.pacman` and `linux.aur` is an organizational hint (which repo it lives in upstream), not a behavioral switch.
 
 `networkmanager` is **required** by Noctalia's NetworkService (shells out to `nmcli`) — pinned in `linux.pacman`. Don't drop it.
 

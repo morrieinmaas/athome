@@ -43,7 +43,12 @@ setup() {
   [[ "$output" == *"chezmoi persistent state"* ]]
   [[ "$output" == *"chezmoi-managed files"* ]]
   [[ "$output" == *"mise"* ]]
-  [[ "$output" == *"nanobrew"* ]]
+  # Native package layer is OS-specific: nanobrew on macOS, pacman/yay on Linux.
+  if [[ "$(uname -s)" == Darwin ]]; then
+    [[ "$output" == *"nanobrew"* ]]
+  else
+    [[ "$output" == *"pacman"* ]]
+  fi
 }
 
 @test "execute without the typed confirmation aborts and deletes nothing" {

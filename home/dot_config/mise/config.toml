@@ -15,6 +15,16 @@
 # (versions, venvs, deps, tools). See ~/.zsh/exports.zsh + aliases.zsh.
 
 [tools]
+# ── Install accelerator ──────────────────────────────────────────────────────
+# cargo-binstall makes mise fetch PREBUILT binaries for every cargo-backend tool
+# (the explicit `cargo:` entries below AND any bare name the registry resolves to
+# cargo, e.g. tokei) instead of `cargo install` compiling from source. mise auto-
+# detects and uses it when present. Without it a fresh bootstrap source-compiles
+# Rust CLIs — tokei alone took ~5min under the e2e's qemu emulation. It's itself a
+# prebuilt registry tool, so installing it is fast. run_after_06 installs it FIRST
+# so it's available before the other cargo tools resolve.
+cargo-binstall = "latest"
+
 # ── Language runtimes ────────────────────────────────────────────────────────
 node    = "lts"
 go      = "latest"

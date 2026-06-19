@@ -5,15 +5,26 @@
 #   test/e2e/run.sh --build  # build the image only
 #   test/e2e/run.sh --clean  # remove leftover e2e containers + the image
 #
+# Distro is selected by ATHOME_E2E_DISTRO (default: arch); `fedora` is the other
+# track. Each maps to its own Dockerfile + image tag so both can coexist:
+#   ATHOME_E2E_DISTRO=fedora test/e2e/run.sh
+#
 # Passes a GITHUB_TOKEN into the run (from $GITHUB_TOKEN or `gh auth token`) so
-# mise doesn't hit the anon rate limit. CI uses the same image via e2e.yml.
+# mise doesn't hit the anon rate limit. CI builds the same images via e2e.yml.
 set -euo pipefail
 
-cd "$(dirname "$0")/../.."   # repo root (Dockerfile COPYs the whole tree)
+cd "$(dirname "$0")/../.."   # repo root (the Dockerfile COPYs the whole tree)
 
 engine="$(command -v podman || command -v docker || true)"
 [ -n "$engine" ] || { echo "need docker or podman on PATH" >&2; exit 1; }
-img="athome-e2e:latest"
+
+distro="${ATHOME_E2E_DISTRO:-arch}"
+case "$distro" in
+  arch)   dockerfile="test/e2e/Dockerfile" ;;
+  fedora) dockerfile="test/e2e/Dockerfile.fedora" ;;
+  *) echo "unknown ATHOME_E2E_DISTRO='$distro' (expected: arch | fedora)" >&2; exit 1 ;;
+esac
+img="athome-e2e-${distro}:latest"
 
 # Tear down e2e leftovers: force-remove any containers from the image (running or
 # not — a killed local client can leave one Up inside the podman VM) then the
@@ -31,8 +42,8 @@ fi
 # (emulated, slow) and matches CI's amd64 runners (native).
 platform="${ATHOME_E2E_PLATFORM:-linux/amd64}"
 
-echo "==> building $img with ${engine##*/} (platform=$platform)"
-"$engine" build --platform "$platform" -f test/e2e/Dockerfile -t "$img" .
+echo "==> building $img ($distro) with ${engine##*/} (platform=$platform)"
+"$engine" build --platform "$platform" -f "$dockerfile" -t "$img" .
 
 [ "${1:-}" = "--build" ] && { echo "built (skip run)"; exit 0; }
 
@@ -40,25 +51,33 @@ token="${GITHUB_TOKEN:-$(gh auth token 2>/dev/null || true)}"
 [ -n "$token" ] || echo "warning: no GITHUB_TOKEN / gh token — mise may hit the GitHub rate limit" >&2
 
 # Under qemu emulation (the amd64 image on an arm64 host, e.g. Apple Silicon),
-# AUR packages that build FROM SOURCE compile pathologically slowly — minutes
-# each, looking hung. None are asserted by verify.sh, and CI installs them all
-# natively, so for the local emulated run we skip them to keep it usable. On a
-# native amd64 host (and in CI, which doesn't use this script) nothing is skipped
-# and every package is installed. `-bin` packages stay — they're prebuilt + fast.
+# heavy packages drag the run out — Arch AUR source-builds compile for minutes;
+# big GUI/desktop binaries are slow downloads on either distro. None are asserted
+# by verify.sh, and CI installs them all natively, so for the local emulated run
+# we skip them to keep it usable. On a native amd64 host (and in CI, which builds
+# the images directly, not via this script) nothing is skipped.
 skip_env=()
 host_arch="$(uname -m)"
 if [ "$platform" = "linux/amd64" ] && [ "$host_arch" != "x86_64" ] && [ "$host_arch" != "amd64" ]; then
-  # Keep the local emulated e2e usable by skipping packages that are slow to
-  # build/download AND that verify.sh never asserts. CI runs natively and still
-  # installs everything, so no coverage is lost. Three groups, trim freely:
-  #   slow_aur     — compile from source → minutes each under qemu
-  #   heavy_gui    — large prebuilt GUI binaries (editors/terminals/browsers)
-  #   heavy_desktop — the GNOME/niri desktop stack + its big optional deps
-  slow_aur="nirimod-git eternalterminal bandwhich gping trippy noctalia-shell podman-tui prettierd"
-  heavy_gui="zed ghostty opencode-bin zen-browser-bin librewolf-bin"
-  heavy_desktop="niri gnome-shell gnome-session gnome-control-center mutter nautilus gnome-shell-extensions evolution-data-server"
-  skip_list="$slow_aur $heavy_gui $heavy_desktop"
-  echo "==> emulated run ($host_arch host) — skipping heavy packages not asserted by verify.sh:"
+  case "$distro" in
+    arch)
+      # slow_aur compiles from source under qemu; heavy_gui/heavy_desktop are big
+      # prebuilt downloads. Trim freely — names are Arch/AUR-specific.
+      slow_aur="nirimod-git eternalterminal bandwhich gping trippy noctalia-shell podman-tui prettierd"
+      heavy_gui="zed ghostty opencode-bin zen-browser-bin librewolf-bin"
+      heavy_desktop="niri gnome-shell gnome-session gnome-control-center mutter nautilus gnome-shell-extensions evolution-data-server"
+      skip_list="$slow_aur $heavy_gui $heavy_desktop"
+      ;;
+    fedora)
+      # Fedora has no source-build step (COPR ships prebuilt RPMs), so nothing
+      # compiles — but the GUI/desktop RPMs are large. Skip the same not-asserted
+      # heavy set, using Fedora names (from packages.yaml fedora.dnf / fedora.copr).
+      heavy_gui="zed ghostty zen-browser"
+      heavy_desktop="niri noctalia-shell gnome-shell gnome-session gnome-control-center mutter nautilus gnome-extensions-app evolution-data-server"
+      skip_list="$heavy_gui $heavy_desktop"
+      ;;
+  esac
+  echo "==> emulated run ($host_arch host, $distro) — skipping heavy packages not asserted by verify.sh:"
   echo "    $skip_list"
   skip_env=(-e "ATHOME_SKIP_PACKAGES=$skip_list")
 fi

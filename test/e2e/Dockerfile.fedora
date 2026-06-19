@@ -1,0 +1,72 @@
+# test/e2e/Dockerfile.fedora — a clean Fedora box to run the athome bootstrap e2e.
+#
+# Mirror of test/e2e/Dockerfile (Arch) for the dnf/COPR path. Validates the
+# Fedora setup unattended: no gh login, no Bitwarden, dummy answers from
+# test/e2e/bootstrap.toml, and ATHOME_CI=1 so the systemd/GUI/hardware scripts
+# (niri, netbird, podman, …) skip cleanly. mise gets GITHUB_TOKEN from the
+# build/run env to avoid the anon GitHub rate limit.
+#
+# The bootstrap itself is package-manager-agnostic: run_once_before_01 and
+# run_onchange_02 branch to dnf when `dnf` is present and `pacman` is not, so the
+# whole Arch/yay path is skipped here automatically. The Fedora package list
+# (packages.yaml `fedora.dnf` + `fedora.copr`) is self-contained.
+FROM fedora:latest
+
+# Base tools the bootstrap assumes present before `chezmoi apply` runs:
+#   git/curl/sudo     — clone, the chezmoi + mise curl bootstraps, the many sudo
+#                       calls (dnf install, systemctl, chown, /etc deploys).
+#   openssh-clients   — ssh-keygen (bootstrap generates a per-host key).
+#   which             — `command -v`-style probes a few scripts rely on.
+#   rpm               — run_once_before_01 reads `rpm -E %fedora` to pin the
+#                       RPM Fusion release.
+#   dnf-plugins-core  — provides `dnf copr` on dnf4.
+RUN dnf -y install \
+        git curl sudo openssh-clients which rpm dnf-plugins-core bsdtar \
+    && dnf clean all
+
+# Shadow GNU tar with bsdtar (libarchive). GNU tar's nested-extraction path uses
+# a syscall qemu-user doesn't implement, so when this amd64 image runs EMULATED
+# on an arm64 host (e.g. Apple Silicon) the chezmoi + mise.run installers — both
+# `tar xzf` a release tarball with subdirs — die with
+#   tar: …: Cannot open/mkdir: Function not implemented   (ENOSYS).
+# bsdtar uses a syscall set qemu does implement and extracts the same tarballs
+# fine. /usr/local/bin precedes /usr/bin on PATH, so the installers pick it up.
+# Native amd64 (CI) is unaffected — bsdtar works there too. (Arch's GNU tar
+# happens to dodge the gap, so its Dockerfile needs no equivalent.)
+RUN ln -sf "$(command -v bsdtar)" /usr/local/bin/tar
+
+# Recent Fedora ships dnf5, whose `copr` subcommand lives in `dnf5-plugins` (dnf4
+# used dnf-plugins-core). Install it best-effort so `dnf copr enable` works for
+# the bootstrap's COPR repos (yalter/niri, ghostty, zen-browser, zed, netbird, …)
+# regardless of the base image's dnf generation. Cached layer → done at build.
+RUN dnf -y install dnf5-plugins 2>/dev/null || true
+
+# The bootstrap expects to run as a normal user with passwordless sudo (dnf /
+# systemctl / chown / …), not root. NOTE: deliberately NOT added to `wheel`.
+# Fedora ships `%wheel ALL=(ALL) ALL` ACTIVE (Arch has it commented out), so a
+# wheel member matches a password-REQUIRING rule and `sudo -v` (the bootstrap's
+# credential-cache step) prompts — even with the NOPASSWD line below. Keeping ci
+# out of wheel means it matches ONLY this NOPASSWD:ALL rule → sudo never prompts.
+RUN useradd -m ci \
+    && echo 'ci ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/ci \
+    && chmod 0440 /etc/sudoers.d/ci
+
+USER ci
+WORKDIR /home/ci/athome
+COPY --chown=ci:ci . /home/ci/athome
+
+# Headless skip-guards on; GITHUB_TOKEN is injected at run time (CI secret or a
+# local `gh auth token`), not baked into the image.
+#
+# NOTE: ATHOME_SKIP_PACKAGES (skipping heavy GUI/desktop RPMs under emulation) is
+# NOT set here — it's injected by test/e2e/run.sh ONLY when the image runs
+# emulated (an arm64 host running this amd64 image). CI runs native amd64, so it
+# still installs and validates every package.
+ENV ATHOME_CI=1
+
+# Two-phase, mirroring the real flow + the Arch e2e: bootstrap = baseline (config
+# files + pkg manager + gh/rbw + project dirs); then `chezmoi apply` = convergence
+# (full package set + mise tools + desktop scripts). verify-baseline.sh (between
+# the phases) proves the split (packages deferred); verify.sh (after apply) proves
+# convergence. chezmoi installs into ~/.local/bin, so put it on PATH for apply.
+CMD ["bash", "-lc", "export PATH=\"$HOME/.local/bin:/opt/nanobrew/prefix/bin:$PATH\"; ./scripts/bootstrap.sh --config test/e2e/bootstrap.toml --machine personal && bash test/e2e/verify-baseline.sh && chezmoi apply && bash test/e2e/verify.sh"]

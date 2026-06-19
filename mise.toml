@@ -63,12 +63,20 @@ description = "run the bats test suite"
 run = "bats test"
 
 [tasks.e2e]
-description = "build + run the Linux bootstrap e2e in a container (docker/podman)"
+description = "build + run the Arch bootstrap e2e in a container (docker/podman)"
 run = "./test/e2e/run.sh"
 
 [tasks.e2e-clean]
-description = "remove the e2e container image + any leftover containers"
+description = "remove the Arch e2e container image + any leftover containers"
 run = "./test/e2e/run.sh --clean"
+
+[tasks.e2e-fedora]
+description = "build + run the Fedora bootstrap e2e in a container (docker/podman)"
+run = "ATHOME_E2E_DISTRO=fedora ./test/e2e/run.sh"
+
+[tasks.e2e-fedora-clean]
+description = "remove the Fedora e2e container image + any leftover containers"
+run = "ATHOME_E2E_DISTRO=fedora ./test/e2e/run.sh --clean"
 
 [tasks.teardown]
 description = "reset for a from-scratch retry (dry-run by default; --all --execute to wipe)"

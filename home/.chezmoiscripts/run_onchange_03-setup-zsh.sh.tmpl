@@ -10,6 +10,11 @@
 # zsh-presence: {{ if lookPath "zsh" }}{{ lookPath "zsh" }}{{ else }}absent{{ end }}
 set -euo pipefail
 
+# In minimal/container shells (e.g. the e2e's `ci` user) $USER may be unset.
+# This script runs under `set -u`, so the bare `$USER` uses below would abort
+# with "USER: unbound variable". Derive it once up front from `id` as a fallback.
+export USER="${USER:-$(id -un)}"
+
 # Helper: append a manual follow-up note (printed by bootstrap.sh at end).
 followup() {
   if [[ -n "${ATHOME_FOLLOWUP_LOG:-}" ]]; then

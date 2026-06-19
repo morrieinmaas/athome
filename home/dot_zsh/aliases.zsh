@@ -60,9 +60,9 @@ alias gplease='git push --force-with-lease'
 
 # ─── chezmoi shortcuts ───────────────────────────────────────────────────────
 alias cz='chezmoi'
-alias czu='chezmoi update -v'        # git pull + apply in one shot (the daily sync)
-alias cza='chezmoi apply -v'
-alias czd='chezmoi diff'
+alias czu='chezmoi update'           # git pull + apply in one shot (the daily sync)
+alias cza='chezmoi apply'            # NO -v: a paged diff would abort the apply if you quit the pager
+alias czd='chezmoi diff'             # preview changes (paging fine here — nothing to abort)
 alias cze='chezmoi edit'
 alias czs='chezmoi status'
 alias czc='chezmoi cd'

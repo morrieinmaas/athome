@@ -25,12 +25,12 @@ description = "Provision as a work machine"
 run = "./scripts/bootstrap.sh --machine work"
 
 [tasks.update]
-description = "chezmoi update -v (pull + apply, the daily sync)"
-run = "chezmoi update -v"
+description = "chezmoi update (pull + apply, the daily sync). Preview first with `mise run diff`."
+run = "chezmoi update"
 
 [tasks.apply]
-description = "chezmoi apply -v (render source -> $HOME)"
-run = "chezmoi apply -v"
+description = "chezmoi apply (render source -> $HOME). Preview first with `mise run diff`."
+run = "chezmoi apply"
 
 [tasks.status]
 description = "chezmoi status"

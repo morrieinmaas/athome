@@ -77,7 +77,11 @@ if command -v nordvpn >/dev/null 2>&1; then
 
   # Sensible defaults that don't depend on login
   nordvpn set technology nordlynx >/dev/null 2>&1 || true   # WireGuard-based, faster
-  nordvpn set killswitch on       >/dev/null 2>&1 || true   # block traffic if VPN drops
+  # Killswitch OFF, deliberately. With it on, ANY time nordvpnd restarts while
+  # not connected to a server (daemon upgrade via `yay -Syu`, `nordvpn stop`,
+  # not-yet-logged-in) it blocks ALL traffic → the whole machine loses internet.
+  # Self-heals machines that previously had it on (idempotent set).
+  nordvpn set killswitch off      >/dev/null 2>&1 || true
   nordvpn set notify on           >/dev/null 2>&1 || true
 fi
 {{- end }}

@@ -465,6 +465,23 @@ ssh_github_authenticates() {
   [[ "$out" == *"successfully authenticated"* ]]
 }
 
+# local_key_on_github: print the first local ~/.ssh/*.pub whose key is already
+# registered on GitHub (auth keys), else return 1. Lets a machine that already
+# has an uploaded key skip the upload prompt — even when that key isn't this
+# host's per-host ${ssh_host}_ed25519.
+local_key_on_github() {
+  command -v gh >/dev/null 2>&1 || return 1
+  local pub blob registered
+  registered="$(gh api user/keys --jq '.[].key' 2>/dev/null)" || return 1
+  [[ -n "$registered" ]] || return 1
+  for pub in "$HOME"/.ssh/*.pub; do
+    [[ -e "$pub" ]] || continue
+    blob="$(awk '{print $2}' "$pub")"
+    [[ -n "$blob" ]] && grep -qF "$blob" <<<"$registered" && { printf '%s\n' "$pub"; return 0; }
+  done
+  return 1
+}
+
 if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
   # Smart skip: if SSH already authenticates to GitHub, this machine is set up —
   # don't prompt to upload. Catches an existing key (even one named differently
@@ -474,6 +491,16 @@ if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
     if (( ssh_keys_were_generated )); then
       printf '    note: a fresh per-host key was generated at %s\n' "$ssh_key"
       printf '          upload it later with: gh ssh-key add %s.pub\n' "$ssh_key"
+    fi
+  elif existing_pub="$(local_key_on_github)"; then
+    c_green "✓ A local SSH key is already on GitHub ($(basename "$existing_pub")) — skipping upload."
+    # The github.com block in ~/.ssh/config pins this host's per-host key with
+    # IdentitiesOnly, so `git push` over SSH uses that key — not necessarily the
+    # registered one above. If SSH push fails with 'publickey', point github.com
+    # at the registered key or upload ${ssh_host}_ed25519.
+    if ! ssh_github_authenticates; then
+      printf '    note: SSH to github.com uses %s per ~/.ssh/config; if `git push` over\n' "$(basename "$ssh_key")"
+      printf '          SSH fails, point github.com at %s or upload %s.\n' "$(basename "$existing_pub" .pub)" "$(basename "$ssh_key")"
     fi
   elif confirm "Upload SSH public keys to GitHub now (auth + signing)?" y; then
     host="$(short_hostname)"

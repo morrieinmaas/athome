@@ -51,6 +51,16 @@ setup() {
   fi
 }
 
+@test "--all documents user-data preservation (~/.secrets + project dirs)" {
+  run "$TEARDOWN" --all
+  [ "$status" -eq 0 ]
+  # The safety contract must be stated: teardown wipes the tool layer but never
+  # the user's secrets/env files or repo dirs. Guards against a future edit that
+  # drops the note (and, by proxy, the intent).
+  [[ "$output" == *".secrets"* ]]
+  [[ "$output" == *"LEFT ALONE"* ]]
+}
+
 @test "execute without the typed confirmation aborts and deletes nothing" {
   run bash -c "printf '\n' | '$TEARDOWN' --dotfiles --execute"
   [ "$status" -eq 2 ]

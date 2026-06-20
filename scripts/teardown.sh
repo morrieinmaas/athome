@@ -121,6 +121,20 @@ tier_all() {
              "$HOME/.config/agents" \
              "$HOME/.local/share/nvim" "$HOME/.local/state/nvim" \
              "$HOME/.cache/bat"
+  # run_once_after_22 symlinks items from ~/.config/agents into ~/.claude
+  # (CLAUDE.md, skills, …). Removing the external above leaves those dangling,
+  # so prune EXACTLY those links — only symlinks under ~/.claude that point into
+  # ~/.config/agents. Claude's real data (settings.json, projects/, …) is never
+  # a link into agents, so it's untouched.
+  section "stale ~/.claude → agents symlinks"
+  local item link
+  for item in CLAUDE.md AGENTS.md AGENTIC-SYSTEMS.md RTK.md skills agents; do
+    link="$HOME/.claude/$item"
+    [[ -L "$link" ]] || continue
+    case "$(readlink "$link" 2>/dev/null)" in
+      "$HOME/.config/agents/"*) run rm -f "$link" ;;
+    esac
+  done
   # Native package layer is OS-specific: macOS = nanobrew; Linux = pacman/yay
   # (system-wide — NOT auto-removed, since yanking system packages can break the
   # box). Only the macOS path touches /opt/nanobrew + casks.
@@ -140,10 +154,18 @@ tier_all() {
       run sudo rm -rf /opt/nanobrew
       ;;
     *)
-      section "Linux system packages (pacman/yay) — left in place"
-      printf '  %snote: packages were installed system-wide via pacman/yay and are%s\n' "$c_dim" "$c_rst"
+      # Distro-aware hint (Arch: pacman/yay; Fedora: dnf). Either way the system
+      # packages are LEFT IN PLACE — yanking them can break the OS.
+      local pm_name pm_list pm_remove
+      if command -v dnf >/dev/null 2>&1 && ! command -v pacman >/dev/null 2>&1; then
+        pm_name="dnf"; pm_list="dnf repoquery --userinstalled"; pm_remove="sudo dnf remove <pkg>"
+      else
+        pm_name="pacman/yay"; pm_list="pacman -Qqe"; pm_remove="sudo pacman -Rns <pkg>"
+      fi
+      section "Linux system packages ($pm_name) — left in place"
+      printf '  %snote: packages were installed system-wide via %s and are%s\n' "$c_dim" "$pm_name" "$c_rst"
       printf '  %sNOT auto-removed (could break the OS). Remove by hand if needed:%s\n' "$c_dim" "$c_rst"
-      printf '  %s  pacman -Qqe  # list explicitly-installed, then  sudo pacman -Rns <pkg>%s\n' "$c_dim" "$c_rst"
+      printf '  %s  %s   # list explicitly-installed, then  %s%s\n' "$c_dim" "$pm_list" "$pm_remove" "$c_rst"
       ;;
   esac
   section "rbw / Bitwarden local data"
@@ -152,7 +174,16 @@ tier_all() {
   section "per-machine SSH key (backed up in Bitwarden)"
   local host; host="$(uname -n)"
   run rm -f "$HOME/.ssh/${host}_ed25519" "$HOME/.ssh/${host}_ed25519.pub"
-  printf '  %snote: ~/personal, ~/sidebiz etc. are LEFT ALONE (may hold your repos)%s\n' "$c_dim" "$c_rst"
+
+  # ── USER DATA — NEVER removed by ANY tier ──────────────────────────────────
+  # The teardown wipes the athome-managed *tool layer* only. Your own data is
+  # deliberately out of scope and must STAY OUT of scope — re-bootstrap rebuilds
+  # the tooling AROUND it. If you ever add a removal above, never let it reach:
+  #   ~/.secrets/**            decrypted .env files restored from the vault
+  #   ~/personal ~/sidebiz ~/work   your repos + project files
+  section "user data — LEFT ALONE (never removed)"
+  printf '  %skept: ~/.secrets (decrypted .env files from the secrets vault)%s\n' "$c_dim" "$c_rst"
+  printf '  %skept: ~/personal, ~/sidebiz, ~/work (your repos + project files)%s\n' "$c_dim" "$c_rst"
 }
 
 mode="$([[ "$DRY_RUN" -eq 1 ]] && echo "DRY-RUN (no changes)" || echo "EXECUTE")"

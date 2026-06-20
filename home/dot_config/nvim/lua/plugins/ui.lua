@@ -39,6 +39,7 @@ return {
         { "<leader>n", group = "notify" },
         { "<leader>c", group = "code" },
         { "<leader>m", group = "markdown" },
+        { "<leader>r", group = "refactor / replace" },
         { "<leader>s", group = "split / window" },
         { "<leader>S", group = "session" },
         { "<leader>t", group = "terminal" },

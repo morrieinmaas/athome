@@ -15,6 +15,27 @@ the repo without losing edits.
 So a fresh machine is: `./scripts/install-mise.sh` → `mise run bootstrap` →
 `mise run apply`.
 
+## Interactive vs non-interactive bootstrap
+
+`mise run bootstrap` is **interactive by default** — it asks about the choices
+below. Add **`--non-interactive`** (or `-y`), or just run without a TTY (CI,
+pipes), to skip all prompts and take the defaults — which a `bootstrap.toml`
+(`--config`) or `ATHOME_*` env var can override:
+
+| Prompt | `bootstrap.toml` key | Default |
+|---|---|---|
+| Use Bitwarden for secrets? | `useBitwarden` | `true` (`false` = local-only) |
+| SSH key found — use / generate / reupload? | `sshKeyAction` | `use` |
+| No SSH key — create one? | `generateSshKey` | `true` |
+
+So the same script runs three ways: `./scripts/bootstrap.sh` (interactive),
+`--non-interactive` (defaults), or `--non-interactive --config bootstrap.toml`
+(custom, hands-off — what the e2e uses).
+
+**Bitwarden is never a gate.** Declining it (or `useBitwarden=false`) gives a
+*complete* local setup: `~/.secrets/` is created, ready for hand-populated
+`<repo>/.env` files; run `bw-setup` anytime later to sync from Bitwarden.
+
 ## Adding a package
 
 Packages live in `home/.chezmoidata/packages.yaml`, split by OS. The dividing

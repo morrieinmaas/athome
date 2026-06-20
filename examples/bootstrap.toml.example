@@ -58,6 +58,16 @@ agentsRepo = ""
 # ~/.config/athome/extra-packages file (one package per line). See docs/customizing.md.
 extraPackages = ""
 
+# ── Interactive-flow controls (used by a --non-interactive run) ──────────────
+# Bitwarden is optional. "false" = local-only secrets (~/.secrets created, ready
+# for hand-populated <repo>/.env; no Bitwarden). Default true (use it).
+useBitwarden = "true"
+# When an SSH key for this host already exists: use | generate (back up + fresh) |
+# reupload (use it + push to GitHub). Default "use".
+sshKeyAction = "use"
+# Generate an SSH key when none exists. "false" = skip (bring your own / agent).
+generateSshKey = "true"
+
 # VPN (optional). Empty = service default.
 # NetBird management URL — empty = NetBird Cloud SaaS; set when self-hosting.
 netbirdManagementUrl = ""

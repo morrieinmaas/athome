@@ -7,6 +7,11 @@
 #   ~/.local/share/chezmoi/scripts/bootstrap.sh             # default: the ref you cloned (current HEAD)
 #   ~/.local/share/chezmoi/scripts/bootstrap.sh --ref main  # explicit branch
 #   ~/.local/share/chezmoi/scripts/bootstrap.sh --ref v1.x  # pin a tagged release
+#   ~/.local/share/chezmoi/scripts/bootstrap.sh --non-interactive [--config FILE]  # no prompts (defaults/config)
+#
+# Interactive by default (prompts for SSH-key + Bitwarden choices etc.).
+# --non-interactive (or no TTY) skips all prompts and uses sane defaults, which
+# a bootstrap.toml (--config) or ATHOME_* env vars can override. See examples/.
 #
 # Prerequisite: this script must live inside a cloned `athome` repo. If you
 # haven't cloned yet:
@@ -51,10 +56,31 @@ BASELINE_DIRS_SCRIPT="run_03-setup-project-dirs.sh.tmpl"
 
 confirm() {
   local prompt="$1" default="${2:-n}" answer
+  # Non-interactive (--non-interactive / no TTY): take the default, never prompt.
+  if [[ "${INTERACTIVE:-1}" != "1" ]]; then [[ "$default" == "y" ]]; return; fi
   if [[ "$default" == "y" ]]; then prompt="$prompt [Y/n] "; else prompt="$prompt [y/N] "; fi
   read -r -p "$prompt" answer
   answer="${answer:-$default}"
   [[ "$answer" =~ ^[Yy]$ ]]
+}
+
+# choose <default> <prompt> <opt1> [opt2 ...] — single-letter menu (first letters
+# must be distinct). Echoes the chosen full option; matches first letter OR full
+# word, case-insensitive. Non-interactive → echoes the default (no prompt).
+choose() {
+  local default="$1" prompt="$2"; shift 2
+  local opts=("$@") o ans menu=""
+  if [[ "${INTERACTIVE:-1}" != "1" ]]; then printf '%s\n' "$default"; return; fi
+  for o in "${opts[@]}"; do
+    if [[ "$o" == "$default" ]]; then menu+="$o/"; else menu+="${o:0:1}/"; fi
+  done
+  menu="${menu%/}"
+  read -r -p "$prompt [$menu] " ans
+  ans="$(printf '%s' "${ans:-$default}" | tr '[:upper:]' '[:lower:]')"   # bash 3.2-safe (no ,,)
+  for o in "${opts[@]}"; do
+    [[ "$ans" == "${o:0:1}" || "$ans" == "$o" ]] && { printf '%s\n' "$o"; return; }
+  done
+  printf '%s\n' "$default"
 }
 
 # Short hostname without depending on the `hostname` command (which lives
@@ -84,6 +110,7 @@ CONFIG_FILE_ARG=""      # set by --config: a TOML file of answers for a non-inte
 IMPORT_FROM=""          # set to a backup-dir path by --import-from
 IMPORT_SSH="false"      # set to "true" by --import-ssh (opt-in: SSH keys are usually per-machine)
 IMPORT_SSH_BW=""        # set to a Bitwarden item name by --import-ssh-bw (restore the key via rbw)
+INTERACTIVE=""          # "1"/"0"; empty = auto-detect from the TTY after parsing. --non-interactive forces "0".
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --ref)           REF="$2"; shift 2 ;;
@@ -93,12 +120,18 @@ while [[ $# -gt 0 ]]; do
     --import-from)   IMPORT_FROM="$2"; shift 2 ;;      # restore SSH key from a prior key-backup dir (with --import-ssh)
     --import-ssh)    IMPORT_SSH="true"; shift ;;       # opt in to restoring SSH from --import-from
     --import-ssh-bw) IMPORT_SSH_BW="$2"; shift 2 ;;    # restore the SSH key from a Bitwarden secure note (rbw get)
+    --non-interactive|-y|--yes) INTERACTIVE=0; shift ;;  # never prompt; use defaults / --config / ATHOME_* values
     -h|--help)
       sed -n 's/^# \{0,1\}//p' "$0" | head -30
       exit 0 ;;
     *) c_red "unknown arg: $1"; exit 2 ;;
   esac
 done
+
+# Interactivity gate: an explicit --non-interactive wins; otherwise auto-detect
+# from the TTY (so piped / CI / `| tee` runs never hang on a prompt). confirm()
+# and choose() honour this — non-interactive falls back to config / defaults.
+INTERACTIVE="${INTERACTIVE:-$([ -t 0 ] && echo 1 || echo 0)}"
 
 # personal covers everything that isn't 9-to-5 work — including sidehustle.
 # Per-directory git identity routing handles sidehustle separately.
@@ -164,6 +197,10 @@ load_config() {
   : "${ATHOME_NETBIRD_MGMT_URL:=$(cfg_get netbirdManagementUrl)}"
   : "${ATHOME_NORDVPN_COUNTRY:=$(cfg_get nordvpnCountry)}"
   : "${ATHOME_EXTRA_PACKAGES:=$(cfg_get extraPackages)}"
+  # Interactive-flow controls (also overridable via --non-interactive + config):
+  : "${ATHOME_USE_BITWARDEN:=$(cfg_get useBitwarden)}"      # "false" = local-only secrets, skip Bitwarden
+  : "${ATHOME_SSH_KEY_ACTION:=$(cfg_get sshKeyAction)}"     # when a key exists: use | generate | reupload
+  : "${ATHOME_GENERATE_SSH_KEY:=$(cfg_get generateSshKey)}" # "false" = don't generate when none exists
   : "${ATHOME_BW_BASE_URL:=$(cfg_get bitwardenUrl)}"
   if [[ "$MACHINE_FROM_FLAG" == false ]]; then
     local m; m="$(cfg_get machine)"; [[ -n "$m" ]] && MACHINE="$m"
@@ -379,14 +416,36 @@ fi
 # ── 4. SSH keys for each identity ───────────────────────────────────────────
 mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh"
 ssh_keys_were_generated=0
+ssh_force_upload=0
 if [[ -f "$ssh_key" ]]; then
-  c_green "✓ ssh key already exists — using it: ${ssh_host}_ed25519"
+  # Key exists — let the user choose (default: keep using it). Non-interactive
+  # honours ATHOME_SSH_KEY_ACTION (use|generate|reupload), default "use".
+  case "$(choose "${ATHOME_SSH_KEY_ACTION:-use}" "ssh key ${ssh_host}_ed25519 found —" use generate reupload)" in
+    generate)
+      ts="$(date +%Y%m%d%H%M%S 2>/dev/null || echo bak)"
+      c_blue "==> backing up existing key (→ *.${ts}.bak) and generating a fresh one"
+      mv "$ssh_key" "${ssh_key}.${ts}.bak" 2>/dev/null || true
+      [[ -f "${ssh_key}.pub" ]] && mv "${ssh_key}.pub" "${ssh_key}.pub.${ts}.bak"
+      ssh-keygen -t ed25519 -f "$ssh_key" -N "" -C "${ATHOME_GITHUB_HANDLE:-$(id -un)}@${ssh_host}"
+      ssh_keys_were_generated=1 ;;
+    reupload)
+      c_green "✓ using existing ssh key: ${ssh_host}_ed25519 (will re-upload to GitHub)"
+      ssh_force_upload=1 ;;
+    *)
+      c_green "✓ using existing ssh key: ${ssh_host}_ed25519" ;;
+  esac
 else
-  c_blue "==> generating ssh key: $ssh_key"
-  ssh-keygen -t ed25519 -f "$ssh_key" -N "" -C "${ATHOME_GITHUB_HANDLE:-$(id -un)}@${ssh_host}"
-  ssh_keys_were_generated=1
+  # No key — offer to create one (default yes). Non-interactive honours
+  # ATHOME_GENERATE_SSH_KEY (default true).
+  if [[ "${ATHOME_GENERATE_SSH_KEY:-true}" != "false" ]] && confirm "No ssh key for ${ssh_host} — create one?" y; then
+    c_blue "==> generating ssh key: $ssh_key"
+    ssh-keygen -t ed25519 -f "$ssh_key" -N "" -C "${ATHOME_GITHUB_HANDLE:-$(id -un)}@${ssh_host}"
+    ssh_keys_were_generated=1
+  else
+    c_yellow "==> no ssh key generated — bring your own / use the agent. GitHub key steps skip if nothing authenticates."
+  fi
 fi
-c_green "✓ ssh public key: $(cat "${ssh_key}.pub")"
+[[ -f "${ssh_key}.pub" ]] && c_green "✓ ssh public key: $(cat "${ssh_key}.pub")"
 
 # ── 4.5 SSH key backup → Bitwarden ──────────────────────────────────────────
 # Fires when a key was freshly generated. We store the private key as a
@@ -509,17 +568,17 @@ local_key_on_github() {
   return 1
 }
 
-if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+if [[ -f "${ssh_key}.pub" ]] && command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
   # Smart skip: if SSH already authenticates to GitHub, this machine is set up —
   # don't prompt to upload. Catches an existing key (even one named differently
   # from this host's ${ssh_host}_ed25519) that's already registered on GitHub.
-  if ssh_github_authenticates; then
+  if (( ssh_force_upload == 0 )) && ssh_github_authenticates; then
     c_green "✓ SSH already authenticates to GitHub — skipping key upload (already set up)"
     if (( ssh_keys_were_generated )); then
       printf '    note: a fresh per-host key was generated at %s\n' "$ssh_key"
       printf '          upload it later with: gh ssh-key add %s.pub\n' "$ssh_key"
     fi
-  elif existing_pub="$(local_key_on_github)"; then
+  elif (( ssh_force_upload == 0 )) && existing_pub="$(local_key_on_github)"; then
     c_green "✓ A local SSH key is already on GitHub ($(basename "$existing_pub")) — skipping upload."
     # The github.com block in ~/.ssh/config pins this host's per-host key with
     # IdentitiesOnly, so `git push` over SSH uses that key — not necessarily the
@@ -529,7 +588,7 @@ if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
       printf '    note: SSH to github.com uses %s per ~/.ssh/config; if `git push` over\n' "$(basename "$ssh_key")"
       printf '          SSH fails, point github.com at %s or upload %s.\n' "$(basename "$existing_pub" .pub)" "$(basename "$ssh_key")"
     fi
-  elif confirm "Upload SSH public keys to GitHub now (auth + signing)?" y; then
+  elif (( ssh_force_upload )) || confirm "Upload SSH public keys to GitHub now (auth + signing)?" y; then
     host="$(short_hostname)"
 
     # ── proactive scope check: ensure gh has admin:public_key + admin:ssh_signing_key
@@ -848,43 +907,38 @@ if [[ -d "$repo_root/.git" ]] && [[ ! -f "$repo_root/.git/hooks/pre-commit" ]]; 
   chmod +x "$repo_root/.git/hooks/"{pre-commit,commit-msg}
 fi
 
-# ── 7.5 secrets: Bitwarden login (rbw) ──────────────────────────────────────
-# The login logic lives in ~/.local/bin/bw-setup (deployed by chezmoi above,
-# runnable anytime). We just offer to run it HERE in the TTY — not inside
-# chezmoi apply, which is non-interactive (--force) and where a pinentry
-# master-password prompt would hit the flaky-TTY-in-tmux failure mode.
-# ATHOME_BOOTSTRAP=1 (exported before apply) already suppressed the
-# run_once_16 nudge, since we handle it here.
+# ── 7.5 secrets: Bitwarden (OPTIONAL — local-only if declined/unavailable) ──
+# Bitwarden is an opt-in enhancement, NEVER a gate. Declining it (or
+# useBitwarden=false, or a headless run with no vault set up yet) yields a
+# COMPLETE local setup: ~/.secrets is created, ready for hand-populated
+# <repo>/.env files. bw-setup (which needs a TTY for the pinentry master-password
+# prompt) only runs interactively — a non-interactive run never blocks on it.
 bw_setup="$HOME/.local/bin/bw-setup"
 export PATH="/opt/nanobrew/prefix/bin:/usr/local/bin:$HOME/.local/bin:$PATH"
-# rbw writes a device_id into its data dir once a machine has onboarded to
-# Bitwarden. If it's present, this machine is ALREADY set up — don't nag to
-# "log in"; the vault is just locked (unlock on demand). macOS keeps rbw state
-# under ~/Library/Application Support; Linux under XDG_DATA_HOME (~/.local/share).
+# rbw writes a device_id into its data dir once onboarded; macOS keeps it under
+# ~/Library/Application Support, Linux under XDG_DATA_HOME.
 rbw_data_dir="${XDG_DATA_HOME:-$HOME/.local/share}/rbw"
 [[ "$(uname -s)" == Darwin ]] && rbw_data_dir="$HOME/Library/Application Support/rbw"
-if [[ -x "$bw_setup" ]]; then
-  if command -v rbw >/dev/null 2>&1 && rbw unlocked >/dev/null 2>&1; then
-    c_green "✓ Bitwarden already unlocked — skipping login"
-  elif [[ -f "$rbw_data_dir/device_id" ]]; then
-    c_green "✓ Bitwarden already set up here (device registered) — skipping login."
-    c_yellow "  (vault is locked; run \`rbw unlock\` when you need secrets.)"
-  elif confirm "log in to Bitwarden now (rbw)?" y; then
-    # Don't abort bootstrap on a Bitwarden hiccup, but DON'T pretend it worked
-    # either — record a follow-up so the final summary reflects reality (e.g.
-    # missing pinentry, wrong API key, unreachable server).
-    if ! "$bw_setup"; then
-      BOOTSTRAP_WARNINGS=$((BOOTSTRAP_WARNINGS + 1))
-      c_yellow "  Bitwarden login didn't complete — see the message above."
-      [[ -n "${ATHOME_FOLLOWUP_LOG:-}" ]] && printf '  • %s\n' "Bitwarden: \`bw-setup\` did NOT finish (see output above — often a missing pinentry or API key). Re-run \`bw-setup\` once fixed. docs/secrets.md." >> "$ATHOME_FOLLOWUP_LOG"
-    fi
-  else
-    c_yellow "  Skipped — run \`bw-setup\` anytime to log in to Bitwarden."
-    [[ -n "${ATHOME_FOLLOWUP_LOG:-}" ]] && printf '  • %s\n' "Bitwarden: run \`bw-setup\` (register once + unlock) to access secrets. See docs/secrets.md." >> "$ATHOME_FOLLOWUP_LOG"
+mkdir -p "$HOME/.secrets" && chmod 700 "$HOME/.secrets"   # local secrets home — always ready
+
+if [[ "${ATHOME_USE_BITWARDEN:-}" == "false" ]] || ! confirm "Use Bitwarden (rbw) for secrets sync?" y; then
+  c_green "✓ local-only secrets — Bitwarden skipped. Populate ~/.secrets/<repo>/.env by hand,"
+  c_green "  or run \`bw-setup\` later to sync from Bitwarden."
+elif command -v rbw >/dev/null 2>&1 && rbw unlocked >/dev/null 2>&1; then
+  c_green "✓ Bitwarden already unlocked — rbw get/list ready."
+elif [[ -f "$rbw_data_dir/device_id" ]]; then
+  c_green "✓ Bitwarden already set up here (device registered) — locked; \`rbw unlock\` when needed."
+elif [[ "${INTERACTIVE:-1}" == "1" && -x "$bw_setup" ]]; then
+  # Interactive only — bw-setup needs a TTY for pinentry. Non-fatal on failure;
+  # ~/.secrets is ready for local use meanwhile.
+  if ! "$bw_setup"; then
+    BOOTSTRAP_WARNINGS=$((BOOTSTRAP_WARNINGS + 1))
+    c_yellow "  Bitwarden login didn't complete — see above. ~/.secrets is ready for local use meanwhile."
+    [[ -n "${ATHOME_FOLLOWUP_LOG:-}" ]] && printf '  • %s\n' "Bitwarden: \`bw-setup\` did NOT finish (often missing pinentry / API key). Re-run \`bw-setup\` once fixed. docs/secrets.md." >> "$ATHOME_FOLLOWUP_LOG"
   fi
 else
-  c_yellow "  bw-setup not deployed yet — run it after a successful chezmoi apply."
-  [[ -n "${ATHOME_FOLLOWUP_LOG:-}" ]] && printf '  • %s\n' "Bitwarden: run \`bw-setup\` to access secrets. See docs/secrets.md." >> "$ATHOME_FOLLOWUP_LOG"
+  # Non-interactive and not set up yet → stay local-only (no nag, no warning).
+  c_green "✓ local-only secrets for now — run \`bw-setup\` in a terminal to sync Bitwarden later."
 fi
 
 # ── 7.6 secrets: restore the encrypted vault (git-crypt) ─────────────────────

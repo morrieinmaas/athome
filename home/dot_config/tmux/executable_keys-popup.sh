@@ -17,6 +17,6 @@ export PATH="$HOME/.local/share/mise/shims:/opt/homebrew/bin:/opt/nanobrew/prefi
 tmux list-keys \
   | sed -E 's/^bind-key[[:space:]]+(-r[[:space:]]+)?-T[[:space:]]+([^[:space:]]+)[[:space:]]+("[^"]*"|[^[:space:]]+)[[:space:]]+(.*)$/[\2]\t\3\t→ \4/' \
   | column -t -s "$(printf '\t')" \
-  | fzf --tmux center,80%,80% --reverse --prompt 'keys> ' \
+  | fzf --tmux center,80%,80% --reverse --no-wrap --prompt 'keys> ' \
         --header 'tmux keybindings — type to search (action or key) · esc/enter closes' \
         --no-multi >/dev/null || true

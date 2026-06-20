@@ -1,20 +1,22 @@
 #!/usr/bin/env bash
-# prefix ? — a SEARCHABLE list of every tmux key binding (fzf popup).
+# prefix ?  (and which-key's prefix Space → ?): a SEARCHABLE list of every tmux
+# key binding in an fzf popup. fzf fuzzy-matches the WHOLE line, so you search by
+# what a binding DOES ("resize", "split", "session") just as well as by its key.
+# Enter just closes — it's a reference, not a launcher.
 #
-# tmux's default `prefix ?` dumps `list-keys` into a pager (not searchable), and
-# the which-key popup (prefix Space) only shows a curated subset. This shows ALL
-# bindings across every key-table, fuzzy-searchable. Pressing enter on a row just
-# closes the popup (it's a reference, not a launcher).
+# Runs its OWN `fzf --tmux` popup (auto-sized + fully filled), exactly like
+# ~/.local/bin/tsess — so bind it with `run-shell`, NOT inside a display-popup
+# (that double-popup + FZF_DEFAULT_OPTS --height is what left the big empty gap).
 #
-# PATH is set explicitly because display-popup runs in the tmux server env, which
-# has no mise shims on PATH (fzf comes from mise).
+# `sed` only REFORMATS each `list-keys` line into "[table]  key  → command" (a
+# capture-group substitution — sed's job, not ripgrep's); the interactive fuzzy
+# SEARCH is fzf. PATH is set because the tmux server env has no mise shims (fzf).
 set -uo pipefail
 export PATH="$HOME/.local/share/mise/shims:/opt/homebrew/bin:/opt/nanobrew/prefix/bin:$HOME/.local/bin:/usr/bin:/bin:$PATH"
 
-# Format each binding as:  [table]  key  →  command
 tmux list-keys \
   | sed -E 's/^bind-key[[:space:]]+(-r[[:space:]]+)?-T[[:space:]]+([^[:space:]]+)[[:space:]]+("[^"]*"|[^[:space:]]+)[[:space:]]+(.*)$/[\2]\t\3\t→ \4/' \
-  | column -t -s $'\t' \
-  | fzf --reverse --prompt 'keys> ' \
-        --header 'tmux keybindings — type to search · esc/enter closes' \
+  | column -t -s "$(printf '\t')" \
+  | fzf --tmux center,80%,80% --reverse --prompt 'keys> ' \
+        --header 'tmux keybindings — type to search (action or key) · esc/enter closes' \
         --no-multi >/dev/null || true

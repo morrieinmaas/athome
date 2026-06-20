@@ -1,37 +1,61 @@
 #!/usr/bin/env bash
-# tmux battery pill content: a Nerd Font (Font Awesome) battery glyph picked by
-# charge level + the percentage, with a bolt when charging / plugged in. Prints
-# NOTHING when there's no battery (desktops / CI) so the pill can be hidden with
-# `tmux set -g @bat ''`. Glyphs render from codepoints (no multibyte bytes in
-# tracked files) — needs a Nerd Font. macOS: pmset; Linux: /sys/class/power_supply.
-set -u
+# tmux status-bar battery segment — a colour-emoji battery icon (same visual
+# size as pet.sh's emoji: ⚡ charging, 🪫 low, 🔋 otherwise) + percentage. The
+# emoji conveys state at a glance; the % is colour-coded from the live theme —
+# green while charging/charged, amber when low, red when critical, normal
+# otherwise. Self-hides on machines with no battery (desktops), so it's safe to
+# leave enabled everywhere.
+#
+# Icons render from codepoints (no literal multibyte bytes in tracked files),
+# matching pet.sh — needs a colour-emoji font (macOS built-in; Linux via
+# noto-fonts-emoji). macOS reads `pmset`; Linux reads /sys/class/power_supply.
+# Emits #[fg=…]…#[default] so tmux re-parses the percentage colour.
+
+# Emoji from codepoint + VS16 (U+FE0F) to FORCE colour-emoji (2-cell)
+# presentation. Without VS16, default-text-presentation glyphs like ⚡ (U+26A1)
+# render as a narrow 1-cell monochrome symbol — which both breaks the alignment
+# while charging and looks dull. VS16 makes every state a uniform 2 cells AND
+# the full-colour emoji.
+emoji() { printf -v h '%08X' "0x$1"; printf "\\U$h\\U0000FE0F"; }
+
+# Theme colours from tmux user options, falling back to gruvbox if unset.
+opt() { tmux show -gv "$1" 2>/dev/null; }
+blue=$(opt @theme_blue); blue=${blue:-#458588}
+bg=$(opt @theme_bg);     bg=${bg:-#fbf1c7}
+pl=$(opt @pill_l); pr=$(opt @pill_r)
 
 pct=""; charging=0
+
 if [ "$(uname)" = Darwin ]; then
-  batt="$(pmset -g batt 2>/dev/null)"
-  pct="$(printf '%s\n' "$batt" | grep -oE '[0-9]+%' | head -1 | tr -d '%')"
-  # "discharging" = on battery; anything else (charging / charged / AC) = plugged.
-  printf '%s\n' "$batt" | grep -qi 'discharging' || charging=1
+  batt=$(pmset -g batt 2>/dev/null)
+  case "$batt" in *InternalBattery*) ;; *) exit 0 ;; esac   # no battery present
+  pct=$(printf '%s\n' "$batt" | grep -o '[0-9]\{1,3\}%' | head -1 | tr -d '%')
+  case "$batt" in
+    *" charging"*|*"AC Power"*|*charged*|*"finishing charge"*) charging=1 ;;
+  esac
 else
   for b in /sys/class/power_supply/BAT*; do
     [ -r "$b/capacity" ] || continue
-    pct="$(cat "$b/capacity" 2>/dev/null)"
-    case "$(cat "$b/status" 2>/dev/null)" in Charging|Full|"Not charging") charging=1 ;; esac
+    pct=$(cat "$b/capacity")
+    case "$(cat "$b/status" 2>/dev/null)" in
+      Charging|Full|"Not charging") charging=1 ;;
+    esac
     break
   done
 fi
 
-case "$pct" in '' | *[!0-9]*) exit 0 ;; esac   # no / non-numeric battery → no pill
+[ -n "$pct" ] || exit 0   # no battery → render nothing (pill disappears)
 
-# Font Awesome battery glyphs: F240 full · F241 ¾ · F242 ½ · F243 ¼ · F244 empty.
-if   [ "$pct" -ge 90 ]; then g=F240
-elif [ "$pct" -ge 65 ]; then g=F241
-elif [ "$pct" -ge 40 ]; then g=F242
-elif [ "$pct" -ge 15 ]; then g=F243
-else                         g=F244
+# Icon by state: ⚡️ charging · 🪫 low (≤15%) · 🔋 otherwise. The pill background
+# is a FIXED palette colour (blue) for EVERY state, so it never clashes with the
+# green/yellow/red of the emoji sitting inside it.
+if   [ "$charging" -eq 1 ]; then icon=26A1    # ⚡️
+elif [ "$pct" -le 15 ];     then icon=1FAAB   # 🪫
+else                             icon=1F50B   # 🔋
 fi
-glyph="$(printf "\\U$(printf '%08X' "0x$g")")"
-bolt=""
-[ "$charging" = 1 ] && bolt="$(printf "\\U$(printf '%08X' 0xF0E7)") "   # nf-fa-bolt
 
-printf '%s%s %s%%' "$bolt" "$glyph" "$pct"
+# Icon AND "<pct>%" both live inside the pill: " <emoji> <pct>% ". A space each
+# side keeps them off the rounded caps; width changes only on a rare digit-count
+# change (9→10, 99→100), not every tick.
+printf '#[fg=%s,bg=default]%s#[fg=%s,bg=%s,bold] %s %s%% #[fg=%s,bg=default,nobold]%s' \
+  "$blue" "$pl" "$bg" "$blue" "$(emoji "$icon")" "$pct" "$blue" "$pr"

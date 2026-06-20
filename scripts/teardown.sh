@@ -87,7 +87,11 @@ confirm() {
 
 tier_state() {
   section "chezmoi persistent state + cache"
-  run chezmoi state reset
+  # --force skips chezmoi's own "Remove …chezmoistate.boltdb?" prompt. teardown
+  # already gates execution behind its typed confirmation, and a headless run
+  # (the e2e / CI, no TTY) can't answer it — without --force it dies with
+  # "chezmoi: could not open a new TTY".
+  run chezmoi state reset --force
   run rm -rf "$HOME/.cache/chezmoi"
 }
 

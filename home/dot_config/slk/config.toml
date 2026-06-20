@@ -6,15 +6,25 @@
 # (DevTools), and slk writes the credentials to ~/.local/share/slk/tokens/,
 # which is OUTSIDE chezmoi's tree and never tracked. On onboarding slk also
 # appends a `[workspaces.<slug>]` block to THIS file — those carry no secrets
-# (just slug / team_id / order), so they're safe to commit if you want them
-# synced across machines.
+# (just slug / team_id / order). We deliberately DON'T commit them: chezmoi apply
+# then wipes any per-workspace `theme =` overrides slk wrote, so the picker-driven
+# [appearance] theme below stays authoritative across machines.
 
 [general]
-use_slack_sections = true   # mirror your real Slack sidebar sections
+use_slack_sections = true              # mirror your real Slack sidebar sections
+default_workspace  = "T025AMBA7"       # open INFO on launch (slug = team id)
 
 [appearance]
-theme = "ANSI Dark"         # inherits the terminal's 16-color palette → matches whatever scheme the terminal is on
-image_protocol = "auto"     # auto-detect kitty/sixel; half-block fallback elsewhere
+# theme is driven by the `theme` picker: ~/.config/themes/apply-slk.sh rewrites
+# this line to the slk variant of the active scheme + current dark/light on every
+# `prefix M` launch (see registry.sh::theme_slk). The value below is just the
+# committed default (matches gruvbox-light) — change it with `theme <name>`, not
+# by hand. NOTE: slk's in-app theme switcher writes a per-workspace `theme =`
+# override which would beat this; chezmoi apply wipes those back out so the
+# picker keeps winning.
+theme          = "Gruvbox Light"
+image_protocol = "auto"                # ghostty kitty-graphics now tunnel through tmux (allow-passthrough on) → crisp, not pixelated
+max_image_rows = 20                    # cap inline image height (terminal rows)
 
 [notifications]
 enabled = true

@@ -38,6 +38,39 @@ theme_nvim() {
   esac
 }
 
+# slk (Slack TUI) — maps a family to slk's own theme name per light/dark mode.
+# Unlike ghostty (one `dark:…,light:…` value), slk's [appearance] theme is a
+# SINGLE name, so apply-slk.sh detects the current mode and picks the variant.
+# Names are slk's built-ins (internal/ui/styles/themes.go). Sourced by apply-slk.sh.
+theme_slk() {  # $1 = family, $2 = mode (dark|light)
+  case "$1:$2" in
+    gruvbox:dark)     echo "Gruvbox Dark" ;;     gruvbox:light)     echo "Gruvbox Light" ;;
+    everforest:dark)  echo "Everforest Dark" ;;  everforest:light)  echo "Everforest Light" ;;
+    catppuccin:dark)  echo "Catppuccin Mocha" ;; catppuccin:light)  echo "Catppuccin Latte" ;;
+    tokyonight:dark)  echo "Tokyo Night Storm" ;; tokyonight:light) echo "Tokyo Night Light" ;;
+    rose-pine:dark)   echo "Rosé Pine Moon" ;;   rose-pine:light)   echo "Rosé Pine Dawn" ;;
+    kanagawa:dark)    echo "Kanagawa Dragon" ;;  kanagawa:light)    echo "Kanagawa Lotus" ;;
+  esac
+}
+
+# Full hex palette per family AND mode — the dark counterpart to theme_tmux's
+# light-only pills. apply-ghdash.sh evals this to recolour gh-dash (which has no
+# ANSI-following option: it needs explicit hex/256 for every slot, and ANSI slots
+# can't flip fg/bg between light & dark). Dark values track the ghostty dark
+# variants (Gruvbox Dark / Everforest Dark Hard / Catppuccin Mocha / TokyoNight
+# Moon / Rosé Pine Moon / Kanagawa Wave); light delegates to theme_tmux.
+theme_palette() {  # $1 = family, $2 = mode (dark|light) -> BG FG BLUE YELLOW GREEN GREY MUTED
+  if [ "${2:-light}" = light ]; then theme_tmux "$1"; return; fi
+  case "$1" in
+    gruvbox)    echo 'BG=#282828 FG=#ebdbb2 BLUE=#83a598 YELLOW=#d8a657 GREEN=#b8bb26 GREY=#928374 MUTED=#a89984' ;;
+    everforest) echo 'BG=#2b3339 FG=#d3c6aa BLUE=#7fbbb3 YELLOW=#dbbc7f GREEN=#a7c080 GREY=#859289 MUTED=#9da9a0' ;;
+    catppuccin) echo 'BG=#1e1e2e FG=#cdd6f4 BLUE=#89b4fa YELLOW=#f9e2af GREEN=#a6e3a1 GREY=#9399b2 MUTED=#7f849c' ;;
+    tokyonight) echo 'BG=#222436 FG=#c8d3f5 BLUE=#82aaff YELLOW=#ffc777 GREEN=#c3e88d GREY=#828bb8 MUTED=#636da6' ;;
+    rose-pine)  echo 'BG=#232136 FG=#e0def4 BLUE=#9ccfd8 YELLOW=#f6c177 GREEN=#3e8fb0 GREY=#6e6a86 MUTED=#908caa' ;;
+    kanagawa)   echo 'BG=#1f1f28 FG=#dcd7ba BLUE=#7e9cd8 YELLOW=#e6c384 GREEN=#98bb6c GREY=#727169 MUTED=#957fb8' ;;
+  esac
+}
+
 # btm (bottom) is NOT switched here: its config uses ANSI "Reset" + named accent
 # colours, so it follows the terminal's active palette automatically (light or
 # dark, any family) — see dot_config/bottom/bottom.toml. Same hands-off rule as

@@ -40,3 +40,25 @@ keybindings:
         else
         gh-enhance -R {{.RepoName}} {{.PrNumber}};
         fi
+
+# >>> theme (managed by apply-ghdash.sh — do not edit) >>>
+# Committed DEFAULT only (gruvbox light, derived from registry.sh::theme_tmux).
+# The `theme` picker + `prefix g` popup rewrite this block to the active scheme +
+# current dark/light via ~/.config/themes/apply-ghdash.sh, so edit it with
+# `theme <name>`, not by hand. chezmoi apply resets it to this default.
+theme:
+  colors:
+    text:
+      primary: "#3c3836"
+      secondary: "#458588"
+      inverted: "#fbf1c7"
+      faint: "#a89984"
+      warning: "#b57614"
+      success: "#79740e"
+    background:
+      selected: "#a89984"
+    border:
+      primary: "#458588"
+      secondary: "#7c6f64"
+      faint: "#a89984"
+# <<< theme (managed by apply-ghdash.sh) <<<

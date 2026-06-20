@@ -29,13 +29,15 @@ gh auth login                                     # device flow in browser (your
 # ── bootstrap (clone, cd, run) ──
 git clone https://github.com/morrieinmaas/athome ~/.local/share/chezmoi
 cd ~/.local/share/chezmoi
-./scripts/bootstrap.sh                          # personal machine (ThinkPad / personal mac)
-# or:  ./scripts/bootstrap.sh --machine work    # 9-to-5 employer mac
+./scripts/bootstrap.sh                          # baseline: config + pkg-manager + gh/rbw + dirs + mise
+mise run apply                                  # converge: full package set + mise tools + desktop scripts
+# or:  ./scripts/bootstrap.sh --machine work    # 9-to-5 employer mac (then: mise run apply)
 
 # ── or the mise-first front door (everything is `mise run` after this) ──
 ./scripts/install-mise.sh                       # installs mise + wires activation, then stops
 source ~/.zshrc                                 # (or open a new shell)
-mise run bootstrap                              # = ./scripts/bootstrap.sh; mise owns the rest
+mise run bootstrap                              # = ./scripts/bootstrap.sh (baseline)
+mise run apply                                  # converge
 ```
 
 Both reach the same place. `install-mise.sh` is the irreducible first step
@@ -43,15 +45,24 @@ Both reach the same place. `install-mise.sh` is the irreducible first step
 installs mise and stops, so you stay in control. After it, `mise run <task>` is
 the universal verb (`mise tasks` to list).
 
-Want a fully hands-off run (no prompts)? Copy
+**Two phases.** `bootstrap.sh` lays a fast **baseline** — config files + the few
+deps its own steps need (package manager, `gh`, `rbw`, project dirs, mise) — and
+then `mise run apply` **converges**: the full package set, mise tools, and
+desktop scripts. The split keeps the baseline quick and makes the heavy apply
+independently re-runnable; bootstrap prints `mise run apply` as the next step.
+
+Bootstrap is **interactive by default** on a TTY (asking before SSH-key gen /
+upload, `bw-setup`, etc., always with a sane default). Want a fully hands-off
+run? Add `--non-interactive` (and optionally copy
 [`examples/bootstrap.toml.example`](examples/bootstrap.toml.example) →
-`bootstrap.local.toml` (gitignored), fill it in, and bootstrap auto-loads it
-(or pass `--config <path>`). Everything else is still automatic.
+`bootstrap.local.toml`, gitignored, which bootstrap auto-loads — or pass
+`--config <path>` — to pre-fill the answers). With no TTY (CI/e2e) it goes
+non-interactive automatically.
 
 > **At the `gh auth login` "HTTPS or SSH?" prompt, choose HTTPS.** A fresh
 > machine has no SSH key on GitHub yet — picking SSH would deadlock you.
 > Bootstrap generates SSH keys + uploads them + flips you to SSH everywhere
-> automatically (see [How HTTPS becomes SSH](#how-https-becomes-ssh-automatically) below).
+> automatically (see [How pushes use SSH](#how-pushes-use-ssh-and-clones-stay-https) below).
 
 ### From bare metal (no OS yet)
 
@@ -222,7 +233,8 @@ Bootstrap detects Fedora (`dnf` present, no `pacman`) and:
 | Flag | Default | Effect |
 | --- | --- | --- |
 | `--machine personal\|work` | `personal` | Sets chezmoi `machineType`. `personal` covers sidehustle too — per-directory git identity routing handles the distinction. |
-| `--config <file.toml>` | auto-discovered | A TOML answers file for a fully hands-off run (see [First-run prompts](#first-run-prompts-all-pre-filled-by-bootstrap-no-manual-entry-needed)). If omitted, bootstrap auto-loads `./bootstrap.local.toml` (gitignored) or `~/.config/athome/bootstrap.toml` when present. Template: [`examples/bootstrap.toml.example`](examples/bootstrap.toml.example). |
+| `--non-interactive` (`-y`/`--yes`) | auto-detected from the TTY | Never prompt — take defaults / `--config` / env values for every choice. Bootstrap is **interactive by default** when run on a TTY (it asks before generating/uploading SSH keys, running `bw-setup`, etc., always with a sane default); with **no TTY** (CI, the e2e, a piped run) it auto-selects non-interactive. An explicit `--non-interactive` forces it regardless. |
+| `--config <file.toml>` | auto-discovered | A TOML answers file that pre-fills the prompts (see [First-run prompts](#first-run-prompts-all-pre-filled-by-bootstrap-no-manual-entry-needed)); combine with `--non-interactive` for a fully hands-off run. If omitted, bootstrap auto-loads `./bootstrap.local.toml` (gitignored) or `~/.config/athome/bootstrap.toml` when present. Template: [`examples/bootstrap.toml.example`](examples/bootstrap.toml.example). |
 | `--ref <tag\|branch>` | the ref you cloned (current `HEAD`, usually `main`) | Builds from what you cloned — "clone the repo and run bootstrap" just works. Pass `--ref vX.Y.Z` to pin a tagged release (it materializes in a throwaway worktree, leaving your checkout untouched); bootstrap also prints the latest tag as an FYI. Refuses a ref that has no chezmoi sources under `home/`. |
 | `--no-agents` | off (i.e. include agents) | Skips the `~/.config/agents` skills+instructions sync. Use on machines that don't need agentic tooling. |
 | `--import-from <dir>` | none | Restore from a key-backup directory you transported yourself (secondary path; only with `--import-ssh`). The primary cross-machine path is `--import-ssh-bw` (Bitwarden). |
@@ -240,11 +252,11 @@ Bootstrap detects Fedora (`dnf` present, no `pacman`) and:
    see [SSH keys](#ssh-keys-auth--commit-signing)). A freshly generated key is
    backed up to **Bitwarden** as a secure note. (age + GPG keygen are retired —
    secrets live in Bitwarden, accessed via `rbw`.)
-6. **Proactive `gh` scope check**: if `gh` lacks `admin:public_key` / `admin:ssh_signing_key`, you're offered either a `gh auth refresh` (browser flow) or the manual "print pub-keys + GH settings URL" opt-out — no surprise interactive prompts.
+6. **Proactive `gh` scope check**: if `gh` lacks `admin:public_key` / `admin:ssh_signing_key`, you're offered either a `gh auth refresh` (browser flow) or the manual "print pub-keys + GH settings URL" opt-out. When `gh` is authed via a `GITHUB_TOKEN` env var (CI, or a re-bootstrap), refresh is impossible — gh can't add scopes to an env token — so it auto-falls back to the manual path instead of aborting.
 7. **Query-then-upload** SSH keys: queries `gh api user/keys` and `gh api user/ssh_signing_keys` before uploading, so re-runs don't spam duplicates on your GitHub account.
 8. **Switch chezmoi repo remote HTTPS → SSH** as soon as keys are on GH, so subsequent `git pull` uses SSH (no HTTPS-password prompt — GitHub doesn't accept those anymore).
 9. **Flip `gh config git_protocol` to `ssh`** so future `gh repo clone foo/bar` defaults to SSH.
-10. **`chezmoi init --apply`** non-interactively: bootstrap resolves every first-run answer (env var → `--config` TOML → `gh`/public-API derivation) and writes them into your private `~/.config/chezmoi/chezmoi.toml` `[data]` before init, so chezmoi reuses them instead of prompting. (It seeds `[data]` rather than passing `--promptString`, because chezmoi matches `--promptString` on the prompt's display text, not the field name.)
+10. **`chezmoi init --apply --exclude=scripts`** — the **baseline**: deploys config files, dirs, and externals but runs **no** `run_` scripts, so the full package set + mise tools + desktop scripts are deferred to the first **`mise run apply`** (printed as the next step). Bootstrap then installs only the deps its own later steps need — the OS package manager, `gh`, `rbw`, the project dirs, and the mise binary. First-run answers are resolved up front (env var → `--config` TOML → `gh`/public-API derivation) and written into `~/.config/chezmoi/chezmoi.toml` `[data]`, so init reuses them instead of prompting (interactive runs still prompt for the few choices not pre-filled). (It seeds `[data]` rather than `--promptString`, because chezmoi matches `--promptString` on the prompt's display text, not the field name.)
 11. **Pin `sourceDir`** so future plain `chezmoi apply` uses the canonical repo location.
 12. **Install global git hooks** into the in-repo `.git/hooks/` (matches what chezmoi deploys to `~/.config/git/hooks/`).
 13. **Recover from detached HEAD** in the chezmoi repo if any prior weirdness left it that way.
@@ -298,8 +310,13 @@ To re-test a clean bootstrap, use [`scripts/teardown.sh`](scripts/teardown.sh)
 ./scripts/teardown.sh --all --execute         # + uninstall mise/nanobrew/rbw/SSH key
 ```
 
-`--state` < `--dotfiles` < `--all` (cumulative). The source repo is always
-preserved so you can re-bootstrap. After `--all` (which removes mise), re-bootstrap
+`--state` < `--dotfiles` < `--all` (cumulative). Teardown wipes only the
+athome-managed **tool layer** — **your data is never touched**: `~/.secrets/*.env`
+(decrypted vault files) and `~/personal`·`~/sidebiz`·`~/work` (your repos) are left
+alone, and the source repo is preserved so you can re-bootstrap. The e2e exercises
+exactly this — a real `teardown --all` followed by assertions that the tool layer
+is gone *and* the user data survived, then a clean re-bootstrap (see
+[Testing & CI](#testing--ci)). After `--all` (which removes mise), re-bootstrap
 with the standalone entry or the mise-first prereq:
 
 ```bash
@@ -477,18 +494,20 @@ chezmoi apply
 chezmoi cd && git checkout main && exit && chezmoi apply
 ```
 
-## How HTTPS becomes SSH automatically
+## How pushes use SSH (and clones stay HTTPS)
 
-A fresh machine clone uses HTTPS because no SSH key is on GitHub yet. Bootstrap upgrades you to SSH end-to-end as soon as the keys are uploaded:
+A fresh machine clone uses HTTPS because no SSH key is on GitHub yet. Bootstrap routes your *own* operations through SSH without forcing every clone to need a key:
 
 1. `gh repo clone` (HTTPS, via gh's stored token)
 2. Bootstrap generates one SSH keypair, `~/.ssh/<hostname>_ed25519`
 3. Bootstrap uploads the pub key to GitHub (auth + signing variants)
 4. Bootstrap rewrites the chezmoi repo's `origin` URL: `https://github.com/...` → `git@github.com:...`
 5. `gh config set git_protocol ssh` — future `gh repo clone` defaults to SSH
-6. The chezmoi-deployed `~/.gitconfig` adds a `url."git@github.com:" insteadOf https://github.com/` catch-all so every clone is SSH. Per-directory git *email* still varies via `includeIf`; the single key signs all of them.
+6. The chezmoi-deployed `~/.gitconfig` adds `url."git@github.com:" pushInsteadOf https://github.com/`: **pushes** to github.com go over SSH (no HTTPS-token prompt), while **clones/fetches use the URL as written** (anonymous HTTPS for public repos). Per-directory git *email* still varies via `includeIf`; the single key signs all of them.
 
-Net result: HTTPS for one clone, SSH end-to-end for everything after — and the right SSH identity per directory.
+**Why `pushInsteadOf`, not a catch-all `insteadOf`?** `insteadOf` rewrites *clones* to SSH too — but GitHub requires a registered key to clone even a *public* repo over SSH, so on any box whose key isn't on GitHub yet (a fresh machine mid-bootstrap, or the keyless CI e2e) the rewrite makes public clones fail with `Host key verification failed`. That's exactly what aborted chezmoi's zinit/TPM externals. `pushInsteadOf` keeps public clones on anonymous HTTPS while still sending your pushes over SSH.
+
+Net result: public clones over anonymous HTTPS (robust on a keyless fresh box), your own pushes over SSH (no token prompts), and the right SSH identity per directory.
 
 ## SSH keys (auth + commit signing)
 
@@ -773,21 +792,34 @@ and the [layout](#layout); this is the *why*):
 | --- | --- | --- |
 | **shellcheck** (`-S warning -x`) | `.pre-commit-config.yaml` hook | `lint-test` workflow + `mise run lint` |
 | **bats** unit tests | [`test/*.bats`](test) | `lint-test` workflow + `mise run test` |
-| **e2e bootstrap** (full Arch install) | [`test/e2e/`](test/e2e) | `e2e` workflow + `mise run e2e` |
+| **e2e bootstrap** (Arch **and** Fedora) | [`test/e2e/`](test/e2e) | `e2e` workflow (matrix) + `mise run e2e` / `e2e-fedora` |
 | **secrets scan** (gitleaks) | global hook + workflow | every commit + `secrets-scan` workflow |
 
-The **e2e** spins up a clean Arch container and runs the *real* bootstrap
-unattended — no `gh` login, no Bitwarden, dummy answers from
-[`test/e2e/bootstrap.toml`](test/e2e/bootstrap.toml), and `ATHOME_CI=1` so the
-systemd/GUI/hardware scripts skip. CI feeds mise the auto-provided `GITHUB_TOKEN`
-to dodge the anon rate limit. Run it locally with `mise run e2e` (`docker`/`podman`;
-on Apple Silicon it builds the amd64 image under emulation). Fedora + a macOS
-runner are the planned follow-on legs.
+The **e2e** spins up a clean container per distro (`archlinux:latest` and
+`fedora:latest`) and runs the *real* lifecycle unattended via
+[`test/e2e/scenario.sh`](test/e2e/scenario.sh) — no `gh` login, no Bitwarden,
+dummy answers from [`test/e2e/bootstrap.toml`](test/e2e/bootstrap.toml), and
+`ATHOME_CI=1` so systemd/GUI/hardware scripts skip. Each run is a full
+**round-trip**:
+
+1. bootstrap (baseline) → `chezmoi apply` (converge) → `verify.sh`
+2. seed user-data canaries → `teardown.sh --all` → `verify-teardown.sh` — proves
+   the tool layer is wiped **and** that user data (`~/.secrets/*.env`, project
+   dirs, the source repo) **survives** the wipe
+3. re-bootstrap → re-apply → re-verify — proves teardown leaves a genuinely
+   re-bootstrappable machine
+
+CI runs both distros natively (matrix, `fail-fast: false`) and feeds mise the
+auto-provided `GITHUB_TOKEN`. Run locally with `mise run e2e` / `mise run
+e2e-fedora` (`docker`/`podman`); on Apple Silicon the amd64 image runs under
+emulation, where [`run.sh`](test/e2e/run.sh) skips the heaviest source-build /
+GUI packages (CI installs everything). A macOS runner is the remaining leg.
 
 **Task wrapper:** common commands are mise tasks (in [`mise.toml`](mise.toml)) —
 `mise run bootstrap`, `update`, `status`, `lint`, `test`, `e2e`, `e2e-clean`,
-`teardown` (`mise tasks` lists them). No extra tool: mise is already the
-dependency. Each task just wraps a script you can still call directly.
+`e2e-fedora`, `e2e-fedora-clean`, `teardown` (`mise tasks` lists them). No extra
+tool: mise is already the dependency. Each task just wraps a script you can still
+call directly.
 
 ## Further reading
 

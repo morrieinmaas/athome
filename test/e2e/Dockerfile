@@ -55,9 +55,7 @@ COPY --chown=ci:ci . /home/ci/athome
 # still installs and validates every package.
 ENV ATHOME_CI=1
 
-# Two-phase, mirroring the real flow: bootstrap = baseline (config files + pkg
-# manager + gh/rbw + project dirs); then `chezmoi apply` = convergence (full
-# package set + mise tools + desktop scripts). verify-baseline.sh (between the
-# phases) proves the split (packages deferred); verify.sh (after apply) proves
-# convergence. chezmoi installs into ~/.local/bin, so put it on PATH for apply.
-CMD ["bash", "-lc", "export PATH=\"$HOME/.local/bin:/opt/nanobrew/prefix/bin:$PATH\"; ./scripts/bootstrap.sh --config test/e2e/bootstrap.toml --machine personal && bash test/e2e/verify-baseline.sh && chezmoi apply && bash test/e2e/verify.sh"]
+# Full lifecycle lives in test/e2e/scenario.sh (shared with Dockerfile.fedora):
+# bootstrap→apply→verify, then teardown→verify-teardown (user data safe), then
+# re-bootstrap→re-verify (round-trip). Single source of truth for both distros.
+CMD ["bash", "-lc", "bash test/e2e/scenario.sh"]

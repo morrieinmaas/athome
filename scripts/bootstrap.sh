@@ -568,7 +568,13 @@ local_key_on_github() {
   return 1
 }
 
-if [[ -f "${ssh_key}.pub" ]] && command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+if [[ -n "${ATHOME_CI:-}" ]]; then
+  # NEVER upload SSH keys to a real GitHub account from a test/headless run. The
+  # e2e passes a token (the user's `gh auth token` locally, or the Actions token
+  # in CI) only so mise avoids the GitHub rate limit — but a locally-scoped token
+  # would happily push the throwaway container key to the user's account. Hard stop.
+  c_yellow "==> ATHOME_CI set — skipping GitHub SSH-key upload (test/headless; never touches a real account)"
+elif [[ -f "${ssh_key}.pub" ]] && command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
   # Smart skip: if SSH already authenticates to GitHub, this machine is set up —
   # don't prompt to upload. Catches an existing key (even one named differently
   # from this host's ${ssh_host}_ed25519) that's already registered on GitHub.

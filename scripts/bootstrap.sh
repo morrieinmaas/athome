@@ -605,19 +605,35 @@ if [[ -f "${ssh_key}.pub" ]] && command -v gh >/dev/null 2>&1 && gh auth status 
       c_yellow "==> gh auth is missing scope(s): ${missing_scopes[*]}"
       c_yellow "    (default \`gh auth login\` doesn't request these — needed for ssh-key uploads)"
       c_yellow ""
-      c_yellow "    Two ways forward:"
-      c_yellow "    [Y] Refresh via gh — opens GitHub device flow."
-      c_yellow "        Warning: if you originally authed with a Personal Access Token"
-      c_yellow "        (not browser), gh will prompt for your username + a NEW PAT —"
-      c_yellow "        that's a gh CLI behavior we can't bypass."
-      c_yellow "    [n] Skip. Bootstrap will print pub keys + the manual upload URL;"
-      c_yellow "        you paste them in the GitHub web UI, no gh interaction needed."
-      c_yellow ""
-      if confirm "refresh via gh?" y; then
-        gh auth refresh -h github.com -s "$(IFS=,; echo "${missing_scopes[*]}")"
-        c_green "✓ scopes refreshed"
-      else
+      if [[ -n "${GITHUB_TOKEN:-}" ]]; then
+        # gh is authed via the GITHUB_TOKEN env var (CI, or any re-bootstrap that
+        # already has a token exported). `gh auth refresh` CANNOT add scopes to an
+        # env token — it errors "first clear the value from the environment" — so
+        # don't attempt it (it'd abort bootstrap under set -e). Fall back to the
+        # manual/web upload path, which is non-fatal.
+        c_yellow "    gh is authed via the GITHUB_TOKEN env var — scopes can't be"
+        c_yellow "    refreshed on an env token, so falling back to manual upload."
         upload_via_web=true
+      else
+        c_yellow "    Two ways forward:"
+        c_yellow "    [Y] Refresh via gh — opens GitHub device flow."
+        c_yellow "        Warning: if you originally authed with a Personal Access Token"
+        c_yellow "        (not browser), gh will prompt for your username + a NEW PAT —"
+        c_yellow "        that's a gh CLI behavior we can't bypass."
+        c_yellow "    [n] Skip. Bootstrap will print pub keys + the manual upload URL;"
+        c_yellow "        you paste them in the GitHub web UI, no gh interaction needed."
+        c_yellow ""
+        if confirm "refresh via gh?" y; then
+          # Non-fatal: a failed refresh falls back to manual rather than aborting.
+          if gh auth refresh -h github.com -s "$(IFS=,; echo "${missing_scopes[*]}")"; then
+            c_green "✓ scopes refreshed"
+          else
+            c_yellow "    gh auth refresh failed — falling back to manual upload."
+            upload_via_web=true
+          fi
+        else
+          upload_via_web=true
+        fi
       fi
     fi
 

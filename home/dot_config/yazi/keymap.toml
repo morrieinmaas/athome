@@ -1,5 +1,8 @@
+# prepend_keymap LAYERS these on top of yazi's built-in keymap (plain `keymap`
+# would REPLACE it wholesale — which silently kills hjkl/arrows/enter and leaves
+# only the mouse working). Prepended entries also win on any key conflict.
 [mgr]
-keymap = [
+prepend_keymap = [
   { on = ["g", "h"], run = "cd ~",                 desc = "Home"      },
   { on = ["g", "p"], run = "cd ~/personal",        desc = "Personal"  },
   { on = ["g", "w"], run = "cd ~/work",            desc = "Work"      },

@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Install yazi plugins via `ya pkg` (idempotent). run_onchange: re-runs whenever
+# the plugin list below changes. Mirrors run_onchange_14 (tmux plugins).
+set -euo pipefail
+
+if [ -n "${ATHOME_CI:-}" ]; then echo "==> CI — skipping yazi plugins"; exit 0; fi
+
+# display-popup / apply contexts don't source ~/.zshenv, so the mise shim that
+# provides `ya` (and `yazi`) may not be on PATH — add it.
+[ -d /opt/nanobrew/prefix/bin ] && export PATH="/opt/nanobrew/prefix/bin:$PATH"
+export PATH="$HOME/.local/share/mise/shims:$HOME/.local/bin:$PATH"
+
+command -v ya >/dev/null 2>&1 || { echo "==> ya (yazi) not found — skipping yazi plugins"; exit 0; }
+
+# owner/repo:plugin  →  installs to ~/.config/yazi/plugins/<plugin>.yazi
+# piper renders Markdown previews through glow (see yazi.toml prepend_previewers).
+plugins="yazi-rs/plugins:piper"
+
+for p in $plugins; do
+  name="${p##*:}.yazi"
+  if [ -d "$HOME/.config/yazi/plugins/$name" ]; then
+    echo "==> yazi plugin already present: $name"
+  else
+    echo "==> installing yazi plugin: $p"
+    ya pkg add "$p" || echo "  (failed — re-run \`ya pkg add $p\` later)"
+  fi
+done

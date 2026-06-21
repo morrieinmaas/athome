@@ -40,10 +40,17 @@ rules = [
 
 # Pre-rendered Markdown previews via glow (using the piper.yazi plugin, installed
 # by .chezmoiscripts/run_onchange_15-install-yazi-plugins.sh). piper exposes
-# $w = preview width, $t = dark|light → glow's style follows the active theme.
-# prepend = wins over the built-in plain-text previewer.
+# $w = preview width. prepend = wins over the built-in plain-text previewer.
+#
+# We pin a custom glow style (styles/terminal.json) instead of glow's -s light/dark:
+# glow downsamples to ANSI-16 when its stdout is a pipe (which it always is here),
+# and glow's built-in styles use bright bg-block colors (yellow-on-blue headings,
+# red-on-pale code) that the terminal's palette remaps into an unreadable mess.
+# Our style uses foreground-only base-16 colors with NO background blocks, so the
+# active theme (gruvbox/everforest/catppuccin…, light or dark) supplies correct,
+# well-contrasted shades automatically — one style, every theme.
 [plugin]
 prepend_previewers = [
-  { url = "*.md",       run = 'piper -- CLICOLOR_FORCE=1 glow -w=$w -s=$t "$1"' },
-  { url = "*.markdown", run = 'piper -- CLICOLOR_FORCE=1 glow -w=$w -s=$t "$1"' },
+  { url = "*.md",       run = 'piper -- CLICOLOR_FORCE=1 glow -w=$w -s=$HOME/.config/glow/styles/terminal.json "$1"' },
+  { url = "*.markdown", run = 'piper -- CLICOLOR_FORCE=1 glow -w=$w -s=$HOME/.config/glow/styles/terminal.json "$1"' },
 ]

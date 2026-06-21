@@ -19,30 +19,31 @@
     "bold": true
   },
   "h1": {
+    "prefix": "▌ ",
     "color": "6",
     "bold": true
   },
   "h2": {
-    "prefix": "## ",
+    "prefix": "▌ ",
     "color": "4",
     "bold": true
   },
   "h3": {
-    "prefix": "### ",
+    "prefix": "▌ ",
     "color": "3",
     "bold": true
   },
   "h4": {
-    "prefix": "#### ",
+    "prefix": "▏ ",
     "color": "2",
     "bold": true
   },
   "h5": {
-    "prefix": "##### ",
+    "prefix": "▏ ",
     "color": "5"
   },
   "h6": {
-    "prefix": "###### ",
+    "prefix": "▏ ",
     "color": "1",
     "bold": false
   },

@@ -6,13 +6,22 @@
 # (DevTools), and slk writes the credentials to ~/.local/share/slk/tokens/,
 # which is OUTSIDE chezmoi's tree and never tracked. On onboarding slk also
 # appends a `[workspaces.<slug>]` block to THIS file — those carry no secrets
-# (just slug / team_id / order). We deliberately DON'T commit them: chezmoi apply
-# then wipes any per-workspace `theme =` overrides slk wrote, so the picker-driven
-# [appearance] theme below stays authoritative across machines.
+# (just slug / team_id / order). We commit exactly ONE such block on purpose —
+# `[workspaces.info]` below — because `default_workspace` can only resolve to a
+# committed block (see its comment). It is kept THEME-LESS so chezmoi apply still
+# wipes any per-workspace `theme =` slk writes at runtime, keeping the picker-
+# driven [appearance] theme authoritative across machines.
 
 [general]
 use_slack_sections = true              # mirror your real Slack sidebar sections
-default_workspace  = "T025AMBA7"       # open INFO on launch (slug = team id)
+default_workspace  = "info"            # open INFO on launch — resolves to [workspaces.info] below
+
+# default_workspace MUST reference a committed [workspaces.<key>] block: slk looks
+# up c.Workspaces[key] and silently FALLS BACK to first-workspace-to-connect when
+# the value is just a bare team id with no block (which is why "T025AMBA7" never
+# worked). One theme-less block fixes it; team_id maps the slug → the real team.
+[workspaces.info]
+team_id = "T025AMBA7"                   # NAME "INFO" (see: slk --list-workspaces)
 
 [appearance]
 # theme is driven by the `theme` picker: ~/.config/themes/apply-slk.sh rewrites
@@ -23,8 +32,18 @@ default_workspace  = "T025AMBA7"       # open INFO on launch (slug = team id)
 # override which would beat this; chezmoi apply wipes those back out so the
 # picker keeps winning.
 theme          = "Gruvbox Light"
-image_protocol = "auto"                # ghostty kitty-graphics now tunnel through tmux (allow-passthrough on) → crisp, not pixelated
-max_image_rows = 20                    # cap inline image height (terminal rows)
+# FORCE kitty true-pixel graphics. "auto" detection is unreliable through tmux and
+# silently falls back to half-block — the blocky/"pixelated" look. ghostty speaks
+# the kitty graphics protocol and tmux has `allow-passthrough on` (tmux.conf), so
+# skip detection and force it. NOTE: this only renders in a real pane/window — tmux
+# `display-popup` can't pass graphics through, which is why `prefix M` opens slk in
+# a new WINDOW, not a popup (see tmux.conf bind M).
+image_protocol = "kitty"
+# Image crispness with kitty = pixel footprint = cells × cell-pixel-size, so the
+# caps below double as a QUALITY knob: higher caps → more cells → more pixels →
+# sharper. Bounded by the actual popup pane size. (was rows=20, cols default 60.)
+max_image_rows = 30                    # cap inline image HEIGHT in terminal rows
+max_image_cols = 90                    # cap inline image WIDTH in terminal cols
 
 [notifications]
 enabled = true

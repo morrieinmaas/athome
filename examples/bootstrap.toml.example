@@ -53,6 +53,13 @@ includeAgents = "true"
 # Skills/agents repo to sync into ~/.config/agents as owner/repo. Empty = none.
 agentsRepo = ""
 
+# slk (Slack TUI) default workspace to open on launch: the slug + its Slack team
+# id (e.g. "T0XXXXXXX"). Both empty = no committed workspace block; slk falls
+# back to the first workspace to connect. Never hardcoded in the repo — these
+# land only in your private ~/.config/chezmoi/chezmoi.toml.
+slackDefaultWorkspace = ""
+slackTeamId = ""
+
 # Extra packages to install on top of the curated set (space-separated; names
 # valid for THIS machine's OS). Empty = none. Per-machine alternative: drop a
 # ~/.config/athome/extra-packages file (one package per line). See docs/customizing.md.

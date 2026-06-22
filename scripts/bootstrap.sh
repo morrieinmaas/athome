@@ -194,6 +194,8 @@ load_config() {
   : "${ATHOME_SIDEBIZ_EMAIL:=$(cfg_get sidebizEmail)}"
   : "${ATHOME_SIDEBIZ_NAME:=$(cfg_get sidebizName)}"
   : "${ATHOME_AGENTS_REPO:=$(cfg_get agentsRepo)}"
+  : "${ATHOME_SLACK_WORKSPACE:=$(cfg_get slackDefaultWorkspace)}"  # slk default workspace slug (empty = none)
+  : "${ATHOME_SLACK_TEAM_ID:=$(cfg_get slackTeamId)}"              # its Slack team id, e.g. T0XXXXXXX (empty = none)
   : "${ATHOME_NETBIRD_MGMT_URL:=$(cfg_get netbirdManagementUrl)}"
   : "${ATHOME_NORDVPN_COUNTRY:=$(cfg_get nordvpnCountry)}"
   : "${ATHOME_EXTRA_PACKAGES:=$(cfg_get extraPackages)}"
@@ -854,6 +856,8 @@ cat > "$chezmoi_config" <<TOMLSEED
     bitwardenUrl         = "$(toml_str "${ATHOME_BW_BASE_URL:-}")"
     agentsRepo           = "$(toml_str "${ATHOME_AGENTS_REPO:-}")"
     extraPackages        = "$(toml_str "${ATHOME_EXTRA_PACKAGES:-}")"
+    slackDefaultWorkspace = "$(toml_str "${ATHOME_SLACK_WORKSPACE:-}")"
+    slackTeamId          = "$(toml_str "${ATHOME_SLACK_TEAM_ID:-}")"
     includeAgents        = $INCLUDE_AGENTS
 TOMLSEED
 

@@ -18,6 +18,12 @@
 {{- $includeAgents       := promptBoolOnce   . "includeAgents"       "Sync ~/.config/agents skills + instructions (agent-agnostic; opencode reads it, symlinked into ~/.claude for Claude Code, readable by nvim/aider/cursor)" true -}}
 {{- $agentsRepo          := promptStringOnce . "agentsRepo"          "Skills/agents repo to sync into ~/.config/agents as owner/repo (empty = none; ATHOME_AGENTS_REPO in bootstrap)" "" -}}
 {{- $extraPackages       := promptStringOnce . "extraPackages"       "Extra packages to also install, space-separated (optional overlay on the curated set; or use ~/.config/athome/extra-packages)" "" -}}
+{{/* slk (Slack TUI) default workspace. Prompted (not hardcoded) so the slk
+     config template stays publishable — no real team id / workspace lands in
+     the repo. Empty = no committed workspace block; slk falls back to the
+     first workspace to connect (see ~/.config/slk/config.toml.tmpl). */ -}}
+{{- $slackWorkspace      := promptStringOnce . "slackDefaultWorkspace" "slk default workspace slug, e.g. acme (empty = none; slk uses first workspace to connect)" "" -}}
+{{- $slackTeamId         := promptStringOnce . "slackTeamId"         "slk default workspace Slack team id, e.g. T0XXXXXXX (empty = none; required for the slug above to resolve)" "" -}}
 
 # No `encryption` key: age was dropped (D5) — there are no encrypted_* files in
 # this repo, and with `pass` gone there's no driver for encrypted-files-in-repo.
@@ -93,3 +99,10 @@
     # points this at its own. On legacy machines that pre-date this key, the
     # external falls back to <handle>/skills (see .chezmoiexternal.toml.tmpl).
     agents_repo = {{ $agentsRepo | quote }}
+
+    # slk (Slack TUI) default workspace — slug + team id. Both prompted (empty =
+    # omit the committed [workspaces.<slug>] block, slk falls back to the first
+    # workspace to connect) so no real Slack identifier is hardcoded in the repo.
+    # Consumed by ~/.config/slk/config.toml.tmpl.
+    slack_default_workspace = {{ $slackWorkspace | quote }}
+    slack_team_id           = {{ $slackTeamId | quote }}

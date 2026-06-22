@@ -1,27 +1,36 @@
-# ~/.config/slk/config.toml — managed by chezmoi
+# ~/.config/slk/config.toml — managed by chezmoi (rendered from config.toml.tmpl)
 # slk: a fast Slack TUI (gammons/slk), installed via mise (github:gammons/slk).
 #
-# AUTH IS NOT STORED HERE. slk uses your browser session — run
-# `slk --add-workspace`, paste your workspace's `xoxc-…` token + `d` cookie
-# (DevTools), and slk writes the credentials to ~/.local/share/slk/tokens/,
-# which is OUTSIDE chezmoi's tree and never tracked. On onboarding slk also
-# appends a `[workspaces.<slug>]` block to THIS file — those carry no secrets
-# (just slug / team_id / order). We commit exactly ONE such block on purpose —
-# `[workspaces.info]` below — because `default_workspace` can only resolve to a
-# committed block (see its comment). It is kept THEME-LESS so chezmoi apply still
-# wipes any per-workspace `theme =` slk writes at runtime, keeping the picker-
-# driven [appearance] theme authoritative across machines.
+# AUTH IS NOT STORED HERE. slk uses your browser session — run `slk-auth` (or
+# `slk --add-workspace`) to mint an `xoxc-…` token + `d` cookie; slk writes the
+# credentials to ~/.local/share/slk/tokens/, which is OUTSIDE chezmoi's tree and
+# never tracked. On onboarding slk also appends a `[workspaces.<slug>]` block to
+# THIS file at runtime — those carry no secrets (just slug / team_id / order).
+#
+# NOTHING REAL IS HARDCODED HERE. The default workspace's slug + team id come
+# from chezmoi data (.slack_default_workspace / .slack_team_id), prompted on
+# `chezmoi init` and cached in ~/.config/chezmoi/chezmoi.toml (never committed) —
+# so this template stays publishable. Set/change them with:
+#   chezmoi init --promptString slackDefaultWorkspace=<slug> --promptString slackTeamId=<T0…>
+# Leave them empty and slk simply falls back to the first workspace to connect.
 
 [general]
 use_slack_sections = true              # mirror your real Slack sidebar sections
-default_workspace  = "info"            # open INFO on launch — resolves to [workspaces.info] below
+{{- if and .slack_default_workspace .slack_team_id }}
+default_workspace  = {{ .slack_default_workspace | quote }}   # open this workspace on launch — resolves to its [workspaces.<slug>] block below
+{{- end }}
+
+{{- if and .slack_default_workspace .slack_team_id }}
 
 # default_workspace MUST reference a committed [workspaces.<key>] block: slk looks
 # up c.Workspaces[key] and silently FALLS BACK to first-workspace-to-connect when
-# the value is just a bare team id with no block (which is why "T025AMBA7" never
-# worked). One theme-less block fixes it; team_id maps the slug → the real team.
-[workspaces.info]
-team_id = "T025AMBA7"                   # NAME "INFO" (see: slk --list-workspaces)
+# the value is just a bare team id with no block. One theme-less block fixes it;
+# team_id maps the slug → the real team. Kept THEME-LESS on purpose so chezmoi
+# apply wipes any per-workspace `theme =` slk writes at runtime, keeping the
+# picker-driven [appearance] theme authoritative across machines.
+[workspaces.{{ .slack_default_workspace }}]
+team_id = {{ .slack_team_id | quote }}
+{{- end }}
 
 [appearance]
 # theme is driven by the `theme` picker: ~/.config/themes/apply-slk.sh rewrites

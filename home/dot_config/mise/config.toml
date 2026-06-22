@@ -85,7 +85,7 @@ just       = "latest"          # command runner
 "cargo:just-lsp" = "latest"  # LSP for justfiles (not in registry)
 usage      = "latest"          # CLI-spec engine that powers mise's dynamic shell completion (e.g. `mise run <tab>` task names)
 task       = "latest"          # go-task (binary `task`)
-"ubi:ivaaaan/smug" = "latest"  # tmux session manager — drives the cockpit bootstrap (not in registry)
+"github:ivaaaan/smug" = "latest"  # tmux session manager — drives the cockpit bootstrap (not in registry). github backend (ubi was deprecated in mise 2026.4.0 → github:owner/repo).
 
 # ── HTTP / containers / k8s / CI ─────────────────────────────────────────────
 xh         = "latest"   # HTTPie-like client

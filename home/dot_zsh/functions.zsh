@@ -1,18 +1,18 @@
 # ~/.zsh/functions.zsh — managed by chezmoi
 # Sourced from ~/.zshrc after aliases.zsh.
 
-# superfile (spf): cd into the last dir on quit-with-cd. Press Q inside superfile
-# to quit-and-cd (cd_on_quit); plain q quits without moving. -c points at the
-# chezmoi-managed config (superfile defaults to ~/Library/… on macOS). The last
-# dir is written to a state file (path is OS-specific → ask spf for it).
+# superfile (spf): cd into the dir you quit from. With cd_on_quit=true in the
+# config, ANY quit (q or Q) writes the last dir to a state file — as a `cd '…'`
+# shell command (superfile single-quote-escapes the path), so we SOURCE it rather
+# than read it as a path. -c points at the chezmoi-managed config (superfile
+# defaults to ~/Library/… on macOS). The state-file path is OS-specific → ask spf.
 spf() {
   command spf -c "$HOME/.config/superfile/config.toml" "$@"
-  local ldfile dir
+  local ldfile
   ldfile="$(command spf path-list --lastdir-file 2>/dev/null)"
   if [[ -n "$ldfile" && -r "$ldfile" ]]; then
-    dir="$(command cat -- "$ldfile")"
+    builtin source "$ldfile"          # contains: cd '/path/you/quit/from'
     command rm -f -- "$ldfile"
-    [[ -n "$dir" && -d "$dir" && "$dir" != "$PWD" ]] && builtin cd -- "$dir"
   fi
 }
 alias y='spf'   # muscle memory from the old yazi y() wrapper

@@ -16,8 +16,8 @@ dir_editor = ''
 
 auto_check_update = false
 
-# cd the shell into the last dir on quit. Press Q (cd_quit) to quit-and-cd; q
-# quits without cd. The `spf` shell wrapper reads the lastdir state file.
+# cd the shell into the last dir on quit. With this on, ANY quit (q or Q) writes
+# the dir; the `spf` shell wrapper (functions.zsh) sources it to actually cd.
 cd_on_quit = true
 
 default_open_file_preview = true

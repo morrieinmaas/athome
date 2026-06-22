@@ -132,9 +132,10 @@ binds {
     // ─── App launchers / spawn ──────────────────────────────────────────────
     Mod+Return         { spawn "ghostty"; }
     Mod+B              { spawn "zen-browser"; }
-    // yazi is mise-managed; the niri session PATH lacks the mise shims, so
-    // launch via an interactive login shell (sources path.zsh → shims on PATH).
-    Mod+E              { spawn "ghostty" "-e" "zsh" "-ic" "yazi"; }
+    // superfile (spf) is mise-managed; the niri session PATH lacks the mise
+    // shims, so launch via an interactive shell (sources path.zsh → shims on
+    // PATH, and defines the spf() wrapper that passes -c for the config).
+    Mod+E              { spawn "ghostty" "-e" "zsh" "-ic" "spf"; }
 
     // ─── Noctalia panels / launchers (via its IPC) ──────────────────────────
     // Generic launcher (Noctalia's, replaces fuzzel).

@@ -1,0 +1,4 @@
+# Targets chezmoi removes from the destination on `chezmoi apply`.
+# yazi was replaced by superfile; drop its now-unmanaged config + installed
+# plugins (piper) so a stale ~/.config/yazi doesn't linger after the swap.
+.config/yazi

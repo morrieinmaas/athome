@@ -706,7 +706,7 @@ athome/
     │   ├── fastfetch/                # Linux: shows "Arch Linux"
     │   ├── greetd/                   # Linux: tuigreet greeter
     │   ├── mise/config.toml          # ALL portable tooling: runtimes + the modern-CLI set (NOT python — uv owns that)
-    │   └── {bat,btm,lazygit,yazi}/
+    │   └── {bat,btm,lazygit,superfile}/
     │
     ├── private_dot_aws/config.tmpl   # region only — creds come from Bitwarden via direnv + rbw
     ├── private_dot_ssh/private_config.tmpl  # github host aliases (file 600, dir 700)
@@ -779,7 +779,7 @@ and the [layout](#layout); this is the *why*):
 | --- | --- |
 | **mise** (toolchain) | One cross-platform installer for all portable tooling — kills the per-OS name-translation table. Versioned, upgradable, uninstallable; per-project `.mise.toml` overrides. `uv` keeps Python. |
 | **nanobrew** (`nb`, macOS PM) | Homebrew-compatible (same formulae/casks/taps) but ~Zig-fast, installs into `/opt/nanobrew` without touching `/opt/homebrew`. One macOS PM instead of two. |
-| **Ghostty** (terminal) | GPU-accelerated and native-feeling on both OSes; simple `key=value` config (no Lua/YAML); auto dark/light following the OS; Kitty image protocol for yazi previews; MIT. |
+| **Ghostty** (terminal) | GPU-accelerated and native-feeling on both OSes; simple `key=value` config (no Lua/YAML); auto dark/light following the OS; Kitty image protocol for superfile previews; MIT. |
 | **tmux** | Everywhere over SSH, infinitely scriptable, our muscle-memory default. (zellij was dropped — tmux won outright.) |
 | **Neovim** (editor) | Lua config deployed identically everywhere via chezmoi: lazy.nvim + built-in LSP (`vim.lsp.enable`; servers installed via mise, not Mason) + snacks (picker/explorer) + treesitter + conform + which-key + everforest. nvim itself is native (plugins compile against system lua/tree-sitter). **Zed** ships alongside as the GUI option. |
 | **OpenCode** (AI agent) | Reads `~/.config/agents/CLAUDE.md` + `skills/*/SKILL.md` (the agent-agnostic dir, symlinked into `~/.claude` for Claude Code); model via OpenRouter, key pulled from Bitwarden through direnv + rbw. |

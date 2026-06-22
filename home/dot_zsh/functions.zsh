@@ -1,16 +1,21 @@
 # ~/.zsh/functions.zsh — managed by chezmoi
 # Sourced from ~/.zshrc after aliases.zsh.
 
-# yazi: cd into dir on quit
-y() {
-  local tmp
-  tmp="$(mktemp -t yazi-cwd.XXXXXX)"
-  yazi "$@" --cwd-file="$tmp"
-  if cwd="$(command cat -- "$tmp")" && [[ -n "$cwd" && "$cwd" != "$PWD" ]]; then
-    builtin cd -- "$cwd"
+# superfile (spf): cd into the last dir on quit-with-cd. Press Q inside superfile
+# to quit-and-cd (cd_on_quit); plain q quits without moving. -c points at the
+# chezmoi-managed config (superfile defaults to ~/Library/… on macOS). The last
+# dir is written to a state file (path is OS-specific → ask spf for it).
+spf() {
+  command spf -c "$HOME/.config/superfile/config.toml" "$@"
+  local ldfile dir
+  ldfile="$(command spf path-list --lastdir-file 2>/dev/null)"
+  if [[ -n "$ldfile" && -r "$ldfile" ]]; then
+    dir="$(command cat -- "$ldfile")"
+    command rm -f -- "$ldfile"
+    [[ -n "$dir" && -d "$dir" && "$dir" != "$PWD" ]] && builtin cd -- "$dir"
   fi
-  rm -f -- "$tmp"
 }
+alias y='spf'   # muscle memory from the old yazi y() wrapper
 
 # mkcd: make a dir and cd into it
 mkcd() {

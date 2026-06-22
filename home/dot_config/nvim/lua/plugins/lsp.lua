@@ -1,41 +1,10 @@
 -- Requires Neovim ≥ 0.11 (for vim.lsp.config / vim.lsp.enable).
--- Brew/mise both install latest stable; chezmoi-managed package list
--- pulls neovim from common, which is ≥0.11 on current Homebrew + Arch.
+-- Language servers are installed by mise (see home/dot_config/mise/config.toml),
+-- not Mason — mise is the single cross-platform installer for all portable
+-- tooling on this setup, so the servers are already on PATH when nvim runs.
+-- nvim-lspconfig stays purely as the config library: it ships the lsp/<name>.lua
+-- definitions (cmd/filetypes/root_markers) that vim.lsp.enable() reads.
 return {
-  -- Mason owns binary downloads of language servers + linters + formatters.
-  {
-    "mason-org/mason.nvim",        -- moved from williamboman/* to mason-org/* in 2025
-    build = ":MasonUpdate",
-    opts  = {},
-  },
-
-  -- Bridges Mason package names <-> lspconfig server names; auto-enables
-  -- installed servers via vim.lsp.enable().
-  {
-    "mason-org/mason-lspconfig.nvim",
-    dependencies = {
-      "mason-org/mason.nvim",
-      "neovim/nvim-lspconfig",
-    },
-    opts = {
-      -- Lean core that installs cleanly without a per-language toolchain on a
-      -- fresh box. Heavier / toolchain-tied servers (gopls needs Go, plus
-      -- rust_analyzer, clangd, etc.) are installed on demand: `:MasonInstall
-      -- gopls rust_analyzer` when you actually open that project.
-      -- NOTE: ruff + taplo are intentionally NOT here — they're CLI tools owned
-      -- by mise (ruff ships `ruff server`, taplo `taplo lsp stdio`), enabled
-      -- straight from PATH in the nvim-lspconfig config below. Letting mason
-      -- also install them duplicated the binary and failed on `ruff`.
-      ensure_installed = {
-        "lua_ls", "pyright", "ts_ls",
-        "bashls", "jsonls", "yamlls", "marksman",
-      },
-      automatic_enable = true,    -- v2 default; explicit for clarity
-    },
-  },
-
-  -- Per-server config + LspAttach keymaps. Pure setup, no per-server
-  -- lspconfig.setup() loop — mason-lspconfig auto-enables via the new API.
   {
     "neovim/nvim-lspconfig",
     event        = { "BufReadPre", "BufNewFile" },
@@ -48,12 +17,24 @@ return {
 
       vim.lsp.config("*", { capabilities = capabilities })
 
-      -- ruff + taplo come from mise (PATH), not mason. mason-lspconfig only
-      -- auto-enables mason-installed servers, so enable these two ourselves —
-      -- but only if the binary is actually on PATH (so a box that hasn't run
-      -- `mise install` yet just skips them silently instead of erroring).
-      for _, server in ipairs({ "ruff", "taplo" }) do
-        if vim.fn.executable(server) == 1 then vim.lsp.enable(server) end
+      -- ── Enable servers (replaces mason-lspconfig auto-enable) ───────────
+      -- Map lspconfig config name -> the binary mise puts on PATH. Enable a
+      -- server only if its binary is actually present, so a box that hasn't run
+      -- `mise install` yet just skips it silently instead of erroring.
+      local servers = {
+        lua_ls   = "lua-language-server",
+        pyright  = "pyright-langserver",
+        ts_ls    = "typescript-language-server",
+        bashls   = "bash-language-server",
+        jsonls   = "vscode-json-language-server",
+        yamlls   = "yaml-language-server",
+        marksman = "marksman",
+        ruff     = "ruff",   -- mise: `ruff server`
+        taplo    = "taplo",  -- mise: `taplo lsp stdio`
+        -- gopls / rust_analyzer: uncomment the matching mise entries first.
+      }
+      for name, bin in pairs(servers) do
+        if vim.fn.executable(bin) == 1 then vim.lsp.enable(name) end
       end
 
       -- ── Per-server overrides ────────────────────────────────────────────

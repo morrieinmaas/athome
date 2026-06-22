@@ -697,7 +697,7 @@ athome/
     │   ├── direnv/{direnvrc,direnv.toml}        # use_rbw / use_aws / use_ctx helpers (Bitwarden via rbw)
     │   ├── ghostty/config.tmpl       # auto dark/light everforest (window-decoration gated to Linux)
     │   ├── tmux/tmux.conf            # TPM + sessionx + smart-manager + opensessions + everforest pill bar + icon picker (prefix P) + TUI launchers (gh-dash/slk)
-    │   ├── nvim/                     # lazy.nvim + mason-org LSP + snacks (picker/explorer) + harpoon2 + bufferline + treesitter + which-key + noice (cmdline popup) + persistence (sessions) + render-markdown + conform + everforest
+    │   ├── nvim/                     # lazy.nvim + built-in LSP (vim.lsp.enable, servers via mise) + snacks (picker/explorer) + harpoon2 + bufferline + treesitter + which-key + noice (cmdline popup) + persistence (sessions) + render-markdown + conform + everforest
     │   ├── opencode/config.json      # wired to ~/.config/agents (CLAUDE.md + skills)
     │   ├── jj/config.toml.tmpl       # Jujutsu version control (templated identity)
     │   ├── gh/config.yml             # git_protocol: ssh; aliases co/cr/prv
@@ -781,7 +781,7 @@ and the [layout](#layout); this is the *why*):
 | **nanobrew** (`nb`, macOS PM) | Homebrew-compatible (same formulae/casks/taps) but ~Zig-fast, installs into `/opt/nanobrew` without touching `/opt/homebrew`. One macOS PM instead of two. |
 | **Ghostty** (terminal) | GPU-accelerated and native-feeling on both OSes; simple `key=value` config (no Lua/YAML); auto dark/light following the OS; Kitty image protocol for yazi previews; MIT. |
 | **tmux** | Everywhere over SSH, infinitely scriptable, our muscle-memory default. (zellij was dropped — tmux won outright.) |
-| **Neovim** (editor) | Lua config deployed identically everywhere via chezmoi: lazy.nvim + LSP (mason) + snacks (picker/explorer) + treesitter + conform + which-key + everforest. Kept native (not mise) because plugins compile against system lua/tree-sitter. **Zed** ships alongside as the GUI option. |
+| **Neovim** (editor) | Lua config deployed identically everywhere via chezmoi: lazy.nvim + built-in LSP (`vim.lsp.enable`; servers installed via mise, not Mason) + snacks (picker/explorer) + treesitter + conform + which-key + everforest. nvim itself is native (plugins compile against system lua/tree-sitter). **Zed** ships alongside as the GUI option. |
 | **OpenCode** (AI agent) | Reads `~/.config/agents/CLAUDE.md` + `skills/*/SKILL.md` (the agent-agnostic dir, symlinked into `~/.claude` for Claude Code); model via OpenRouter, key pulled from Bitwarden through direnv + rbw. |
 | **Podman** over Docker | Rootless, daemonless, drop-in `DOCKER_HOST` socket; `lazydocker`/compose work unchanged. |
 | **NetBird** mesh / **rbw** secrets / **Noctalia** shell | Each is the FOSS-first pick with a no-penalty self-host or open-source escape hatch — see the relevant sections above. |

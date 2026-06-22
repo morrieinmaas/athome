@@ -117,6 +117,22 @@ shfmt      = "latest"   # shell formatter (pre-commit shellcheck pairs with it)
 actionlint = "latest"   # GitHub Actions YAML linter
 "go:golang.org/x/tools/cmd/goimports" = "latest"  # Go formatter for nvim conform — cross-platform (Arch's go-tools was Linux-only)
 
+# ── LSP servers (nvim built-in vim.lsp.enable; replaces mason.nvim) ───────────
+# nvim's lsp.lua enables each only if its binary is on PATH, so a box that hasn't
+# run `mise install` yet just skips it. lua_ls/marksman resolve via the registry;
+# the node servers via the npm backend (node is installed above). Heavier
+# toolchain-tied servers (gopls, rust_analyzer) stay commented until needed —
+# the runtimes (go, rust) are already here. clangd needs LLVM → native if ever.
+lua-language-server                = "latest"  # lua_ls
+marksman                           = "latest"  # marksman (markdown)
+"npm:pyright"                      = "latest"  # pyright (ships pyright-langserver)
+"npm:typescript-language-server"   = "latest"  # ts_ls
+"npm:bash-language-server"         = "latest"  # bashls
+"npm:vscode-langservers-extracted" = "latest"  # jsonls (vscode-json-language-server)
+"npm:yaml-language-server"         = "latest"  # yamlls
+# "go:golang.org/x/tools/gopls"    = "latest"  # gopls — uncomment for Go work
+# rust-analyzer                    = "latest"  # rust_analyzer — uncomment for Rust work
+
 [settings]
 experimental         = true
 verbose              = false

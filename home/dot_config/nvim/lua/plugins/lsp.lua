@@ -23,7 +23,7 @@ return {
       -- `mise install` yet just skips it silently instead of erroring.
       local servers = {
         lua_ls   = "lua-language-server",
-        pyright  = "pyright-langserver",
+        ty       = "ty",   -- Astral ty: Python type checker (replaces pyright)
         ts_ls    = "typescript-language-server",
         bashls   = "bash-language-server",
         jsonls   = "vscode-json-language-server",

@@ -125,7 +125,7 @@ actionlint = "latest"   # GitHub Actions YAML linter
 # the runtimes (go, rust) are already here. clangd needs LLVM → native if ever.
 lua-language-server                = "latest"  # lua_ls
 marksman                           = "latest"  # marksman (markdown)
-"npm:pyright"                      = "latest"  # pyright (ships pyright-langserver)
+ty                                 = "latest"  # Astral ty — Python type checker + LSP (replaces pyright; pairs with ruff)
 "npm:typescript-language-server"   = "latest"  # ts_ls
 "npm:bash-language-server"         = "latest"  # bashls
 "npm:vscode-langservers-extracted" = "latest"  # jsonls (vscode-json-language-server)

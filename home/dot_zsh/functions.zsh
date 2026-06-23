@@ -7,6 +7,10 @@
 # than read it as a path. -c points at the chezmoi-managed config (superfile
 # defaults to ~/Library/… on macOS). The state-file path is OS-specific → ask spf.
 spf() {
+  # Sync superfile's theme to the active `theme` pick + OS dark/light first
+  # (superfile reads its theme fresh per launch; the generated 'athome' theme
+  # tracks ghostty/nvim — see ~/.config/themes/apply-superfile.sh).
+  [ -x "$HOME/.config/themes/apply-superfile.sh" ] && "$HOME/.config/themes/apply-superfile.sh" 2>/dev/null
   command spf -c "$HOME/.config/superfile/config.toml" "$@"
   local ldfile
   ldfile="$(command spf path-list --lastdir-file 2>/dev/null)"

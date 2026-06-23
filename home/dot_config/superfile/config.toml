@@ -4,9 +4,12 @@
 # macOS, so -c keeps a single chezmoi-managed config at ~/.config on both OSes.
 # Full field list: https://superfile.dev/configure/superfile-config/
 
-# Theme is static (superfile can't live-switch with ~/.config/themes/active like
-# nvim/ghostty). Matches the usual Gruvbox. Swap for everforest-dark-medium etc.
-theme = 'gruvbox'
+# 'athome' is a generated theme that tracks the active `theme` pick + OS
+# dark/light, so superfile follows ghostty/nvim. It's (re)written into superfile's
+# data dir by ~/.config/themes/apply-superfile.sh, which the spf() shell wrapper
+# and the `theme` command run before launch. (Falls back to a built-in name like
+# 'gruvbox' if you ever run the bare binary before that script has generated it.)
+theme = 'athome'
 
 # Open files with nvim (renders Markdown via render-markdown.nvim + <leader>mg
 # glow). superfile's open_with can't run a TTY pager like glow, so opening in

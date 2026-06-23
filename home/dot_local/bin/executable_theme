@@ -86,10 +86,14 @@ fi
 #    gh-dash also reads config fresh per launch → lands on the next `prefix g`. ──
 [ -x "$dir/apply-ghdash.sh" ] && "$dir/apply-ghdash.sh" || true
 
+# ── superfile: regenerate its "athome" theme to the matching family + dark/light.
+#    superfile reads its theme fresh per launch → lands on the next `spf`. ──
+[ -x "$dir/apply-superfile.sh" ] && "$dir/apply-superfile.sh" || true
+
 # ── btm (bottom): nothing to do — its config follows the terminal's ANSI palette
 #    automatically, so it recolours with ghostty/tmux above. See registry.sh. ──
 
 # ── nvim: live instances re-apply via their fs-watch on ~/.config/themes;
 #          new instances read active on startup. ──
 
-echo "theme → $name  (ghostty: live · tmux: live · nvim: live + next launch · slk/gh-dash: next launch)"
+echo "theme → $name  (ghostty: live · tmux: live · nvim: live + next launch · slk/gh-dash/superfile: next launch)"

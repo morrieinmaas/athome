@@ -37,6 +37,15 @@ export DOCKER_HOST="unix:///var/run/docker.sock"
 export DOCKER_HOST="unix:///run/user/$(id -u)/podman/podman.sock"
 {{- end }}
 
+# testcontainers on rootless podman: Ryuk (its reaper sidecar) needs privileged
+# socket access it doesn't reliably get rootless, so it hangs/fails — disable it
+# (testcontainers' own shutdown hook still tears down containers). Point the
+# socket override at the same path as DOCKER_HOST so spawned containers that
+# bind-mount the docker socket get the right one. Harmless if you never use
+# testcontainers — only its own SDKs read these.
+export TESTCONTAINERS_RYUK_DISABLED=true
+export TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE="${DOCKER_HOST#unix://}"
+
 # ─── History (in addition to OMZ history lib) ────────────────────────────────
 export HISTFILE="${HISTFILE:-$HOME/.zsh_history}"
 export HISTSIZE=100000

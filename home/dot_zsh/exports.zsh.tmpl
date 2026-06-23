@@ -73,14 +73,21 @@ setopt NO_BEEP
 #   • MISE_GITHUB_TOKEN            — mise's github backend (release/version
 #     lookups). WITHOUT this, mise hits the anonymous 60-req/hr limit and
 #     `mise install` fails to resolve tools (helm/ruff/shfmt …) with 403s.
+# Materialized OFF the startup path: `gh auth token` (a keychain read) is ~34ms,
+# and nothing needs the token until you actually run gh / an MCP server / `mise
+# install` — all after the prompt. So set it on the SECOND precmd (right after the
+# first prompt draws), once, then unhook. mise install at t=0 is non-interactive
+# (chezmoi scripts) and unaffected; this is interactive-shell only.
 if command -v gh >/dev/null 2>&1; then
-  __gh_token="$(gh auth token 2>/dev/null)"
-  if [[ -n "$__gh_token" ]]; then
-    export GITHUB_PERSONAL_ACCESS_TOKEN="$__gh_token"
-    export GITHUB_TOKEN="$__gh_token"
-    export MISE_GITHUB_TOKEN="$__gh_token"
-  fi
-  unset __gh_token
+  typeset -gi _ghtok_skip=1
+  _ghtok_load() {
+    (( _ghtok_skip )) && { _ghtok_skip=0; return; }   # skip the pre-first-prompt precmd
+    add-zsh-hook -d precmd _ghtok_load
+    local t; t="$(command gh auth token 2>/dev/null)"
+    [[ -n "$t" ]] && export GITHUB_PERSONAL_ACCESS_TOKEN="$t" GITHUB_TOKEN="$t" MISE_GITHUB_TOKEN="$t"
+  }
+  autoload -Uz add-zsh-hook
+  add-zsh-hook precmd _ghtok_load
 fi
 
 # ─── SSH keys (no agent required) ────────────────────────────────────────────

@@ -29,7 +29,12 @@ _zcache direnv    direnv hook zsh        # per-dir .envrc
 _zcache fzf       fzf --zsh              # Ctrl-R / Ctrl-T / Alt-C + completion
 
 # ─── Explicit completions (tools that don't auto-register) ───────────────────
-_zcache uv        uv generate-shell-completion zsh
+# uv's completion is ~540KB — even cached, sourcing it costs ~28ms every startup.
+# Register a stub instead and load the real thing on first `uv <tab>`.
+if command -v uv >/dev/null 2>&1; then
+  _uv() { unfunction _uv; _zcache uv uv generate-shell-completion zsh; _uv "$@"; }
+  compdef _uv uv
+fi
 _zcache uvx       uvx --generate-shell-completion zsh
 _zcache chezmoi   chezmoi completion zsh
 # `mise activate` does NOT register completions — cache them so `mise run <tab>`

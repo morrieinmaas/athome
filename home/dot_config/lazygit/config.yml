@@ -12,11 +12,19 @@ gui:
   showFileTree: true
   sidePanelWidth: 0.3333
 git:
-  paging:
-    colorArg: always
+  # lazygit 0.62 renamed git.paging (object) → git.pagers (array). Keeping the
+  # old key makes lazygit auto-migrate + rewrite this file on every launch (the
+  # "config migrated/saved" popup) and drift from chezmoi. Use the new schema.
+  pagers:
+    - colorArg: always
   commit:
     signOff: false
   autoFetch: true
   parseEmoji: true
 os:
   editPreset: "nvim"
+# lazygit's binary is mise-managed (mise/config.toml: lazygit = "latest"), so
+# lazygit can't self-update — silence its update check to stop the "new version
+# available / not up to date" startup prompt.
+update:
+  method: never

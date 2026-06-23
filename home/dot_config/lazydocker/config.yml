@@ -1,0 +1,9 @@
+# lazydocker — managed by chezmoi.
+# Rootless Podman is the Docker drop-in on this setup: lazydocker reaches the
+# podman socket via DOCKER_HOST (dot_zsh/exports.zsh — /var/run/docker.sock on
+# macOS via podman-mac-helper, /run/user/$UID/podman/podman.sock on Linux), and
+# the `docker`→podman binary shim (dot_local/bin/docker) covers lazydocker's
+# shell-outs such as the `E` (exec) key. The one thing it otherwise assumes is
+# `docker compose`, so pin Compose to podman's wrapper of Compose v2.
+commandTemplates:
+  dockerCompose: podman compose

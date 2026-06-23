@@ -74,6 +74,17 @@ fi
 systemctl --user enable --now podman.socket \
   || echo "==> couldn't enable podman.socket (no user session?); later: systemctl --user enable --now podman.socket"
 
+# 2b. Linger — keep this user's systemd manager (and thus podman.socket) running
+#     after logout / SSH disconnect. Without it the rootless socket dies when you
+#     drop the Eternal Terminal session (run_once_18), breaking lazydocker and any
+#     docker-API client on headless/remote dev. Idempotent; needs sudo.
+if command -v loginctl >/dev/null 2>&1 \
+   && ! loginctl show-user "$USER" 2>/dev/null | grep -q '^Linger=yes'; then
+  echo "==> enabling linger for ${USER} (rootless podman.socket survives logout)"
+  sudo loginctl enable-linger "$USER" \
+    || echo "   couldn't enable linger; later: sudo loginctl enable-linger $USER"
+fi
+
 # 3. Defensive: ensure user.max_user_namespaces isn't pinned to 0.
 #    Modern Arch kernels default to a large value; some hardened kernels
 #    or sysctl.d snippets disable it, which silently breaks rootless.

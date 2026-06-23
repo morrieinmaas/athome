@@ -21,6 +21,14 @@ spf() {
 }
 alias y='spf'   # muscle memory from the old yazi y() wrapper
 
+# lazydocker talks to the podman socket directly (it doesn't go through the
+# docker→podman shim), so lazy-start the podman VM first on macOS. podman-up is a
+# fast no-op when the socket is already up, and a no-op entirely on Linux.
+lazydocker() {
+  command -v podman-up >/dev/null 2>&1 && podman-up
+  command lazydocker "$@"
+}
+
 # mkcd: make a dir and cd into it
 mkcd() {
   mkdir -p "$1" && cd "$1"

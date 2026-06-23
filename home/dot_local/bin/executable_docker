@@ -2,4 +2,9 @@
 # docker -> podman shim (Docker Desktop replacement). No Docker-Inc binary is
 # installed; every `docker ...` (incl. `docker compose`) becomes `podman ...`.
 # Remove this file to revert. Podman setup: run_once_10-setup-podman + packages.yaml.
+#
+# On macOS, lazy-start the podman VM if its socket is down (podman-up is a fast
+# no-op when it's up, and entirely on Linux). This is the single docker→podman
+# path — there is intentionally no `alias docker=podman` (it would skip this).
+command -v podman-up >/dev/null 2>&1 && podman-up
 exec podman "$@"

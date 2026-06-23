@@ -69,10 +69,12 @@ alias czc='chezmoi cd'
 alias czdoc='chezmoi doctor'
 
 # ─── Container shortcuts (podman as docker) ──────────────────────────────────
+# NB: `docker` is the shim binary (~/.local/bin/docker), NOT an alias — the shim
+# lazy-starts the podman VM on macOS (podman-up). Route dc/dps through it so they
+# get the same lazy-start; an `alias docker=podman` would bypass it.
 if command -v podman >/dev/null 2>&1; then
-  alias docker='podman'
-  alias dc='podman compose'
-  alias dps='podman ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"'
+  alias dc='docker compose'
+  alias dps='docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"'
 fi
 
 # ─── Just / Task ─────────────────────────────────────────────────────────────

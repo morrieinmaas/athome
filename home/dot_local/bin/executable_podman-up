@@ -1,0 +1,23 @@
+#!/bin/sh
+# podman-up — ensure the container socket is live before a docker-API client runs.
+# Shared by the docker→podman shim (dot_local/bin/docker) and the lazydocker
+# wrapper (dot_zsh/functions.zsh), since lazydocker talks to the socket directly.
+#
+# macOS: podman runs in a VM that does NOT auto-start after a reboot, so its
+# socket is dead until `podman machine start`. We only pay that cost when the
+# socket is actually down — a ~15ms docker-API /_ping otherwise.
+# Linux: the rootless podman.socket is systemd-managed + lingered (run_once_10),
+# so this is a no-op.
+[ "$(uname -s)" = Darwin ] || exit 0
+
+sock="${DOCKER_HOST#unix://}"
+[ -n "$sock" ] || sock=/var/run/docker.sock
+
+# Fast, real-API liveness ping (avoids spawning podman on the hot path).
+if /usr/bin/curl --max-time 2 -sf --unix-socket "$sock" http://d/_ping >/dev/null 2>&1; then
+  exit 0
+fi
+
+echo "podman: starting machine (first container command since boot)…" >&2
+podman machine start >/dev/null 2>&1 \
+  || echo "podman: 'podman machine start' failed — start it manually." >&2

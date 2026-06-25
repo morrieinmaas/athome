@@ -20,11 +20,15 @@ your freshly-generated SSH keys to *your* GitHub (so SSH push + commit signing
 work). If you'd rather fork-and-personalize first, fork it, then clone your fork.
 
 ```bash
-# ── one-time prep (fresh box, ~30 seconds) ──
-sudo pacman -S --needed --noconfirm github-cli   # Arch
-# or (macOS): install nanobrew (the canonical PM), then gh:
-#   curl -fsSL https://nanobrew.trilok.ai/install | bash && nb install gh
-gh auth login                                     # device flow in browser (your account)
+# ── one-time prep (fresh box, ~30 seconds): install gh for YOUR OS, then auth ──
+# macOS  — nanobrew is the canonical PM; install it, then gh:
+curl -fsSL https://nanobrew.trilok.ai/install | bash && nb install gh
+# Arch:
+sudo pacman -S --needed --noconfirm github-cli
+# Fedora:
+sudo dnf install -y gh
+
+gh auth login                                     # device flow in browser (your account); pick HTTPS
 
 # ── bootstrap (clone, cd, run) ──
 git clone https://github.com/morrieinmaas/athome ~/.local/share/chezmoi

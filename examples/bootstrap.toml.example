@@ -60,6 +60,13 @@ agentsRepo = ""
 slackDefaultWorkspace = ""
 slackTeamId = ""
 
+# matterhorn (Mattermost TUI) server host (NO https://) + login (email/username).
+# Both empty = no server block in the rendered config. The password is never here
+# — it's read from the macOS Keychain. Like the above, these land only in your
+# private ~/.config/chezmoi/chezmoi.toml, never the repo.
+matterhornHost = ""
+matterhornUser = ""
+
 # Extra packages to install on top of the curated set (space-separated; names
 # valid for THIS machine's OS). Empty = none. Per-machine alternative: drop a
 # ~/.config/athome/extra-packages file (one package per line). See docs/customizing.md.

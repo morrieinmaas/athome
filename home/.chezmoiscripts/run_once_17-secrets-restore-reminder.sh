@@ -15,8 +15,8 @@ command -v secrets-restore >/dev/null 2>&1 || exit 0
 
 # Only nudge once rbw is usable (unlocked) and the vault hasn't been restored yet.
 rbw unlocked >/dev/null 2>&1 || exit 0
-# Heuristic "already restored?": the reference canary env exists.
-[[ -f "$HOME/.secrets/canary/.env" ]] && exit 0
+# Heuristic "already restored?": any per-project secrets env file exists.
+compgen -G "$HOME/.secrets/*/.env" >/dev/null 2>&1 && exit 0
 
 echo "==> Encrypted secrets vault not restored on this machine yet."
 echo "    Run \`secrets-restore\` to pull + decrypt your ~/.secrets env files."

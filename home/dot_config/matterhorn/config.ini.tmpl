@@ -1,0 +1,58 @@
+# Matterhorn configuration — managed by chezmoi
+# Docs: https://github.com/matterhorn-chat/matterhorn/blob/master/docs/sample-config.ini
+#
+# Nothing real is committed: the server host + login come from chezmoi prompts
+# (matterhornHost / matterhornUser — cached in ~/.config/chezmoi/chezmoi.toml,
+# never tracked), and the password is fetched from the macOS Keychain via
+# `passcmd` (never stored in plaintext). Launch from tmux with `prefix N`
+# (display-popup), or just run `matterhorn`.
+
+# All settings live under this required section header.
+[mattermost]
+{{ if and .matterhorn_host .matterhorn_user }}
+# ---- Required: server connection (NO https://, NO trailing path) ----
+host = {{ .matterhorn_host }}
+
+# Team to open on launch (URL slug). Leave commented to get a team picker.
+# team = myteam
+
+# Port. Matterhorn uses TLS by default regardless of the value, so :8065 still
+# connects over https — there is no urlScheme key.
+port = 8065
+
+# ---- Authentication ----
+# Username login. Password is fetched from the macOS Keychain (never in plaintext
+# here). Create the item once:
+#   security add-generic-password -s matterhorn -a {{ .matterhorn_user }} -w
+user = {{ .matterhorn_user }}
+passcmd = security find-generic-password -s matterhorn -a {{ .matterhorn_user }} -w
+{{- else }}
+# No server configured. Set matterhornHost + matterhornUser via `chezmoi init`
+# prompts (or add matterhorn_host / matterhorn_user to ~/.config/chezmoi/
+# chezmoi.toml [data]) and re-apply. Then create the Keychain password item:
+#   security add-generic-password -s matterhorn -a you@example.com -w
+# host = mattermost.example.com
+# port = 8065
+# user = you@example.com
+# passcmd = security find-generic-password -s matterhorn -a you@example.com -w
+{{- end }}
+
+# ---- UI defaults ----
+# Built-in themes only: builtin:dark | builtin:light.
+theme = builtin:dark
+showOlderEdits = True
+showBackground = active
+showMessageTimestamps = True
+hyperlinkURLs = True
+
+# ---- Keybinding overrides (avoid tmux / vim-tmux-navigator conflicts) ----
+# tmux prefix is C-s, and christoomey/vim-tmux-navigator binds bare
+# C-h/C-j/C-k/C-l for pane navigation — those keystrokes never reach matterhorn.
+# Of matterhorn's defaults, only two land on stolen keys:
+#   C-s -> select-mode                (eaten by the tmux prefix)
+#   C-k -> editor-kill-to-end-of-line (eaten by vim-tmux-navigator pane-up)
+# Alt (M-) keys are free in this tmux setup, so remap onto unused Alt combos.
+# Notation matches `matterhorn -k -f markdown`.
+[keybindings]
+select-mode = M-v
+editor-kill-to-end-of-line = M-w

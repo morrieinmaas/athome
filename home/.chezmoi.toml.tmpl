@@ -24,6 +24,12 @@
      first workspace to connect (see ~/.config/slk/config.toml.tmpl). */ -}}
 {{- $slackWorkspace      := promptStringOnce . "slackDefaultWorkspace" "slk default workspace slug, e.g. acme (empty = none; slk uses first workspace to connect)" "" -}}
 {{- $slackTeamId         := promptStringOnce . "slackTeamId"         "slk default workspace Slack team id, e.g. T0XXXXXXX (empty = none; required for the slug above to resolve)" "" -}}
+{{/* matterhorn (Mattermost TUI) server + login. Prompted (not hardcoded) so the
+     config template stays publishable — no real host/email lands in the repo.
+     The password is never here (macOS Keychain via passcmd). Empty = no server
+     block; you fill host/user later. */ -}}
+{{- $matterhornHost      := promptStringOnce . "matterhornHost"      "Matterhorn (Mattermost) server host, NO https://, e.g. mattermost.example.com (empty = none)" "" -}}
+{{- $matterhornUser      := promptStringOnce . "matterhornUser"      "Matterhorn login (email or username), e.g. you@example.com (empty = none)" "" -}}
 
 # No `encryption` key: age was dropped (D5) — there are no encrypted_* files in
 # this repo, and with `pass` gone there's no driver for encrypted-files-in-repo.
@@ -106,3 +112,9 @@
     # Consumed by ~/.config/slk/config.toml.tmpl.
     slack_default_workspace = {{ $slackWorkspace | quote }}
     slack_team_id           = {{ $slackTeamId | quote }}
+
+    # matterhorn (Mattermost TUI) server + login. Empty = no server block in the
+    # rendered config (see ~/.config/matterhorn/config.ini.tmpl). Password stays
+    # in the macOS Keychain. Prompted → no real host/email hardcoded in the repo.
+    matterhorn_host = {{ $matterhornHost | quote }}
+    matterhorn_user = {{ $matterhornUser | quote }}

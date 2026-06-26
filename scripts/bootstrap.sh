@@ -196,6 +196,8 @@ load_config() {
   : "${ATHOME_AGENTS_REPO:=$(cfg_get agentsRepo)}"
   : "${ATHOME_SLACK_WORKSPACE:=$(cfg_get slackDefaultWorkspace)}"  # slk default workspace slug (empty = none)
   : "${ATHOME_SLACK_TEAM_ID:=$(cfg_get slackTeamId)}"              # its Slack team id, e.g. T0XXXXXXX (empty = none)
+  : "${ATHOME_MATTERHORN_HOST:=$(cfg_get matterhornHost)}"         # Mattermost server host (empty = none)
+  : "${ATHOME_MATTERHORN_USER:=$(cfg_get matterhornUser)}"         # Mattermost login email/username (empty = none)
   : "${ATHOME_NETBIRD_MGMT_URL:=$(cfg_get netbirdManagementUrl)}"
   : "${ATHOME_NORDVPN_COUNTRY:=$(cfg_get nordvpnCountry)}"
   : "${ATHOME_EXTRA_PACKAGES:=$(cfg_get extraPackages)}"
@@ -858,6 +860,8 @@ cat > "$chezmoi_config" <<TOMLSEED
     extraPackages        = "$(toml_str "${ATHOME_EXTRA_PACKAGES:-}")"
     slackDefaultWorkspace = "$(toml_str "${ATHOME_SLACK_WORKSPACE:-}")"
     slackTeamId          = "$(toml_str "${ATHOME_SLACK_TEAM_ID:-}")"
+    matterhornHost       = "$(toml_str "${ATHOME_MATTERHORN_HOST:-}")"
+    matterhornUser       = "$(toml_str "${ATHOME_MATTERHORN_USER:-}")"
     includeAgents        = $INCLUDE_AGENTS
 TOMLSEED
 

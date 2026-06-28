@@ -56,12 +56,33 @@ echo "→ review above, then commit + push (e.g. chezmoi git -- add -A && chezmo
 """
 
 [tasks.status]
-description = "chezmoi status"
-run = "chezmoi status"
+description = "What's drifted on this machine vs the repo (changed files + pending scripts)."
+run = """
+out="$(chezmoi status)"
+if [ -z "$out" ]; then
+  echo "✓ in sync — no managed files differ and no scripts are pending."
+else
+  echo "$out"
+  echo
+  echo "codes: col1 = last-applied vs target · col2 = on-disk vs target"
+  echo "       M=modified  A=added  D=deleted  R=script would run"
+  echo "→ content of the changes: 'mise run diff'   ·   full apply preview: 'mise run dry-run'"
+fi
+"""
 
 [tasks.diff]
-description = "chezmoi diff"
+description = "chezmoi diff — line-level content of what apply would change."
 run = "chezmoi diff"
+
+[tasks.dry-run]
+description = "Preview a full `apply` WITHOUT changing anything (managed files + which scripts would run)."
+run = """
+chezmoi apply --dry-run --verbose
+echo
+echo "↑ DRY RUN — nothing was changed."
+echo "  Caveat: scripts show as 'would run', but their side-effects (package installs,"
+echo "  systemd enables, etc.) are NOT previewed — only chezmoi-managed FILES are diffable."
+"""
 
 [tasks.lint]
 description = "shellcheck the shell scripts (same config as CI)"

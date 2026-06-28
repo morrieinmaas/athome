@@ -1,5 +1,13 @@
 # ~/.ssh/config — managed by chezmoi
 
+# ── Machine-local hosts (untracked, NOT synced) ──────────────────────────────
+# Confidential / per-machine SSH hosts — work jumphosts, internal infra, anything
+# that must never land in this (publishable) repo — go in ~/.ssh/config.local,
+# created on the machine and never tracked by chezmoi. A missing Include file is
+# silently ignored by ssh, so this is safe on every machine. Shell equivalent for
+# confidential aliases/env: ~/.zsh/local.zsh.
+Include config.local
+
 Host *
     IdentitiesOnly yes
     ServerAliveInterval 60

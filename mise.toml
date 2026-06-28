@@ -65,7 +65,8 @@ else
   echo "$out"
   echo
   echo "codes: col1 = last-applied vs target · col2 = on-disk vs target"
-  echo "       M=modified  A=added  D=deleted  R=script would run"
+  echo "       M=modified  A=added  D=deleted  R=chezmoi would RUN this (shell) script on apply"
+  echo "note: run_before/run_after scripts run on EVERY apply by design → they always show R (not drift)."
   echo "→ content of the changes: 'mise run diff'   ·   full apply preview: 'mise run dry-run'"
 fi
 """

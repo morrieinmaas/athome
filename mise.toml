@@ -56,24 +56,30 @@ echo "→ review above, then commit + push (e.g. chezmoi git -- add -A && chezmo
 """
 
 [tasks.status]
-description = "What's drifted on this machine vs the repo (changed files + pending scripts)."
+description = "What's actually drifted on this machine vs the repo (FILES only — scripts are not drift)."
 run = """
-out="$(chezmoi status)"
-if [ -z "$out" ]; then
-  echo "✓ in sync — no managed files differ and no scripts are pending."
+files="$(chezmoi status --exclude=scripts)"
+nscripts="$(chezmoi status 2>/dev/null | grep -c chezmoiscripts || true)"
+if [ -n "$files" ]; then
+  echo "$files"
+  echo "  (col1 = last-applied vs target · col2 = on-disk vs target · M=modified A=added D=deleted)"
 else
-  echo "$out"
-  echo
-  echo "codes: col1 = last-applied vs target · col2 = on-disk vs target"
-  echo "       M=modified  A=added  D=deleted  R=chezmoi would RUN this (shell) script on apply"
-  echo "note: run_before/run_after scripts run on EVERY apply by design → they always show R (not drift)."
-  echo "→ content of the changes: 'mise run diff'   ·   full apply preview: 'mise run dry-run'"
+  echo "✓ files in sync — no managed file differs."
 fi
+[ "${nscripts:-0}" -gt 0 ] && echo "ℹ ${nscripts} setup script(s) would run on apply — normal for run_before/after, NOT drift. Preview: 'mise run dry-run'."
+echo "→ file changes: 'mise run diff'   ·   full apply preview (incl. scripts): 'mise run dry-run'"
 """
 
 [tasks.diff]
-description = "chezmoi diff — line-level content of what apply would change."
-run = "chezmoi diff"
+description = "Line-level content of FILE changes apply would make (scripts excluded — see 'mise run dry-run')."
+run = """
+out="$(chezmoi diff --exclude=scripts)"
+if [ -n "$out" ]; then
+  echo "$out"
+else
+  echo "✓ no managed file would change. (Setup scripts run on apply → preview with 'mise run dry-run'.)"
+fi
+"""
 
 [tasks.dry-run]
 description = "Preview a full `apply` WITHOUT changing anything (managed files + which scripts would run)."

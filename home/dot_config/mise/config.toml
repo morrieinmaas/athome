@@ -77,6 +77,12 @@ jj         = "latest"   # Jujutsu (was jj / jujutsu)
 # so it lives in packages.yaml — a cargo: source-compile on every fresh machine
 # would be slow and a single point of failure for direnv/VPN secrets.
 
+# 1Password CLI (binary: op) — for 1Password vaults (e.g. work/client vaults);
+# personal secrets stay in Bitwarden/rbw, this sits alongside. Unlike rbw it IS
+# in the mise registry (aqua:1password/cli), so it installs as a portable binary
+# cross-platform with no per-OS pkg/repo dance. `op signin` / `op read` at runtime.
+"1password-cli" = "latest"
+
 # ── Terminal / shell environment ─────────────────────────────────────────────
 direnv     = "latest"          # per-dir env (init in completions.zsh)
 chezmoi    = "latest"          # dotfile manager (also self-bootstrapped by bootstrap.sh)

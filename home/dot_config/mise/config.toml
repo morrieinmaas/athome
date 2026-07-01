@@ -51,6 +51,7 @@ sd         = "latest"   # sed alternative
 grex       = "latest"   # regex generator
 choose     = "latest"   # field selector (was choose / choose-rust)
 ast-grep   = "latest"   # structural search/rewrite
+lychee     = "0.24.2"   # link/URL checker for docs+markdown. Pinned as you had it in the live config (bump to "latest" if intentional)
 
 # ── Modern CLI: system / inspection ─────────────────────────────────────────
 dust       = "latest"        # du

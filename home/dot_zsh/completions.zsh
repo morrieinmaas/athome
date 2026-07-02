@@ -37,6 +37,7 @@ if command -v uv >/dev/null 2>&1; then
 fi
 _zcache uvx       uvx --generate-shell-completion zsh
 _zcache bun       bun completions          # mise-provided everywhere → not machine-local
+_zcache op        op completion zsh        # 1Password CLI
 _zcache chezmoi   chezmoi completion zsh
 # `mise activate` does NOT register completions — cache them so `mise run <tab>`
 # etc. complete (task-name completion also needs the `usage` CLI, via mise config).

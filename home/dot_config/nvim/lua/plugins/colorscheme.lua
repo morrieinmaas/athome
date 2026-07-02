@@ -1,6 +1,6 @@
 -- Colorschemes + the dark/light + theme-picker wiring.
 --
--- All six colorscheme plugins are declared lazy and loaded on demand by
+-- All colorscheme plugins are declared lazy and loaded on demand by
 -- config/theme.apply() (it reads ~/.config/themes/active). Each is configured to
 -- derive its palette from vim.opt.background, so the ONE colorscheme handles both
 -- light and dark and auto-dark-mode.nvim just flips background. Switch the family
@@ -43,6 +43,22 @@ return {
     lazy = true,
     opts = { background = { dark = "wave", light = "lotus" } },
   },
+
+  -- ── Warm-paper + solarized family ────────────────────────────────────────────
+  -- melange + zenbones follow vim.opt.background (one :colorscheme name for both);
+  -- flexoki + selenized have no background-following scheme, so config/theme.lua
+  -- maps them to explicit light/dark names. zenbones runs in compat mode so it
+  -- needs no lush.nvim; base16-nvim supplies selenized (base16-selenized-*).
+  { "kepano/flexoki-neovim", lazy = true }, -- flexoki-light / flexoki-dark
+  { "savq/melange-nvim", lazy = true }, -- melange (follows background)
+  {
+    "zenbones-theme/zenbones.nvim",
+    lazy = true,
+    init = function()
+      vim.g.zenbones_compat = 1 -- render without the lush.nvim dependency
+    end,
+  }, -- zenbones (follows background)
+  { "RRethy/base16-nvim", lazy = true }, -- selenized (base16-selenized-light/dark)
 
   -- Owns the dark/light toggle. On startup AND whenever the OS appearance flips,
   -- it sets background then re-applies the active theme so the palette follows.

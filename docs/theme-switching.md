@@ -15,7 +15,7 @@ Or from tmux: **`prefix T`** opens the picker in a `display-popup` (same style a
 the `prefix P` pet-icon picker).
 
 Available: `gruvbox` (default) · `everforest` · `catppuccin` · `tokyonight` ·
-`rose-pine` · `kanagawa`.
+`rose-pine` · `kanagawa` · `flexoki` · `melange` · `zenbones` · `selenized`.
 
 ## How it works
 
@@ -27,13 +27,14 @@ theme name is written to **`~/.config/themes/active`**.
 |-----|-----------|
 | **ghostty** | picker rewrites the live `theme = dark:…,light:…` line and hot-reloads it with `SIGUSR2` — no restart, no ⌘⇧, |
 | **tmux** | pills read `@theme_*` user options; `apply-tmux.sh` sets them live, `tmux.conf` restores the pick on a fresh server |
-| **nvim** | 6 colorscheme plugins, all deriving light/dark from `vim.opt.background`; `config/theme.lua` reads `active` and fs-watches it, so open nvims switch instantly. `auto-dark-mode.nvim` still owns the OS toggle |
+| **nvim** | 10 colorscheme plugins; most derive light/dark from `vim.opt.background`, but flexoki + selenized ship separate names so `config/theme.lua` maps them to `{ light, dark }` and picks per background. `config/theme.lua` reads `active` and fs-watches it, so open nvims switch instantly. `auto-dark-mode.nvim` still owns the OS toggle |
 | **btm** (bottom) | **not switched** — its config styles everything with ANSI `Reset` + named accent colours, so it follows the terminal's active palette automatically (any family, light or dark). See `dot_config/bottom/bottom.toml` |
 | **bat / delta / zed** | stay **gruvbox** — the only family all three bundle (bat ships no everforest/catppuccin/etc.) |
+| **slk** (Slack TUI) | follows for the six original families; flexoki/melange/zenbones/selenized have no slk built-in, so they fall back to **gruvbox** (readable). tmux/superfile/gh-dash still track them via the hex palette |
 
 btm (bottom) replaced btop. Rather than per-theme `.theme` files it colours every
 element with ANSI `Reset` (the terminal's own foreground) + named accents, so it
-tracks whatever ghostty palette is live across all six families with no rewrite
+tracks whatever ghostty palette is live across all ten families with no rewrite
 and no OS-appearance branch. (btop washed out on the light themes because, with
 `theme_background = false`, it painted its own light foreground on the transparent
 terminal background — `Reset` can't.)

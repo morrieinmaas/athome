@@ -14,7 +14,7 @@
 # Sourced by ~/.local/bin/theme and ~/.config/themes/apply-tmux.sh.
 
 # shellcheck disable=SC2034  # consumed by sourcing scripts (theme, apply-tmux.sh)
-THEME_LIST="gruvbox everforest catppuccin tokyonight rose-pine kanagawa"
+THEME_LIST="gruvbox everforest catppuccin tokyonight rose-pine kanagawa flexoki melange zenbones selenized"
 
 theme_ghostty() {
   case "$1" in
@@ -24,6 +24,10 @@ theme_ghostty() {
     tokyonight) echo "dark:TokyoNight Moon,light:TokyoNight Day" ;;
     rose-pine)  echo "dark:Rose Pine Moon,light:Rose Pine Dawn" ;;
     kanagawa)   echo "dark:Kanagawa Wave,light:Kanagawa Lotus" ;;
+    flexoki)    echo "dark:Flexoki Dark,light:Flexoki Light" ;;
+    melange)    echo "dark:Melange Dark,light:Melange Light" ;;
+    zenbones)   echo "dark:Zenbones Dark,light:Zenbones Light" ;;
+    selenized)  echo "dark:Selenized Dark,light:Selenized Light" ;;
   esac
 }
 
@@ -35,6 +39,10 @@ theme_nvim() {
     tokyonight) echo tokyonight ;;
     rose-pine)  echo rose-pine ;;
     kanagawa)   echo kanagawa ;;
+    flexoki)    echo "flexoki-light/dark" ;;   # per-mode names (see nvim config/theme.lua)
+    melange)    echo melange ;;
+    zenbones)   echo zenbones ;;
+    selenized)  echo "base16-selenized-*" ;;   # per-mode names (see nvim config/theme.lua)
   esac
 }
 
@@ -50,6 +58,10 @@ theme_slk() {  # $1 = family, $2 = mode (dark|light)
     tokyonight:dark)  echo "Tokyo Night Storm" ;; tokyonight:light) echo "Tokyo Night Light" ;;
     rose-pine:dark)   echo "Rosé Pine Moon" ;;   rose-pine:light)   echo "Rosé Pine Dawn" ;;
     kanagawa:dark)    echo "Kanagawa Dragon" ;;  kanagawa:light)    echo "Kanagawa Lotus" ;;
+    # flexoki/melange/zenbones/selenized: slk ships no matching built-in, so they
+    # fall through to apply-slk.sh's "unknown family → gruvbox" default (Slack
+    # stays readable). Same hands-off note as bat/delta above. Wire slk's ANSI
+    # (follows-terminal) theme here later if you want Slack to match these too.
   esac
 }
 
@@ -68,6 +80,10 @@ theme_palette() {  # $1 = family, $2 = mode (dark|light) -> BG FG BLUE YELLOW GR
     tokyonight) echo 'BG=#222436 FG=#c8d3f5 BLUE=#82aaff YELLOW=#ffc777 GREEN=#c3e88d GREY=#828bb8 MUTED=#636da6' ;;
     rose-pine)  echo 'BG=#232136 FG=#e0def4 BLUE=#9ccfd8 YELLOW=#f6c177 GREEN=#3e8fb0 GREY=#6e6a86 MUTED=#908caa' ;;
     kanagawa)   echo 'BG=#1f1f28 FG=#dcd7ba BLUE=#7e9cd8 YELLOW=#e6c384 GREEN=#98bb6c GREY=#727169 MUTED=#957fb8' ;;
+    flexoki)    echo 'BG=#100f0f FG=#cecdc3 BLUE=#4385be YELLOW=#d0a215 GREEN=#879a39 GREY=#575653 MUTED=#878580' ;;
+    melange)    echo 'BG=#292522 FG=#ece1d7 BLUE=#7f91b2 YELLOW=#ebc06d GREEN=#85b695 GREY=#867462 MUTED=#c1a78e' ;;
+    zenbones)   echo 'BG=#1c1917 FG=#b4bdc3 BLUE=#6099c0 YELLOW=#b77e64 GREEN=#819b69 GREY=#777d81 MUTED=#4d5154' ;;
+    selenized)  echo 'BG=#103c48 FG=#adbcbc BLUE=#4695f7 YELLOW=#dbb32d GREEN=#75b938 GREY=#2d5b69 MUTED=#72898f' ;;
   esac
 }
 
@@ -87,5 +103,9 @@ theme_tmux() {
     tokyonight) echo 'BG=#e1e2e7 FG=#3760bf BLUE=#2e7de9 YELLOW=#8c6c3e GREEN=#587539 GREY=#848cb5 MUTED=#9da3c2' ;;
     rose-pine)  echo 'BG=#faf4ed FG=#575279 BLUE=#56949f YELLOW=#ea9d34 GREEN=#286983 GREY=#9893a5 MUTED=#9893a5' ;;
     kanagawa)   echo 'BG=#f2ecbc FG=#545464 BLUE=#4d699b YELLOW=#cc6d00 GREEN=#6f894e GREY=#8a8980 MUTED=#a09cac' ;;
+    flexoki)    echo 'BG=#fffcf0 FG=#100f0f BLUE=#205ea6 YELLOW=#d0a215 GREEN=#879a39 GREY=#b7b5ac MUTED=#6f6e69' ;;
+    melange)    echo 'BG=#f1f1f1 FG=#54433a BLUE=#465aa4 YELLOW=#a06d00 GREEN=#3a684a GREY=#a98a78 MUTED=#7d6658' ;;
+    zenbones)   echo 'BG=#f0edec FG=#2c363c BLUE=#286486 YELLOW=#944927 GREEN=#4f6c31 GREY=#596a75 MUTED=#859fae' ;;
+    selenized)  echo 'BG=#fbf3db FG=#3a4d53 BLUE=#0072d4 YELLOW=#ad8900 GREEN=#489100 GREY=#d5cdb6 MUTED=#909995' ;;
   esac
 }

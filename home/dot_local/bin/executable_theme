@@ -6,7 +6,8 @@
 # (the only family all three bundle). See ~/.config/themes/registry.sh.
 #
 #   theme              # fzf picker (also: tmux `prefix T` popup)
-#   theme <name>       # set directly: gruvbox everforest catppuccin tokyonight rose-pine kanagawa
+#   theme <name>       # set directly: gruvbox everforest catppuccin tokyonight
+#                      #   rose-pine kanagawa flexoki melange zenbones selenized
 #   theme --current    # print the active theme
 #   theme --list       # list available themes
 #   theme --swatch <n> # print a colour preview (used by the picker's fzf preview)

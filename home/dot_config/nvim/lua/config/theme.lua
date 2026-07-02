@@ -11,6 +11,9 @@ local M = {}
 local active_file = vim.fn.expand("~/.config/themes/active")
 
 -- theme name -> { plugin = lazy spec name (for on-demand load), scheme = :colorscheme arg }
+-- scheme is EITHER a string (the plugin derives light/dark from vim.opt.background)
+-- OR a { light = "…", dark = "…" } table for plugins that ship separate schemes
+-- (flexoki, selenized) — apply() picks the right name for the current background.
 M.themes = {
   gruvbox       = { plugin = "gruvbox.nvim",    scheme = "gruvbox" },
   everforest    = { plugin = "everforest",      scheme = "everforest" },
@@ -18,6 +21,10 @@ M.themes = {
   tokyonight    = { plugin = "tokyonight.nvim", scheme = "tokyonight" },
   ["rose-pine"] = { plugin = "rose-pine",       scheme = "rose-pine" },
   kanagawa      = { plugin = "kanagawa.nvim",   scheme = "kanagawa" },
+  melange       = { plugin = "melange-nvim",    scheme = "melange" },
+  zenbones      = { plugin = "zenbones.nvim",   scheme = "zenbones" },
+  flexoki       = { plugin = "flexoki-neovim",  scheme = { light = "flexoki-light", dark = "flexoki-dark" } },
+  selenized     = { plugin = "base16-nvim",     scheme = { light = "base16-selenized-light", dark = "base16-selenized-dark" } },
 }
 
 function M.read()
@@ -32,7 +39,11 @@ function M.apply()
   local t = M.themes[M.read()]
   -- ensure the colorscheme's plugin is loaded (they're lazy), then apply
   pcall(function() require("lazy").load({ plugins = { t.plugin } }) end)
-  pcall(vim.cmd.colorscheme, t.scheme)
+  local scheme = t.scheme
+  if type(scheme) == "table" then -- plugin has no background-following name
+    scheme = (vim.opt.background:get() == "light") and scheme.light or scheme.dark
+  end
+  pcall(vim.cmd.colorscheme, scheme)
 end
 
 function M.watch()

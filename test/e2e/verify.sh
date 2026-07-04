@@ -35,6 +35,20 @@ check "personal/.envrc seeded"               test -f "$HOME/personal/.envrc"
 check "mise on PATH"                          command -v mise
 check "direnv installed via mise"            command -v direnv
 
+# Supply-chain guard: the AUR malware scanner is installed and this freshly
+# provisioned box is NOT infected (scanner rc=2). Warnings (rc=1) don't fail the
+# e2e — same policy as the bootstrap gate (run_once_after_21). Arch-only: skipped
+# where there's no AUR (Fedora), so this verify.sh stays distro-shared.
+if command -v pacman >/dev/null 2>&1; then
+  aur-malware-check >/dev/null 2>&1; arc=$?
+  if [ "$arc" -ne 2 ]; then
+    printf '  \033[32m✓\033[0m %s\n' "aur-malware-check installed, box not infected (rc=$arc)"
+  else
+    printf '  \033[31m✗\033[0m %s\n' "aur-malware-check: INFECTED (rc=2)"
+    fail=1
+  fi
+fi
+
 # Headless guards fired (system scripts were skipped, not failed).
 check "no ~/work on personal machine"        bash -c '! test -d "$HOME/work"'
 

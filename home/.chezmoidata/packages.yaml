@@ -142,6 +142,14 @@ linux:
     # ── go tooling not covered by the mise go runtime ──
     - go-tools                       # gopls, goimports, godoc, etc. — provides `goimports`
   aur:
+    # SUPPLY-CHAIN NOTE: AUR packages (esp. -bin/-git) are attacker-controlled
+    # build scripts. After the June 2026 `atomic-lockfile` campaign (1600+ AUR
+    # packages compromised), provisioning runs `aur-malware-check` and ABORTS the
+    # bootstrap if any installed AUR package is a known-bad one (run_once_after_21
+    # → ~/.local/bin/aur-malware-check, upstream lenucksi/aur-malware-check). Run
+    # it anytime: `aur-malware-check` (0 clean · 1 warn · 2 infected). Keep this
+    # list minimal and prefer official-repo / mise sources where possible.
+    #
     # yay itself is bootstrapped by run_once_before_01; listed here so
     # subsequent re-runs treat it like any other AUR package.
     - yay

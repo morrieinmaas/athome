@@ -118,3 +118,28 @@
     # in the macOS Keychain. Prompted → no real host/email hardcoded in the repo.
     matterhorn_host = {{ $matterhornHost | quote }}
     matterhorn_user = {{ $matterhornUser | quote }}
+
+    # ── Prompt-key mirrors — DO NOT consume these in templates ────────────────
+    # promptStringOnce/promptBoolOnce decide whether to prompt by looking up the
+    # answer under the PROMPT key (camelCase). Templates consume the snake_case
+    # keys above, so without these mirrors a re-render (`chezmoi init`, or ANY
+    # change to this config template) can't find the prior answers and RE-PROMPTS
+    # — silently blanking configured values. Persisting the camelCase keys makes
+    # re-init prompt-free and non-destructive. (machineType/hostname/githubHandle/
+    # githubId above are already camelCase → they need no mirror.) When you add a
+    # prompt with a snake_case data key, add its camelCase mirror here too.
+    netbirdManagementUrl  = {{ $netbirdMgmtUrl | quote }}
+    nordvpnCountry        = {{ $nordvpnCountry | quote }}
+    bitwardenUrl          = {{ $bitwardenUrl | quote }}
+    workEmail             = {{ $workEmail | quote }}
+    sidebizEmail          = {{ $sidebizEmail | quote }}
+    personalName          = {{ $personalName | quote }}
+    workName              = {{ $workName | quote }}
+    sidebizName           = {{ $sidebizName | quote }}
+    agentsRepo            = {{ $agentsRepo | quote }}
+    extraPackages         = {{ $extraPackages | quote }}
+    slackDefaultWorkspace = {{ $slackWorkspace | quote }}
+    slackTeamId           = {{ $slackTeamId | quote }}
+    matterhornHost        = {{ $matterhornHost | quote }}
+    matterhornUser        = {{ $matterhornUser | quote }}
+    includeAgents         = {{ $includeAgents }}

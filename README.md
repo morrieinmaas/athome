@@ -70,6 +70,18 @@ non-interactive automatically.
 
 ### From bare metal (no OS yet)
 
+**Which path is mine?**
+
+- **macOS** — the OS is already there, so there's no bare-metal step. Start at
+  [Quick start](#quick-start-fresh-machine).
+- **Linux** — pick a distro; both reach the *identical* end state (a GNOME + GDM
+  base that "just works", with niri + Noctalia layered on top by chezmoi — niri
+  the default session, GNOME one click away at the GDM gear):
+  - **Arch** → [Arch variant](#arch-variant) below (full `archinstall` walkthrough + netboot).
+  - **Fedora** → [Fedora variant](#fedora-variant) further down (Workstation installer, shorter).
+
+#### Arch variant
+
 We don't ship a custom installer any more. Arch's own `archinstall` TUI
 is well-maintained, supports netboot out of the box, and one boot
 through it gets you to a working GNOME desktop + GDM; chezmoi then layers
@@ -211,12 +223,12 @@ with **Step 2** above. No USB stick needed.
 
 Authoritative reference: <https://wiki.archlinux.org/title/Netboot>.
 
-### From bare metal — Fedora variant
+#### Fedora variant
 
-Prefer Fedora? Same end-state, less to think about. **Fedora Workstation** (the
-GNOME spin) installs GNOME + GDM that already "just work" (external displays,
-floating windows), and chezmoi layers niri + Noctalia on top exactly like the
-Arch path.
+The other Linux path (the sibling of the [Arch variant](#arch-variant) above) —
+same end-state, less to think about. **Fedora Workstation** (the GNOME spin)
+installs GNOME + GDM that already "just work" (external displays, floating
+windows), and chezmoi layers niri + Noctalia on top exactly like the Arch path.
 
 | Step | What you do |
 | --- | --- |

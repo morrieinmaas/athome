@@ -58,10 +58,12 @@ theme_slk() {  # $1 = family, $2 = mode (dark|light)
     tokyonight:dark)  echo "Tokyo Night Storm" ;; tokyonight:light) echo "Tokyo Night Light" ;;
     rose-pine:dark)   echo "Rosé Pine Moon" ;;   rose-pine:light)   echo "Rosé Pine Dawn" ;;
     kanagawa:dark)    echo "Kanagawa Dragon" ;;  kanagawa:light)    echo "Kanagawa Lotus" ;;
-    # flexoki/melange/zenbones/selenized: slk ships no matching built-in, so they
-    # fall through to apply-slk.sh's "unknown family → gruvbox" default (Slack
-    # stays readable). Same hands-off note as bat/delta above. Wire slk's ANSI
-    # (follows-terminal) theme here later if you want Slack to match these too.
+    # flexoki/melange/zenbones/selenized: slk ships no matching NAMED theme, so
+    # they use slk's ANSI theme — it renders from the terminal's own 16-colour
+    # palette, which ghostty has already repainted to the picked family. So Slack
+    # follows the active theme (like btm does) instead of the gruvbox fallback.
+    flexoki:dark|melange:dark|zenbones:dark|selenized:dark)      echo "ANSI Dark" ;;
+    flexoki:light|melange:light|zenbones:light|selenized:light)  echo "ANSI Light" ;;
   esac
 }
 

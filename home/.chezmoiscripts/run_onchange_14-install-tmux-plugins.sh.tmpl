@@ -8,12 +8,30 @@ set -euo pipefail
 command -v tmux >/dev/null 2>&1 || { echo "tmux not installed; skipping"; exit 0; }
 [[ -d "$HOME/.config/tmux/plugins/tpm" ]] || { echo "tpm missing; chezmoi external should fetch on apply"; exit 0; }
 
+{{ if eq .chezmoi.os "darwin" -}}
+# Ghostty sets TERM=xterm-ghostty but macOS's terminfo db doesn't ship that
+# entry — compile it once from the app bundle so tmux/ssh/less resolve it.
+GHOSTTY_TI=/Applications/Ghostty.app/Contents/Resources/terminfo
+if [[ -d "$GHOSTTY_TI" ]] && ! infocmp xterm-ghostty >/dev/null 2>&1; then
+  infocmp -A "$GHOSTTY_TI" -x xterm-ghostty 2>/dev/null | tic -x - 2>/dev/null \
+    && echo "==> installed xterm-ghostty terminfo → ~/.terminfo" || true
+fi
+{{ end -}}
 # TPM needs a tmux server to run install_plugins. Start a headless one,
 # install, then tear it down — leaves no stale session.
-# Surface stderr so install failures (network, perms, bad plugin name)
-# show up in the apply log instead of being swallowed.
-tmux start-server
-tmux new-session -d -s _tpm_install
+# Terminfo safety: nanobrew's ncurses pins its search path at nanobrew's own
+# (empty) terminfo dir, and TERM here may be one no db carries (xterm-ghostty)
+# — either way tmux dies with "can't find terminfo database". A headless
+# throwaway server doesn't care about the real terminal, so force a TERM every
+# box ships and search the user + system dbs. And never let this optional step
+# abort the whole apply — plugins can always be installed later with prefix+I.
+unset TERMINFO
+export TERMINFO_DIRS="$HOME/.terminfo:/usr/share/terminfo${TERMINFO_DIRS:+:$TERMINFO_DIRS}"
+export TERM=xterm-256color
+if ! tmux start-server 2>&1 || ! tmux new-session -d -s _tpm_install 2>&1; then
+  echo "!! headless tmux unavailable — skipping plugin install (run prefix+I inside tmux)"
+  exit 0
+fi
 echo "==> tmux: install_plugins"
 "$HOME/.config/tmux/plugins/tpm/bin/install_plugins" || echo "!! install_plugins exited non-zero (continuing)"
 echo "==> tmux: update_plugins"

@@ -36,7 +36,7 @@ bun     = "latest"
 ripgrep    = "latest"   # rg
 fd         = "latest"
 bat        = "latest"
-eza        = "latest"
+"cargo:eza" = "latest"  # registry's asdf plugin pulls cargo-quickinstall URLs that 404 (darwin/arm64), and eza ships no darwin release binaries → cargo (binstall-accelerated)
 fzf        = "latest"
 zoxide     = "latest"
 "github:yorukot/superfile" = "latest"  # spf — TUI file manager (replaced yazi); github backend (not in registry)
@@ -96,7 +96,7 @@ task       = "latest"          # go-task (binary `task`)
 
 # ── HTTP / containers / k8s / CI ─────────────────────────────────────────────
 xh         = "latest"   # HTTPie-like client
-doggo      = "latest"   # modern dig
+"github:mr-karan/doggo" = "latest"   # modern dig. registry's aqua entry expects doggo_<ver>_Darwin_arm64 assets; upstream renamed to doggo-darwin-aarch64 → github backend
 croc       = "latest"   # relay file transfer
 lazydocker = "latest"
 helm       = "latest"   # k8s package manager

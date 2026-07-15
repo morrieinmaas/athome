@@ -70,4 +70,7 @@ else
   echo "   Most common cause: a GitHub API rate limit (mise had no token)." >&2
   echo "   Fix:  gh auth login   then re-run:  czu   (or: mise install)" >&2
   echo "   This script re-runs every apply, so it self-heals once that's done." >&2
+  # Exit non-zero so `chezmoi apply` (and `mise run apply`) report failure
+  # honestly instead of printing "✓ apply complete" over a broken toolchain.
+  exit 1
 fi

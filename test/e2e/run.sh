@@ -80,6 +80,20 @@ if [ "$platform" = "linux/amd64" ] && [ "$host_arch" != "x86_64" ] && [ "$host_a
   echo "==> emulated run ($host_arch host, $distro) — skipping heavy packages not asserted by verify.sh:"
   echo "    $skip_list"
   skip_env=(-e "ATHOME_SKIP_PACKAGES=$skip_list")
+  # mise-side twin of ATHOME_SKIP_PACKAGES: rustc gets killed under qemu
+  # ("rustc exited with non-zero status: no exit status"), which fails core:rust
+  # and cascades to every cargo-backend tool — and run_after_06 now (rightly)
+  # fails the apply on a broken mise install. None of these are asserted by
+  # verify.sh. Bare registry names that resolve to the cargo backend (tokei)
+  # are listed in both forms so the filter holds either way.
+  mise_skip="rust,tokei,cargo:tokei,cargo:eza,cargo:just-lsp,cargo:navi,cargo:procs,cargo:tealdeer"
+  echo "    (mise: $mise_skip)"
+  skip_env+=(-e "MISE_DISABLE_TOOLS=$mise_skip")
+  # Serialize mise installs under emulation: qemu-user's futex emulation can
+  # deadlock mise's parallel extract/verify threads (observed: a mise child
+  # futex-parked forever on gh-enhance with its download fd already deleted).
+  # One job at a time removes the thread contention qemu trips over.
+  skip_env+=(-e "MISE_JOBS=1")
 fi
 
 echo "==> running bootstrap e2e"

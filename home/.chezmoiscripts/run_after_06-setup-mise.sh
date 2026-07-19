@@ -57,7 +57,21 @@ echo "==> installing mise tools (idempotent — already-present tools are skippe
 # alone took ~5min under emulation and slows every fresh bootstrap. Non-fatal: if
 # it can't install, the main `mise install` below just falls back to compiling.
 mise install cargo-binstall 2>/dev/null || true
-if mise install; then
+# Retry on transient network failure before declaring defeat. Tool downloads hit
+# GitHub/Google over TLS and a single truncated transfer ("peer closed connection
+# without sending TLS close_notify") or a 503 shouldn't fail the whole apply —
+# especially now that a failure here is fatal (exit 1 below). Already-installed
+# tools are skipped, so a retry only re-attempts what's actually missing.
+mise_install_with_retry() {
+  local attempt
+  for attempt in 1 2 3; do
+    if mise install; then return 0; fi
+    [ "$attempt" -lt 3 ] || return 1
+    echo "   mise install attempt $attempt failed (often transient network) — retrying in $((attempt * 10))s" >&2
+    sleep "$((attempt * 10))"
+  done
+}
+if mise_install_with_retry; then
   # Regenerate shims so ~/.local/share/mise/shims (on PATH via path.zsh) carries
   # every tool — including ones the shell calls before `mise activate` runs.
   mise reshim 2>/dev/null || true

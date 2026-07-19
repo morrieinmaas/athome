@@ -77,11 +77,14 @@ install_one() {
   if out=$("${cmd[@]}" 2>&1); then
     printf '  ✓ %s: %s\n' "$label" "$pkg"
     INSTALL_OK=$((INSTALL_OK + 1))
-  elif [[ "$pm" == nb_cask ]] && printf '%s' "$out" | grep -q 'refusing to overwrite existing app'; then
-    # The app is already in /Applications (installed outside nb, or a prior run
-    # nb didn't record). nb won't clobber it — that's fine, not a failure. Skip
-    # gracefully and keep the existing app instead of flagging a bogus failure.
-    printf '  ✓ %s: %s (already present — kept existing app)\n' "$label" "$pkg"
+  elif [[ "$pm" == nb_cask ]] && printf '%s' "$out" | grep -q 'refusing to overwrite existing'; then
+    # The payload is already on disk (installed outside nb, or a prior run nb
+    # didn't record). nb won't clobber it — that's fine, not a failure. Skip
+    # gracefully and keep what's there instead of flagging a bogus failure.
+    # Matches the whole family of nb refusals, not just apps: it reports
+    # "refusing to overwrite existing <app|font|destination> at <path>", and
+    # font casks (font-jetbrains-mono-nerd-font) were being counted as failures.
+    printf '  ✓ %s: %s (already present — kept existing files)\n' "$label" "$pkg"
     INSTALL_OK=$((INSTALL_OK + 1))
   else
     printf '  ! %s: %s — install failed (continuing)\n' "$label" "$pkg" >&2

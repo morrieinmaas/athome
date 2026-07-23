@@ -22,12 +22,35 @@ _zcache() {
 }
 zcache-clear() { command rm -rf "$_ZCACHE_DIR"; print "zsh-init cache cleared — new shells rebuild it."; }
 
+# ─── Completion styles (vendored from oh-my-zsh lib/completion.zsh) ──────────
+# Kept when we purged OMZ: case-insensitive + partial-word matching, menu
+# select, and caching. compinit already ran in .zshrc; these zstyles apply on
+# the next completion. (Dropped OMZ's niche bits: the ignored-users list, the
+# Solaris ps branch, and COMPLETION_WAITING_DOTS.)
+zmodload -i zsh/complist
+WORDCHARS=''
+unsetopt menu_complete flowcontrol
+setopt auto_menu complete_in_word always_to_end
+bindkey -M menuselect '^o' accept-and-infer-next-history
+zstyle ':completion:*:*:*:*:*' menu select
+zstyle ':completion:*' matcher-list 'm:{[:lower:][:upper:]}={[:upper:][:lower:]}' 'r:|=*' 'l:|=* r:|=*'
+zstyle ':completion:*' special-dirs true
+zstyle ':completion:*' list-colors ''
+zstyle ':completion:*:*:kill:*:processes' list-colors '=(#b) #([0-9]#) ([0-9a-z-]#)*=01;34=0=01'
+zstyle ':completion:*:*:*:*:processes' command "ps -u $USERNAME -o pid,user,comm -w -w"
+zstyle ':completion:*:cd:*' tag-order local-directories directory-stack path-directories
+zstyle ':completion:*' use-cache yes
+zstyle ':completion:*' cache-path "${XDG_CACHE_HOME:-$HOME/.cache}/zsh/zcompcache"
+zstyle '*' single-ignored show
+autoload -U +X bashcompinit && bashcompinit   # bash-style completion functions
+
 # ─── Tool integrations (define functions / hooks / keybindings) ──────────────
 _zcache zoxide    zoxide init zsh        # z / zi + cd hook
 _zcache mise-act  mise activate zsh      # per-dir tool/env hook
 _zcache direnv    direnv hook zsh        # per-dir .envrc
 _zcache fzf       fzf --zsh              # Ctrl-R / Ctrl-T / Alt-C + completion
 _zcache worktrunk wt config shell init zsh   # wt() — switch/cd hook for git worktrees
+_zcache starship  starship init zsh          # prompt (replaced oh-my-zsh/dogenpunk)
 
 # ─── Explicit completions (tools that don't auto-register) ───────────────────
 # uv's completion is ~540KB — even cached, sourcing it costs ~28ms every startup.

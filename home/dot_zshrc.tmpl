@@ -35,8 +35,8 @@ bindkey '^R' history-incremental-search-backward
 [[ $- == *i* && -t 0 ]] && stty -ixon 2>/dev/null
 
 # ─── Completion system: init BEFORE any plugin that calls `compdef` ─────────
-# OMZP::direnv, OMZL::completion.zsh, zsh-completions, zsh-syntax-highlighting
-# all call compdef at load time. If compinit hasn't run, you see:
+# zsh-completions, zsh-syntax-highlighting, our vendored completion zstyles and
+# git-aliases (dot_zsh/) all call compdef at load time. If compinit hasn't run:
 #   zsh: compdef: command not found
 # Initialize early; zinit's `cdreplay -q` at the bottom of this file picks up
 # any compdef calls that fired before completions were fully built.
@@ -46,46 +46,18 @@ autoload -Uz compinit
 # trade. Run `compaudit` manually if a PM prefix ever becomes group-writable.
 compinit -C
 
-# ─── OMZ runtime prerequisites ──────────────────────────────────────────────
-# Cherry-picked OMZ snippets won't work without these — the full
-# oh-my-zsh.sh framework sets them automatically but we're skipping that.
-#   * `autoload colors`   → makes $fg[...], $bg[...], $reset_color work
-#   * `setopt PROMPT_SUBST` → lets PROMPT expand $(...) at render time
-# Without them themes like dogenpunk render their PROMPT string literally.
-autoload -Uz colors && colors
-setopt PROMPT_SUBST
-
-# OMZ libraries — load BEFORE the theme so git_prompt_info, git_prompt_status,
-# git_time_since_commit etc. exist when the theme's PROMPT references them.
-# async_prompt.zsh defines `_omz_register_handler` which lib/git.zsh calls
-# but doesn't source itself (upstream ohmyzsh issue #12322) — load it first.
-zinit snippet OMZL::async_prompt.zsh
-zinit snippet OMZL::git.zsh
-zinit snippet OMZL::directories.zsh
-zinit snippet OMZL::completion.zsh
-zinit snippet OMZL::history.zsh
-
-# Theme
-zinit snippet OMZT::dogenpunk
-
-# OMZ plugins
-zinit snippet OMZP::git
-zinit snippet OMZP::direnv
-zinit snippet OMZP::eza
-# docker/docker-compose: aliases (d*, dc*). `docker` is a shim to podman
-# (dot_local/bin); `docker-compose` is Compose v2 → podman via DOCKER_HOST.
-#
-# The OMZ docker plugin regenerates a `_docker` completion on every load. Its
-# version gate (`is-at-least 23 …`) needs `is-at-least` autoloaded; without it —
-# and for our podman shim, where `docker --version` reports podman 5.x (< 23) —
-# it falls to a branch that `cp`s a bundled completions/_docker the zinit
-# snippet never ships, erroring on every shell. Autoload is-at-least, and seed
-# that bundled file via atclone (real completion if docker is present, empty
-# otherwise) so the cp has a valid source and stays silent.
-autoload -Uz is-at-least
-zinit ice atclone'mkdir -p completions; command docker completion zsh >| completions/_docker 2>/dev/null || touch completions/_docker' atpull'%atclone'
-zinit snippet OMZP::docker
-zinit snippet OMZP::docker-compose
+# ─── oh-my-zsh purged (prompt → starship) ────────────────────────────────────
+# The prompt is now starship (dot_config/starship.toml; init cached in
+# dot_zsh/completions.zsh), replacing the OMZ dogenpunk theme. What moved where:
+#   • OMZ `git` plugin aliases  → dot_zsh/git-aliases.zsh (sourced below, BEFORE
+#     aliases.zsh so your own git overrides there still win)
+#   • OMZ history/directories libs → setopts in dot_zsh/exports.zsh
+#   • OMZ completion lib zstyles   → dot_zsh/completions.zsh
+#   • OMZ direnv/eza/docker plugins → dropped; aliases.zsh + the _zcache direnv
+#     hook already cover them (docker `d*` aliases + `docker`/`dc` completion are
+#     the only casualties — add back via _zcache if you miss them)
+# zinit STAYS — it still loads the fish-like zsh-autosuggestions /
+# zsh-completions / zsh-syntax-highlighting plugins below (never oh-my-zsh).
 
 # ─── zsh-autosuggestions: fish-like ghost-text suggestions ──────────────────
 # Config MUST be set BEFORE the plugin sources — the plugin reads these
@@ -126,7 +98,7 @@ zinit wait lucid for \
 zinit cdreplay -q
 
 # ─── Source thematic config (order matters: each builds on the prior) ───────
-for f in exports.zsh aliases.zsh functions.zsh completions.zsh; do
+for f in exports.zsh git-aliases.zsh aliases.zsh functions.zsh completions.zsh; do
   [[ -f "$HOME/.zsh/$f" ]] && source "$HOME/.zsh/$f"
 done
 

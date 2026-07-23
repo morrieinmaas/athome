@@ -46,7 +46,7 @@ export DOCKER_HOST="unix:///run/user/$(id -u)/podman/podman.sock"
 export TESTCONTAINERS_RYUK_DISABLED=true
 export TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE="${DOCKER_HOST#unix://}"
 
-# ─── History (in addition to OMZ history lib) ────────────────────────────────
+# ─── History (self-contained — was "+ OMZ history lib", OMZ now purged) ──────
 export HISTFILE="${HISTFILE:-$HOME/.zsh_history}"
 export HISTSIZE=100000
 export SAVEHIST=100000
@@ -54,9 +54,17 @@ setopt HIST_IGNORE_ALL_DUPS
 setopt HIST_REDUCE_BLANKS
 setopt HIST_VERIFY
 setopt SHARE_HISTORY
+setopt EXTENDED_HISTORY            # record command timestamps (was OMZ history lib)
+setopt HIST_IGNORE_SPACE          # a leading space keeps a command out of history
+setopt HIST_EXPIRE_DUPS_FIRST     # trim dup entries first when HISTFILE overflows
+
+# ─── Directory navigation (was OMZ directories lib) ──────────────────────────
+setopt AUTO_CD                     # cd by typing a dir name
+setopt AUTO_PUSHD                  # every cd pushes onto the dir stack
+setopt PUSHD_IGNORE_DUPS           # no duplicate stack entries
+setopt PUSHD_MINUS                 # `cd -N` counts from the top (natural)
 
 # ─── Misc QoL ────────────────────────────────────────────────────────────────
-setopt AUTO_CD                     # cd by typing dir name
 setopt EXTENDED_GLOB               # **/*.py etc.
 setopt INTERACTIVE_COMMENTS        # # comments allowed in shell
 setopt NO_BEEP

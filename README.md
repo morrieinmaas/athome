@@ -425,8 +425,9 @@ archinstall's GNOME spin installs GNOME + GDM at install time (see Step 2 in
 
 | Tool | Source | Notes |
 | --- | --- | --- |
-| zsh + zinit | [`home/dot_zshrc.tmpl`](home/dot_zshrc.tmpl) | direnv hook auto-loaded via `zinit snippet OMZP::direnv` |
-| `dogenpunk` zsh theme | `zinit snippet OMZT::dogenpunk` in `home/dot_zshrc.tmpl` | git-status-aware prompt |
+| zsh + zinit | [`home/dot_zshrc.tmpl`](home/dot_zshrc.tmpl) | oh-my-zsh purged; zinit stays for zsh-autosuggestions/-completions/-syntax-highlighting. direnv hook via `_zcache` in completions.zsh |
+| starship prompt | [`home/dot_config/starship.toml`](home/dot_config/starship.toml) | 2-line prompt recreating the old `dogenpunk` OMZ theme (host · ॐ · dir · git branch/status · commit-age); init cached in completions.zsh |
+| git aliases (vendored) | [`home/dot_zsh/git-aliases.zsh`](home/dot_zsh/git-aliases.zsh) | the oh-my-zsh `git` plugin alias set, vendored so nothing depends on OMZ; sourced before `aliases.zsh` so personal overrides win |
 | zoxide + shell completions | [`home/dot_zsh/completions.zsh`](home/dot_zsh/completions.zsh) | `z <dir>` instead of `cd ~/long/path` |
 | themes | no external fetches | bat, bottom, and zed use **built-in** gruvbox; ghostty (`Everforest Light/Dark - Medium`), tmux (native everforest pill bar), and nvim (`sainnhe/everforest`) are themed inline — all OS dark/light-aware |
 | `mise` (toolchain) | curl-bootstrapped via `mise.run` in [`run_once_06-setup-mise.sh`](home/.chezmoiscripts/run_once_06-setup-mise.sh) | **owns ALL portable CLI tooling** on both OSes — runtimes (node/go/rust/deno/bun) + the modern-CLI set (rg, fd, bat, eza, fzf, jq, lazygit, ruff, …). Declared in [`home/dot_config/mise/config.toml`](home/dot_config/mise/config.toml); per-project `.mise.toml` / `.tool-versions` override |

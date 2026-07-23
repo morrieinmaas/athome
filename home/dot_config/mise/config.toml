@@ -87,6 +87,7 @@ jj         = "latest"   # Jujutsu (was jj / jujutsu)
 
 # ── Terminal / shell environment ─────────────────────────────────────────────
 direnv     = "latest"          # per-dir env (init in completions.zsh)
+starship   = "latest"          # cross-shell prompt (replaced oh-my-zsh/dogenpunk). Config: dot_config/starship.toml; init in completions.zsh
 chezmoi    = "latest"          # dotfile manager (also self-bootstrapped by bootstrap.sh)
 gum        = "latest"          # shell-script UI
 just       = "latest"          # command runner

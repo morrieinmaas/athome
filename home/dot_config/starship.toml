@@ -1,0 +1,75 @@
+# ~/.config/starship.toml — managed by chezmoi.
+#
+# Recreates the oh-my-zsh "dogenpunk" theme (retired when we purged OMZ) as
+# closely as starship allows: a 2-line prompt —
+#   line 1 (left):  host · ॐ · dir · git-branch · commit-age
+#   line 1 (right): git file-change symbols · return status
+#   line 2:         ● prompt character (green ok / red error)
+# Colors mirror dogenpunk (host blue, dir cyan, branch green, file symbols
+# ✹blue ✚green ✖red ➜magenta ✭cyan).
+
+add_newline = true
+
+format = """
+$hostname[ ॐ ](bold white)$directory$git_branch${custom.git_age}
+$character"""
+
+right_format = "$git_status$status"
+
+# ── host · ॐ · dir ────────────────────────────────────────────────────────
+[hostname]
+ssh_only = false                 # dogenpunk showed %m always
+format = "[$hostname]($style)"
+style = "bold blue"
+
+[directory]
+format = "[$path]($style)"
+style = "bold cyan"
+truncation_length = 0            # full path, like dogenpunk's %~
+truncate_to_repo = false
+
+# ── git branch ────────────────────────────────────────────────────────────
+[git_branch]
+format = "[$symbol$branch]($style) "
+symbol = " "
+style = "bold green"
+
+# ── git file-change symbols (right side, dogenpunk colors) ────────────────
+[git_status]
+format = '([$all_status$ahead_behind]($style) )'
+style = "red"
+modified   = "[✹](blue)"
+staged     = "[✚](green)"
+deleted    = "[✖](red)"
+renamed    = "[➜](magenta)"
+untracked  = "[✭](cyan)"
+stashed    = "[≡](cyan)"
+ahead      = "[⇡](green)"
+behind     = "[⇣](yellow)"
+diverged   = "[⇕](magenta)"
+conflicted = "[═](yellow)"
+
+# ── commit age (dogenpunk's "time since last commit") ─────────────────────
+# ponytail: single fixed-color module (was dogenpunk's green<10m/yellow/red
+# gradient). Upgrade path: split into per-bucket custom modules with `when`
+# tests if the color gradient is wanted — costs an extra git spawn per bucket.
+[custom.git_age]
+description = "time since last commit"
+when = "git rev-parse --is-inside-work-tree"
+command = 's=$(( $(date +%s) - $(git log -1 --format=%ct 2>/dev/null || date +%s) )); if [ "$s" -lt 3600 ]; then echo "$((s/60))m"; elif [ "$s" -lt 86400 ]; then echo "$((s/3600))h"; else echo "$((s/86400))d"; fi'
+shell = ["sh"]
+format = "[$output]($style) "
+style = "yellow"
+
+# ── ● prompt character (dogenpunk line 2) ─────────────────────────────────
+[character]
+success_symbol = "[●](bold green)"
+error_symbol = "[●](bold red)"
+
+# ── return status (right side) ────────────────────────────────────────────
+[status]
+disabled = false
+format = "[$symbol]($style)"
+success_symbol = "[✔](bold green)"
+symbol = "[✗](bold red)"
+map_symbol = true

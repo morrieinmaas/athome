@@ -23,6 +23,25 @@ return function()
           { icon = " ", key = "q", desc = "Quit",            action = ":qa" },
         },
       },
+      -- snacks' default sections include { section = "startup" }, which hard-
+      -- requires `lazy.stats` — gone under vim.pack, so the dashboard errors on
+      -- open (e.g. `nvim .` / no-arg launch). Replace that footer with a
+      -- vim.pack plugin count; keep the default header + keys sections.
+      sections = {
+        { section = "header" },
+        { section = "keys", gap = 1, padding = 1 },
+        function()
+          return {
+            align = "center",
+            padding = 1,
+            text = {
+              { "⚡ ", hl = "footer" },
+              { tostring(#vim.pack.get()), hl = "special" },
+              { " plugins · vim.pack", hl = "footer" },
+            },
+          }
+        end,
+      },
     },
     gitbrowse = { enabled = true },            -- :lua Snacks.gitbrowse() opens current line in GH
     indent    = { enabled = true, animate = { enabled = false } },

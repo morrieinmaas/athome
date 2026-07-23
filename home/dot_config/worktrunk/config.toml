@@ -1,0 +1,17 @@
+# ~/.config/worktrunk/config.toml — managed by chezmoi (athome).
+# worktrunk (`wt`): git worktrees made as easy as branches, built for running
+# Claude Code / dev sessions in parallel. Docs: github.com/max-sixty/worktrunk
+#
+# NOTE: this file is NOT a chezmoi .tmpl — the `{{ ... }}` below is worktrunk's
+# own Tera template syntax and must reach the file verbatim. Do not rename to
+# .tmpl or chezmoi will try (and fail) to expand it as a Go template.
+
+# Worktrees live in a sibling ../worktrees/ dir, one flat level, branch name
+# sanitized (feature/auth -> ../worktrees/feature-auth). Keeps them out of the
+# repo and in one predictable place — the wtp convention, minus the empty
+# parent dirs that nested slashes leave behind.
+worktree-path = "{{ repo_path }}/../worktrees/{{ branch | sanitize }}"
+
+[merge]
+squash = true    # collapse the worktree branch into one commit on merge
+remove = true    # delete the worktree after a successful merge

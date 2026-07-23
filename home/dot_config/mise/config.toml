@@ -68,6 +68,7 @@ viddy      = "latest"        # modern watch(1)
 lazygit    = "latest"
 difftastic = "latest"   # difft
 jj         = "latest"   # Jujutsu (was jj / jujutsu)
+"cargo:worktrunk" = "latest"  # wt — git-worktree manager built for parallel Claude Code / dev sessions (binary: wt). Not in the mise registry → cargo (binstall-accelerated). Config: dot_config/worktrunk/config.toml; shell init: dot_zsh/completions.zsh.
 # gitleaks is NOT here — it's native (packages.yaml). The global git pre-commit
 # hook shells out to `gitleaks` and runs in contexts where mise isn't activated
 # (IDE git integration, scripts, the bootstrap itself); a mise shim wouldn't be

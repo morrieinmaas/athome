@@ -27,6 +27,7 @@ _zcache zoxide    zoxide init zsh        # z / zi + cd hook
 _zcache mise-act  mise activate zsh      # per-dir tool/env hook
 _zcache direnv    direnv hook zsh        # per-dir .envrc
 _zcache fzf       fzf --zsh              # Ctrl-R / Ctrl-T / Alt-C + completion
+_zcache worktrunk wt config shell init zsh   # wt() — switch/cd hook for git worktrees
 
 # ─── Explicit completions (tools that don't auto-register) ───────────────────
 # uv's completion is ~540KB — even cached, sourcing it costs ~28ms every startup.

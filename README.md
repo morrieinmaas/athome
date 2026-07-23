@@ -305,9 +305,9 @@ chezmoi init             # re-render the config from .chezmoi.toml.tmpl (clears 
 live file?"; col 2 = "what would `apply` do?". Codes: `A`dd, `M`odify, `D`elete,
 `R`un (script), space = nothing. Examples:
 
-- `MM .config/nvim/lazy-lock.json` — modified on both sides: `lazy.nvim` bumped
+- `MM .config/nvim/nvim-pack-lock.json` — modified on both sides: `vim.pack` bumped
   plugins locally **and** the source pins different versions. Routine churn (see
-  [docs/lazy-lock-workflow.md](docs/lazy-lock-workflow.md)), not a problem.
+  [docs/nvim-pack-lock-workflow.md](docs/nvim-pack-lock-workflow.md)), not a problem.
 - ` R .chezmoiscripts/00-…` — a script `apply` would **R**un; expected, scripts
   re-run by design (most are idempotent / no-op on a settled machine).
 
@@ -690,7 +690,7 @@ athome/
 │   └── bootstrap.sh                  # one-shot machine bootstrap (--machine, --ref, --no-agents, --import-from, --import-ssh)
 ├── infra/                            # pyinfra-based multi-machine deploy
 ├── examples/                         # sample .envrc files per identity (use ctx personal|work|sidebiz)
-├── docs/                             # secrets, spatial-model, lazy-lock, netbird-cloud
+├── docs/                             # secrets, spatial-model, nvim-pack-lock, netbird-cloud
 │
 └── home/                             # ← chezmoi source root (everything below applies to ~/)
     ├── .chezmoi.toml.tmpl            # first-run prompts → ~/.config/chezmoi/chezmoi.toml
@@ -713,7 +713,7 @@ athome/
     │   ├── direnv/{direnvrc,direnv.toml}        # use_rbw / use_aws / use_ctx helpers (Bitwarden via rbw)
     │   ├── ghostty/config.tmpl       # auto dark/light everforest (window-decoration gated to Linux)
     │   ├── tmux/tmux.conf            # TPM + sessionx + smart-manager + opensessions + everforest pill bar + icon picker (prefix P) + TUI launchers (gh-dash/slk)
-    │   ├── nvim/                     # lazy.nvim + built-in LSP (vim.lsp.enable, servers via mise) + snacks (picker/explorer) + harpoon2 + bufferline + treesitter + which-key + noice (cmdline popup) + persistence (sessions) + render-markdown + conform + everforest
+    │   ├── nvim/                     # vim.pack (builtin mgr, 0.12+) + built-in LSP (vim.lsp.enable, servers via mise) + snacks (picker/explorer) + harpoon2 + bufferline + treesitter + which-key + noice (cmdline popup) + persistence (sessions) + render-markdown + conform + everforest
     │   ├── opencode/config.json      # wired to ~/.config/agents (CLAUDE.md + skills)
     │   ├── jj/config.toml.tmpl       # Jujutsu version control (templated identity)
     │   ├── gh/config.yml             # git_protocol: ssh; aliases co/cr/prv
@@ -797,7 +797,7 @@ and the [layout](#layout); this is the *why*):
 | **nanobrew** (`nb`, macOS PM) | Homebrew-compatible (same formulae/casks/taps) but ~Zig-fast, installs into `/opt/nanobrew` without touching `/opt/homebrew`. One macOS PM instead of two. |
 | **Ghostty** (terminal) | GPU-accelerated and native-feeling on both OSes; simple `key=value` config (no Lua/YAML); auto dark/light following the OS; Kitty image protocol for superfile previews; MIT. |
 | **tmux** | Everywhere over SSH, infinitely scriptable, our muscle-memory default. (zellij was dropped — tmux won outright.) |
-| **Neovim** (editor) | Lua config deployed identically everywhere via chezmoi: lazy.nvim + built-in LSP (`vim.lsp.enable`; servers installed via mise, not Mason) + snacks (picker/explorer) + treesitter + conform + which-key + everforest. nvim itself is native (plugins compile against system lua/tree-sitter). **Zed** ships alongside as the GUI option. |
+| **Neovim** (editor) | Lua config deployed identically everywhere via chezmoi: `vim.pack` (Neovim 0.12+ builtin plugin manager, replaces lazy.nvim; pins in `nvim-pack-lock.json`) + built-in LSP (`vim.lsp.enable`; servers installed via mise, not Mason) + snacks (picker/explorer) + treesitter + conform + which-key + everforest. nvim itself is native (plugins compile against system lua/tree-sitter). **Zed** ships alongside as the GUI option. |
 | **OpenCode** (AI agent) | Reads `~/.config/agents/CLAUDE.md` + `skills/*/SKILL.md` (the agent-agnostic dir, symlinked into `~/.claude` for Claude Code); model via OpenRouter, key pulled from Bitwarden through direnv + rbw. |
 | **Podman** over Docker | Rootless, daemonless, drop-in `DOCKER_HOST` socket; `lazydocker`/compose work unchanged. |
 | **NetBird** mesh / **rbw** secrets / **Noctalia** shell | Each is the FOSS-first pick with a no-penalty self-host or open-source escape hatch — see the relevant sections above. |
@@ -841,5 +841,5 @@ call directly.
 
 - [docs/secrets.md](docs/secrets.md) — Bitwarden + rbw setup (register/login, EU/Vaultwarden, config knobs, daily use)
 - [docs/spatial-model.md](docs/spatial-model.md) — tmux + nvim mental model for VSCode refugees (the seven everyday actions translated)
-- [docs/lazy-lock-workflow.md](docs/lazy-lock-workflow.md) — committing `lazy-lock.json` for reproducible nvim plugin pins
+- [docs/nvim-pack-lock-workflow.md](docs/nvim-pack-lock-workflow.md) — committing `nvim-pack-lock.json` for reproducible nvim plugin pins (vim.pack)
 - [docs/netbird-cloud.md](docs/netbird-cloud.md) — NetBird Cloud free-tier sign-in + the self-host exit (Scaleway + Caddy + Docker Compose)

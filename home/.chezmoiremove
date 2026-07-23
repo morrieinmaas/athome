@@ -2,3 +2,5 @@
 # yazi was replaced by superfile; drop its now-unmanaged config + installed
 # plugins (piper) so a stale ~/.config/yazi doesn't linger after the swap.
 .config/yazi
+.config/nvim/lua/config/lazy.lua
+.config/nvim/lazy-lock.json

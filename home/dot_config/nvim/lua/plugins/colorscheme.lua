@@ -1,81 +1,20 @@
--- Colorschemes + the dark/light + theme-picker wiring.
+-- auto-dark-mode.nvim owns the dark/light toggle. On startup AND whenever the OS
+-- appearance flips, it sets vim.opt.background then re-applies the active theme
+-- (config/theme.lua) so the palette follows.
 --
--- All colorscheme plugins are declared lazy and loaded on demand by
--- config/theme.apply() (it reads ~/.config/themes/active). Each is configured to
--- derive its palette from vim.opt.background, so the ONE colorscheme handles both
--- light and dark and auto-dark-mode.nvim just flips background. Switch the family
--- with the shared `theme` command — running nvims pick it up via theme.watch().
-return {
-  { "ellisonleao/gruvbox.nvim", lazy = true },
-
-  {
-    "sainnhe/everforest",
-    lazy = true,
-    init = function()
-      vim.g.everforest_background = "medium" -- hard | medium | soft
-      vim.g.everforest_enable_italic = 1
-      vim.g.everforest_better_performance = 1
+-- The colorscheme PLUGINS themselves are added by config/pack.lua and each is
+-- configured per-theme in config/theme.lua (setup()/vim.g run once, on apply).
+-- Nothing here loads a colorscheme — :colorscheme finds them all on packpath.
+return function()
+  require("auto-dark-mode").setup({
+    update_interval = 3000,
+    set_dark_mode = function()
+      vim.opt.background = "dark"
+      require("config.theme").apply()
     end,
-  },
-
-  {
-    "catppuccin/nvim",
-    name = "catppuccin",
-    lazy = true,
-    opts = { flavour = "auto", background = { light = "latte", dark = "mocha" } },
-  },
-
-  {
-    "folke/tokyonight.nvim",
-    lazy = true,
-    opts = { style = "moon", light_style = "day" },
-  },
-
-  {
-    "rose-pine/neovim",
-    name = "rose-pine",
-    lazy = true,
-    opts = { dark_variant = "moon" }, -- light → dawn (derived from background)
-  },
-
-  {
-    "rebelot/kanagawa.nvim",
-    lazy = true,
-    opts = { background = { dark = "wave", light = "lotus" } },
-  },
-
-  -- ── Warm-paper + solarized family ────────────────────────────────────────────
-  -- melange + zenbones follow vim.opt.background (one :colorscheme name for both);
-  -- flexoki + selenized have no background-following scheme, so config/theme.lua
-  -- maps them to explicit light/dark names. zenbones runs in compat mode so it
-  -- needs no lush.nvim; base16-nvim supplies selenized (base16-selenized-*).
-  { "kepano/flexoki-neovim", lazy = true }, -- flexoki-light / flexoki-dark
-  { "savq/melange-nvim", lazy = true }, -- melange (follows background)
-  {
-    "zenbones-theme/zenbones.nvim",
-    lazy = true,
-    init = function()
-      vim.g.zenbones_compat = 1 -- render without the lush.nvim dependency
+    set_light_mode = function()
+      vim.opt.background = "light"
+      require("config.theme").apply()
     end,
-  }, -- zenbones (follows background)
-  { "RRethy/base16-nvim", lazy = true }, -- selenized (base16-selenized-light/dark)
-
-  -- Owns the dark/light toggle. On startup AND whenever the OS appearance flips,
-  -- it sets background then re-applies the active theme so the palette follows.
-  {
-    "f-person/auto-dark-mode.nvim",
-    lazy = false,
-    priority = 999,
-    opts = {
-      update_interval = 3000,
-      set_dark_mode = function()
-        vim.opt.background = "dark"
-        require("config.theme").apply()
-      end,
-      set_light_mode = function()
-        vim.opt.background = "light"
-        require("config.theme").apply()
-      end,
-    },
-  },
-}
+  })
+end

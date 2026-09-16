@@ -141,3 +141,14 @@ cockpit_offer() {
   [[ "$ans" == [yY]* ]] && { cockpit; tmux attach -t work; }
 }
 cockpit_offer
+
+# Bare `claude` shows up in ps as just "claude", so tmux-resurrect can only
+# bring the pane back as a *new* conversation. Pin a session id at launch and
+# the pane is restorable (tmux.conf rewrites --session-id → --resume).
+claude() {
+  if (( $# )); then
+    command claude "$@"
+  else
+    command claude --session-id "$(uuidgen | tr 'A-Z' 'a-z')"
+  fi
+}

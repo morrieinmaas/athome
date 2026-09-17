@@ -42,6 +42,7 @@ zoxide     = "latest"
 "github:yorukot/superfile" = "latest"  # spf — TUI file manager (replaced yazi); github backend (not in registry)
 "cargo:navi" = "latest"  # cheatsheet (aqua lacks darwin/arm64; ubi asset mismatch → cargo)
 glow       = "latest"          # markdown viewer
+"github:RivoLink/leaf" = "latest"  # leaf — markdown previewer TUI (TOC sidebar, search, mermaid/latex); not in registry, ships bare per-platform binaries
 "cargo:tealdeer" = "latest"  # `tldr` client (not in registry)
 
 # ── Modern CLI: text / data wrangling ───────────────────────────────────────
@@ -102,6 +103,7 @@ xh         = "latest"   # HTTPie-like client
 croc       = "latest"   # relay file transfer
 lazydocker = "latest"
 helm       = "latest"   # k8s package manager
+"aqua:int128/kubelogin" = "1.36.3"  # kubectl oidc-login (AKS/Entra); pinned — was added straight to the live config, captured here so chezmoi stops dropping it
 jqp        = "latest"   # interactive jq playground
 act        = "latest"   # run GitHub Actions locally
 

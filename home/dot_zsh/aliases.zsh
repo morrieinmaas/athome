@@ -21,7 +21,8 @@ command -v sd     >/dev/null && alias sed='sd'
 command -v rg     >/dev/null && alias grep='rg'
 command -v fd     >/dev/null && alias find='fd'
 command -v doggo  >/dev/null && alias dig='doggo'
-command -v xh     >/dev/null && alias curl='xh'
+# NOT aliased: curl -> xh. xh takes httpie-style flags, so every `curl -fsSL … | sh`
+# install one-liner dies on `-S` ("invalid value for --style"). Type `xh` when you want xh.
 command -v btm    >/dev/null && alias top='btm'
 command -v viddy  >/dev/null && alias watch='viddy'
 command -v choose >/dev/null && alias cut='choose'

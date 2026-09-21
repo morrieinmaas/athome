@@ -62,6 +62,8 @@ M.themes = {
   },
   flexoki = { scheme = { light = "flexoki-light", dark = "flexoki-dark" } },
   selenized = { scheme = { light = "base16-selenized-light", dark = "base16-selenized-dark" } },
+  -- tuxedo Dawn/Dusk: our own colors/dawn.lua (base16-nvim), follows background
+  dawn = { scheme = "dawn" },
 }
 
 function M.read()
@@ -95,7 +97,9 @@ function M.watch()
   local d = vim.fn.fnamemodify(active_file, ":h")
   vim.fn.mkdir(d, "p")
   fse:start(d, {}, vim.schedule_wrap(function()
-    M.apply()
+    -- re-require so themes added after this nvim started resolve (else → gruvbox)
+    package.loaded["config.theme"] = nil
+    require("config.theme").apply()
   end))
 end
 

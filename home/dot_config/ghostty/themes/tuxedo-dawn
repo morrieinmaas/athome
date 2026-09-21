@@ -1,0 +1,24 @@
+# Tuxedo "Dawn" — warm paper light theme, ported from github.com/webstonehq/tuxedo
+# (src/theme.rs). Paired with tuxedo-dusk by the `theme` picker (family: dawn).
+palette = 0=#e0d6c4
+palette = 1=#b8483a
+palette = 2=#5a7a3a
+palette = 3=#a3722a
+palette = 4=#3a6a8a
+palette = 5=#7a4a8a
+palette = 6=#3a7a6a
+palette = 7=#5a4f3d
+palette = 8=#8a7e6a
+palette = 9=#a35d3a
+palette = 10=#5a7a3a
+palette = 11=#a3722a
+palette = 12=#3a6a8a
+palette = 13=#7a4a8a
+palette = 14=#3a7a6a
+palette = 15=#3d3528
+background = #faf6f0
+foreground = #3d3528
+cursor-color = #a35d3a
+cursor-text = #faf6f0
+selection-background = #ede0c8
+selection-foreground = #3d3528

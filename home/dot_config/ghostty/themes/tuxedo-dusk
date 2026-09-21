@@ -1,0 +1,24 @@
+# Tuxedo "Dusk" — dark twin of tuxedo-dawn: same hues, lifted for a warm brown
+# background (all text colours >= 4.3:1). Not upstream; made for athome.
+palette = 0=#3a3328
+palette = 1=#da796c
+palette = 2=#9ab573
+palette = 3=#d6a95c
+palette = 4=#7eaac8
+palette = 5=#b995c6
+palette = 6=#72b5a4
+palette = 7=#c4b8a3
+palette = 8=#8a7e6a
+palette = 9=#d38c69
+palette = 10=#9ab573
+palette = 11=#d6a95c
+palette = 12=#7eaac8
+palette = 13=#b995c6
+palette = 14=#72b5a4
+palette = 15=#e6dccb
+background = #1f1b16
+foreground = #e6dccb
+cursor-color = #d38c69
+cursor-text = #1f1b16
+selection-background = #3d3528
+selection-foreground = #e6dccb

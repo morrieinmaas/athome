@@ -14,7 +14,7 @@
 # Sourced by ~/.local/bin/theme and ~/.config/themes/apply-tmux.sh.
 
 # shellcheck disable=SC2034  # consumed by sourcing scripts (theme, apply-tmux.sh)
-THEME_LIST="gruvbox everforest catppuccin tokyonight rose-pine kanagawa flexoki melange zenbones selenized"
+THEME_LIST="gruvbox everforest catppuccin tokyonight rose-pine kanagawa flexoki melange zenbones selenized dawn"
 
 theme_ghostty() {
   case "$1" in
@@ -28,6 +28,7 @@ theme_ghostty() {
     melange)    echo "dark:Melange Dark,light:Melange Light" ;;
     zenbones)   echo "dark:Zenbones Dark,light:Zenbones Light" ;;
     selenized)  echo "dark:Selenized Dark,light:Selenized Light" ;;
+    dawn)       echo "dark:tuxedo-dusk,light:tuxedo-dawn" ;;   # custom: ~/.config/ghostty/themes/
   esac
 }
 
@@ -43,6 +44,7 @@ theme_nvim() {
     melange)    echo melange ;;
     zenbones)   echo zenbones ;;
     selenized)  echo "base16-selenized-*" ;;   # per-mode names (see nvim config/theme.lua)
+    dawn)       echo "dawn (colors/dawn.lua)" ;;
   esac
 }
 
@@ -62,8 +64,8 @@ theme_slk() {  # $1 = family, $2 = mode (dark|light)
     # they use slk's ANSI theme — it renders from the terminal's own 16-colour
     # palette, which ghostty has already repainted to the picked family. So Slack
     # follows the active theme (like btm does) instead of the gruvbox fallback.
-    flexoki:dark|melange:dark|zenbones:dark|selenized:dark)      echo "ANSI Dark" ;;
-    flexoki:light|melange:light|zenbones:light|selenized:light)  echo "ANSI Light" ;;
+    flexoki:dark|melange:dark|zenbones:dark|selenized:dark|dawn:dark)     echo "ANSI Dark" ;;
+    flexoki:light|melange:light|zenbones:light|selenized:light|dawn:light) echo "ANSI Light" ;;
   esac
 }
 
@@ -86,6 +88,7 @@ theme_palette() {  # $1 = family, $2 = mode (dark|light) -> BG FG BLUE YELLOW GR
     melange)    echo 'BG=#292522 FG=#ece1d7 BLUE=#7f91b2 YELLOW=#ebc06d GREEN=#85b695 GREY=#867462 MUTED=#c1a78e' ;;
     zenbones)   echo 'BG=#1c1917 FG=#b4bdc3 BLUE=#6099c0 YELLOW=#b77e64 GREEN=#819b69 GREY=#777d81 MUTED=#4d5154' ;;
     selenized)  echo 'BG=#103c48 FG=#adbcbc BLUE=#4695f7 YELLOW=#dbb32d GREEN=#75b938 GREY=#2d5b69 MUTED=#72898f' ;;
+    dawn)       echo 'BG=#1f1b16 FG=#e6dccb BLUE=#d38c69 YELLOW=#d6a95c GREEN=#72b5a4 GREY=#8a7e6a MUTED=#a89a82' ;;  # Dusk
   esac
 }
 
@@ -109,5 +112,6 @@ theme_tmux() {
     melange)    echo 'BG=#f1f1f1 FG=#54433a BLUE=#465aa4 YELLOW=#a06d00 GREEN=#3a684a GREY=#a98a78 MUTED=#7d6658' ;;
     zenbones)   echo 'BG=#f0edec FG=#2c363c BLUE=#286486 YELLOW=#944927 GREEN=#4f6c31 GREY=#596a75 MUTED=#859fae' ;;
     selenized)  echo 'BG=#fbf3db FG=#3a4d53 BLUE=#0072d4 YELLOW=#ad8900 GREEN=#489100 GREY=#d5cdb6 MUTED=#909995' ;;
+    dawn)       echo 'BG=#faf6f0 FG=#3d3528 BLUE=#a35d3a YELLOW=#a3722a GREEN=#3a7a6a GREY=#a89a82 MUTED=#8a7e6a' ;;  # terracotta session pill, teal clock
   esac
 }

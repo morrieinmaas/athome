@@ -47,7 +47,7 @@ if command -v netbird >/dev/null 2>&1; then
     || sudo systemctl enable --now netbird 2>/dev/null \
     || echo "==> couldn't auto-enable a netbird service unit; \`sudo netbird up\` will start the daemon"
 else
-  echo "==> netbird not yet installed — re-run after run_onchange_02 lands it from the AUR"
+  echo "==> netbird not yet installed — re-run after run_onchange_02 lands it (AUR on Arch, COPR/dnf on Fedora)"
 fi
 
 # NordVPN: enable group + daemon + auto-connect

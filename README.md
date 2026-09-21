@@ -782,6 +782,7 @@ mise doctor                 # health-check the toolchain
 # native/GUI/system packages — the OS PM:
 nb upgrade                  # macOS (nanobrew)
 yay -Syu                    # Arch
+sudo dnf upgrade --refresh  # Fedora
 
 # force-refresh externals (zinit, TPM, ~/.config/agents) on next apply:
 chezmoi state delete-bucket --bucket=entryState

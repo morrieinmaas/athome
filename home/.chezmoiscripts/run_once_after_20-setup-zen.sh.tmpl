@@ -70,10 +70,14 @@ else
   echo "   ! defaultbrowser missing — installs via packages.yaml; then run: defaultbrowser zen"
 fi
 {{- else if eq .chezmoi.os "linux" -}}
-# ── Linux (Arch: zen-browser-bin) ───────────────────────────────────────────
+# ── Linux (Arch: zen-browser-bin via yay; Fedora: zen-browser via dnf) ────────
 zen_bin="$(command -v zen-browser || command -v zen || true)"
 if [[ -z "$zen_bin" ]]; then
-  echo "==> zen not on PATH — install zen-browser-bin (yay), then re-run"
+  if command -v dnf >/dev/null 2>&1 && ! command -v pacman >/dev/null 2>&1; then
+    echo "==> zen not on PATH — install zen-browser (sudo dnf install -y zen-browser, needs the sneexy/zen-browser COPR), then re-run"
+  else
+    echo "==> zen not on PATH — install zen-browser-bin (yay), then re-run"
+  fi
   exit 0
 fi
 dist="$(dirname "$(readlink -f "$zen_bin")")/distribution"

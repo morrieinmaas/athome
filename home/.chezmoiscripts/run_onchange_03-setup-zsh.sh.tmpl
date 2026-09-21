@@ -25,7 +25,11 @@ followup() {
 zsh_bin="$(command -v zsh || true)"
 if [[ -z "$zsh_bin" ]]; then
   echo "zsh not installed yet; deferring (will retry on next chezmoi apply)"
-  followup "zsh missing — install it (\`pacman -S zsh\` or \`brew install zsh\`), then re-run chezmoi apply"
+  if command -v dnf >/dev/null 2>&1 && ! command -v pacman >/dev/null 2>&1; then
+    followup "zsh missing — install it (\`sudo dnf install -y zsh\`), then re-run chezmoi apply"
+  else
+    followup "zsh missing — install it (\`pacman -S zsh\` or \`brew install zsh\`), then re-run chezmoi apply"
+  fi
   exit 0
 fi
 

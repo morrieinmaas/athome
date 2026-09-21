@@ -33,9 +33,15 @@ if command -v noctalia-shell >/dev/null 2>&1; then
   mkdir -p "$HOME/.config/noctalia"
 else
   echo "!! 'noctalia-shell' binary not found after package install"
-  followup "noctalia-shell not on PATH — check the AUR install:"
-  followup "    yay -Q noctalia-shell"
-  followup "    yay -S noctalia-shell    # if missing"
+  if command -v dnf >/dev/null 2>&1 && ! command -v pacman >/dev/null 2>&1; then
+    followup "noctalia-shell not on PATH — check the dnf install:"
+    followup "    dnf list installed noctalia-shell"
+    followup "    sudo dnf install -y noctalia-shell    # if missing (needs the zhangyi6324/noctalia-shell COPR)"
+  else
+    followup "noctalia-shell not on PATH — check the AUR install:"
+    followup "    yay -Q noctalia-shell"
+    followup "    yay -S noctalia-shell    # if missing"
+  fi
 fi
 
 # Display manager: respect whatever's already configured. We ONLY enable

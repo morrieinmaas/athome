@@ -63,7 +63,7 @@ if [ "$platform" = "linux/amd64" ] && [ "$host_arch" != "x86_64" ] && [ "$host_a
     arch)
       # slow_aur compiles from source under qemu; heavy_gui/heavy_desktop are big
       # prebuilt downloads. Trim freely — names are Arch/AUR-specific.
-      slow_aur="nirimod-git eternalterminal bandwhich gping trippy noctalia-shell podman-tui prettierd"
+      slow_aur="nirimod-git bandwhich gping trippy noctalia-shell podman-tui prettierd"
       heavy_gui="zed ghostty opencode-bin zen-browser-bin librewolf-bin"
       heavy_desktop="niri gnome-shell gnome-session gnome-control-center mutter nautilus gnome-shell-extensions evolution-data-server"
       skip_list="$slow_aur $heavy_gui $heavy_desktop"

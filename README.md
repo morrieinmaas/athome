@@ -446,7 +446,6 @@ their binaries come from mise.
 | **ENHANCE** — GitHub Actions TUI | `prefix G` | both read `gh`'s token — no API keys in config |
 | **slk** — Slack TUI | `prefix M` | browser-session auth; tokens never tracked |
 | **status-bar icon picker** | `prefix P` | pick a light-mode + dark-mode glyph from ~all emoji; the icon follows the OS appearance. File-free (built from stdlib `unicodedata`); two static pill colours editable in [`pet.sh`](home/dot_config/tmux/executable_pet.sh) |
-| **Eternal Terminal** (`et`) | `et <host>` | reconnecting remote shell; server on every machine over the NetBird mesh ([`run_once_18`](home/.chezmoiscripts/run_once_18-setup-eternal-terminal.sh.tmpl)) |
 | **impala** — Wi-Fi TUI (Linux) | `impala` | talks to `iwd`; backend wired by [`run_once_15`](home/.chezmoiscripts/run_once_15-setup-wifi-backend.sh.tmpl) |
 | **Zen** — default browser | — | extensions reinstalled declaratively + set as default by [`run_once_after_20`](home/.chezmoiscripts/run_once_after_20-setup-zen.sh.tmpl) |
 

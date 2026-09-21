@@ -76,7 +76,7 @@ systemctl --user enable --now podman.socket \
 
 # 2b. Linger — keep this user's systemd manager (and thus podman.socket) running
 #     after logout / SSH disconnect. Without it the rootless socket dies when you
-#     drop the Eternal Terminal session (run_once_18), breaking lazydocker and any
+#     drop the SSH session, breaking lazydocker and any
 #     docker-API client on headless/remote dev. Idempotent; needs sudo.
 if command -v loginctl >/dev/null 2>&1 \
    && ! loginctl show-user "$USER" 2>/dev/null | grep -q '^Linger=yes'; then

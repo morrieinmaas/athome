@@ -50,7 +50,6 @@ darwin:
     - gnu-sed
     - gawk
     - findutils
-    - et                             # Eternal Terminal — reconnecting shell, transparent byte pipe (keeps remote tmux scrollback / clipboard / graphics, unlike mosh). Homebrew formula `et`; Arch AUR `eternalterminal`. Server wired up by run_once_18-setup-eternal-terminal.
     - pinentry-mac                   # pinentry prompt — required by rbw (Bitwarden master-password entry)
     - bandwhich                      # per-process bandwidth — needs root/caps; kept native (not mise)
     - gping                          # ping with a graph — ICMP; kept native
@@ -158,7 +157,6 @@ linux:
     - zen-browser-bin
     - librewolf-bin                  # privacy-hardened Firefox fork
     - nirimod-git
-    - eternalterminal                # `et` — reconnecting remote shell (AUR only). etserver enabled by run_once_18-setup-eternal-terminal.
     - matugen-bin                    # auto-theming from wallpaper — used by Noctalia's color generation
     - noctalia-shell                 # the shell itself (Quickshell-based — pulls noctalia-qs as a dep)
     - nordvpn-bin
@@ -260,6 +258,6 @@ fedora:
     - netbird
     - netbird-ui
     # Pulled via MISE on Fedora (release binaries via ubi/github/cargo/go — SAME
-    # as Arch + macOS, not duplicated here): matugen, eternalterminal (et),
+    # as Arch + macOS, not duplicated here): matugen,
     # impala, bandwhich, gping, trippy, prettierd, wush, opencode. librewolf +
     # nordvpn have their own upstream dnf repos if you want them.

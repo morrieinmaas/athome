@@ -24,8 +24,6 @@ section_link() {
   echo "LINK"
   gw=$(route -n get default 2>/dev/null | awk '/gateway:/{print $2; exit}')
   lan_if=$(route -n get "${gw:-1.1.1.1}" 2>/dev/null | awk '/interface:/{print $2; exit}')
-  wifi_dev=$(networksetup -listallhardwareports 2>/dev/null \
-    | awk '/Hardware Port: Wi-Fi/{getline; print $2; exit}')
   row interface "${lan_if:-none}"
   if [ -n "$lan_if" ]; then
     row address "$(ifconfig "$lan_if" 2>/dev/null | awk '/inet /{print $2; exit}')"

@@ -26,6 +26,11 @@ bindkey '^K' kill-line
 bindkey '^U' backward-kill-line
 bindkey '^W' backward-kill-word
 bindkey '^R' history-incremental-search-backward
+# Forward delete (fn+Backspace on a Mac keyboard, Del elsewhere). zsh's emacs
+# keymap here binds ^D, ^H and ^? but NOTHING to ^[[3~, so the key was simply
+# dead. This is not a tmux problem: tmux passes ^[[3~ through correctly, and
+# kdch1 is \E[3~ in xterm-ghostty, tmux-256color and screen-256color alike.
+bindkey '^[[3~' delete-char
 
 # ─── Disable XON/XOFF flow control ──────────────────────────────────────────
 # tmux uses Ctrl-S as its prefix (see ~/.config/tmux/tmux.conf). Ctrl-S is also

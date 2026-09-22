@@ -22,8 +22,15 @@ row() { printf '  %-12s %s\n' "$1" "$2"; }
 
 section_link() {
   echo "LINK"
-  gw=$(route -n get default 2>/dev/null | awk '/gateway:/{print $2; exit}')
-  lan_if=$(route -n get "${gw:-1.1.1.1}" 2>/dev/null | awk '/interface:/{print $2; exit}')
+  # Same idiom as net.sh: macOS service priority order, not the routing table.
+  # A VPN holding a real default route otherwise reports the tunnel as the link.
+  lan_if=""
+  while read -r _dev; do
+    case "$_dev" in en*) ;; *) continue ;; esac
+    if ipconfig getifaddr "$_dev" >/dev/null 2>&1; then lan_if="$_dev"; break; fi
+  done < <(networksetup -listnetworkserviceorder 2>/dev/null \
+             | sed -n 's/.*Device: \([^)]*\)).*/\1/p')
+  gw=$(ipconfig getoption "${lan_if:-en0}" router 2>/dev/null)
   row interface "${lan_if:-none}"
   if [ -n "$lan_if" ]; then
     row address "$(ifconfig "$lan_if" 2>/dev/null | awk '/inet /{print $2; exit}')"

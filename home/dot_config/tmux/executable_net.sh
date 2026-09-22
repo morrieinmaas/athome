@@ -18,6 +18,25 @@
 # Icons render from codepoints (no literal multibyte bytes in tracked files),
 # matching battery.sh. Nerd Font glyphs, same font the rest of the bar assumes.
 
+# tmux runs status commands in the SERVER's environment, which never sources
+# ~/.zshenv. Without this, `netbird` is not found and the pill reports "nb off"
+# while NetBird is connected, which is worse than no pill at all. It only looks
+# fine on a server that happened to inherit a login shell's PATH; one started by
+# launchd at boot will not have.
+export PATH="/opt/nanobrew/prefix/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+
+# printf's \U escape needs bash 4+. macOS ships bash 3.2 as /bin/bash, and with
+# a lean PATH `/usr/bin/env bash` resolves to exactly that, which renders the
+# literal text \U0000F1EB into the status bar. The shebang is resolved before
+# any PATH we set above, so re-exec under a modern bash when we are on an old
+# one. If none is found we fall through and the glyphs degrade, which is no
+# worse than not doing this.
+if [ "${BASH_VERSINFO[0]:-0}" -lt 4 ]; then
+  for _b in /opt/nanobrew/prefix/bin/bash /opt/homebrew/bin/bash /usr/local/bin/bash; do
+    [ -x "$_b" ] && exec "$_b" "$0" "$@"
+  done
+fi
+
 glyph() { printf -v h '%08X' "0x$1"; printf "\\U$h"; }
 
 opt() { tmux show -gv "$1" 2>/dev/null; }
@@ -44,12 +63,22 @@ open_g=$(glyph F09C)   # nf-fa-unlock
 peer_g=$(glyph F0C0)   # nf-fa-users, marks the NetBird peer tally
 
 # ── link ────────────────────────────────────────────────────────────────────
-# Ask the routing table for the GATEWAY's interface, not the default route:
-# with a tunnel up the default route is the tunnel and tells you nothing about
-# the physical link.
+# Do NOT derive the physical link from the routing table. An earlier version
+# asked for the default route's gateway interface; that survives wg-quick only
+# because wg-quick installs 0.0.0.0/1 + 128.0.0.0/1 and leaves 0.0.0.0/0 alone.
+# A VPN that installs a REAL default route (NordVPN's app does; so does any
+# exit-node setup) makes that lookup return the tunnel, and the bar then shows
+# an ethernet glyph and a meaningless VPN-internal address while you are on
+# Wi-Fi. Instead walk the network services in macOS's own priority order and
+# take the first physical en* that actually holds an address, which is the
+# primary link regardless of which tunnel owns the default route.
 if [ "$(uname)" = Darwin ]; then
-  gw=$(route -n get default 2>/dev/null | awk '/gateway:/{print $2; exit}')
-  lan_if=$(route -n get "${gw:-1.1.1.1}" 2>/dev/null | awk '/interface:/{print $2; exit}')
+  lan_if=""
+  while read -r _dev; do
+    case "$_dev" in en*) ;; *) continue ;; esac
+    if ipconfig getifaddr "$_dev" >/dev/null 2>&1; then lan_if="$_dev"; break; fi
+  done < <(networksetup -listnetworkserviceorder 2>/dev/null \
+             | sed -n 's/.*Device: \([^)]*\)).*/\1/p')
   wifi_dev=$(networksetup -listallhardwareports 2>/dev/null \
     | awk '/Hardware Port: Wi-Fi/{getline; print $2; exit}')
 else

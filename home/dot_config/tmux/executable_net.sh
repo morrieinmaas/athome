@@ -97,14 +97,20 @@ esac
 # "$peers" is NetBird's connected/known peer count, e.g. 0/1 means one peer is
 # registered on the mesh but currently offline. Labelled explicitly, because
 # a bare "0/1" in a status bar reads as an error rather than a peer tally.
-if [ "$wg_up" = 1 ] && [ -n "$peers" ]; then
-  vpn=$(pill "$green" net_vpn "$lock_g wg $peer_g $peers")
-elif [ "$wg_up" = 1 ]; then
-  vpn=$(pill "$green" net_vpn "$lock_g wg")
-elif [ -n "$peers" ]; then
-  vpn=$(pill "$yellow" net_vpn "$peer_g $peers")
+# TWO separate pills, not one. An earlier version rendered "wg <glyph> 0/1" in a
+# single pill, which reads as though the 0/1 belongs to WireGuard. It does not:
+# wg is the NordVPN tunnel, which is simply up or down with no count, while 0/1
+# is NetBird's peer tally. Two unrelated facts, so two pills.
+if [ "$wg_up" = 1 ]; then
+  wg_pill=$(pill "$green" net_vpn "$lock_g wg")
 else
-  vpn=$(pill "$red" net_vpn "$open_g no vpn")
+  wg_pill=$(pill "$red" net_vpn "$open_g wg")
 fi
 
-printf '%s %s' "$link" "$vpn"
+case "$peers" in
+  "")  nb_pill=$(pill "$red" net_vpn "$peer_g nb off") ;;           # daemon down
+  0/*) nb_pill=$(pill "$yellow" net_vpn "$peer_g nb $peers") ;;     # up, none connected
+  *)   nb_pill=$(pill "$green" net_vpn "$peer_g nb $peers") ;;
+esac
+
+printf '%s %s %s' "$link" "$wg_pill" "$nb_pill"

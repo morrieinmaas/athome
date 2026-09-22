@@ -1,0 +1,100 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Headless CI/e2e (ATHOME_CI=1): no launchd, no sudo TTY — skip cleanly.
+if [ -n "${ATHOME_CI:-}" ]; then echo "ATHOME_CI: skipping nord0 daemon ($(basename "$0"))"; exit 0; fi
+
+{{ if eq .chezmoi.os "darwin" -}}
+# nord0 babysitter: a root LaunchDaemon that keeps the NordVPN wg-quick tunnel
+# up across reboots AND alive across wireguard-go deaths. The failure this
+# exists for was observed, not imagined: wireguard-go died silently and left
+# the 0.0.0.0/1 + 128.0.0.0/1 routes pointing at a dead utun — a full internet
+# blackhole that looked like "the VPN broke my wifi". A handshake-age probe
+# catches every variant of that (dead process, stolen session, retired server)
+# because a healthy tunnel re-handshakes every ~2 minutes.
+#
+# Opt-in per machine: does nothing until /etc/wireguard/nord0.conf exists
+# (create it with `nord0 new [country]`). `nord0 off` parks it via a marker
+# file; the daemon then only ensures the tunnel is DOWN.
+#
+# Trade-off, stated: root executes wg-quick out of /opt/nanobrew (user-owned).
+# That is the same exposure as the interactive `sudo wg-quick up` this replaces,
+# on a single-user machine. The ensure script itself is root-owned in
+# /usr/local/libexec so the daemon's entry point is not user-writable.
+
+if [ ! -f /etc/wireguard/nord0.conf ]; then
+  echo "==> nord0 daemon: no /etc/wireguard/nord0.conf on this machine, skipping"
+  echo "    opt in with: nord0 new [country]  (then re-run chezmoi apply)"
+  exit 0
+fi
+
+echo "==> installing nord0 ensure script + LaunchDaemon (needs sudo)"
+sudo mkdir -p /usr/local/libexec
+
+sudo tee /usr/local/libexec/nord0-ensure >/dev/null <<'ENSURE'
+#!/bin/bash
+# nord0-ensure: idempotent "make reality match intent" for the nord0 tunnel.
+# Runs as root from launchd (com.local.nord0) at boot and every 2 minutes.
+# Managed by chezmoi (athome repo, run_onchange_19) — edit there, not here.
+set -u
+export PATH="/opt/nanobrew/prefix/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+
+CONF=/etc/wireguard/nord0.conf
+MARKER=/etc/wireguard/nord0.down
+log() { echo "$(date '+%F %T') $*"; }
+
+[ -f "$CONF" ] || exit 0
+
+# Parked by `nord0 off`: intent is DOWN. Enforce it and go away.
+if [ -f "$MARKER" ]; then
+  if [ -e /var/run/wireguard/nord0.name ]; then
+    log "marker present, taking nord0 down"
+    wg-quick down nord0 >/dev/null 2>&1
+  fi
+  exit 0
+fi
+
+# Up and healthy? A live tunnel re-handshakes every ~2 min (PersistentKeepalive
+# guarantees traffic), so a handshake older than 3 min means the tunnel is a
+# zombie: wireguard-go dead, session stolen by another machine using the same
+# account key (see nord-wg-config), or the server gone. All heal the same way.
+if [ -e /var/run/wireguard/nord0.name ]; then
+  ifname=$(cat /var/run/wireguard/nord0.name 2>/dev/null)
+  hs=$(wg show "$ifname" latest-handshakes 2>/dev/null | awk '{print $2; exit}')
+  now=$(date +%s)
+  if [ -n "${hs:-}" ] && [ "$hs" -gt 0 ] && [ $((now - hs)) -lt 180 ]; then
+    exit 0
+  fi
+  log "nord0 stale (last handshake: ${hs:-none}), cycling"
+  wg-quick down nord0 >/dev/null 2>&1
+fi
+
+log "bringing nord0 up"
+wg-quick up nord0
+ENSURE
+sudo chown root:wheel /usr/local/libexec/nord0-ensure
+sudo chmod 755 /usr/local/libexec/nord0-ensure
+
+sudo tee /Library/LaunchDaemons/com.local.nord0.plist >/dev/null <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.local.nord0</string>
+  <key>ProgramArguments</key>
+  <array><string>/usr/local/libexec/nord0-ensure</string></array>
+  <key>RunAtLoad</key><true/>
+  <key>StartInterval</key><integer>120</integer>
+  <key>StandardOutPath</key><string>/var/log/nord0.log</string>
+  <key>StandardErrorPath</key><string>/var/log/nord0.log</string>
+</dict>
+</plist>
+PLIST
+sudo chown root:wheel /Library/LaunchDaemons/com.local.nord0.plist
+sudo chmod 644 /Library/LaunchDaemons/com.local.nord0.plist
+
+# bootout is idempotent-ish; ignore "not loaded" on first install.
+sudo launchctl bootout system/com.local.nord0 2>/dev/null || true
+sudo launchctl bootstrap system /Library/LaunchDaemons/com.local.nord0.plist
+echo "==> nord0 daemon active (log: /var/log/nord0.log; drive it with: nord0 on|off|status|new)"
+{{- end }}

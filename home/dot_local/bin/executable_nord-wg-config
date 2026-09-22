@@ -14,6 +14,14 @@
 # Token: Nord Account -> Services -> NordVPN -> Manual setup -> generate a new
 # token. Store it at ~/.secrets/nordvpn/token; it never belongs in this repo.
 #
+# CAUTION, same key everywhere: the API hands out ONE nordlynx_private_key for
+# the whole account, so every machine using this script shares an identity.
+# Two machines connected to the SAME Nord server steal each other's session on
+# every handshake (the loser blackholes until it re-handshakes, and with the
+# nord0 babysitter both machines cycle forever, trading the session back and
+# forth). Give each machine a different --country / server: `nord0 new de`,
+# `nord0 new ch`, ...
+#
 # Usage:
 #   nord-wg-config                 # recommended server, config to stdout
 #   nord-wg-config nl              # restrict to a country (ISO 3166-1 alpha-2)

@@ -62,13 +62,16 @@ section_nb() {
   echo "NETBIRD"
   s=$(netbird status -d 2>/dev/null)
   if [ -z "$s" ]; then row state "daemon not responding"; return; fi
-  printf '%s\n' "$s" | sed -n \
-    -e 's/^NetBird IP: /  address      /p' \
-    -e 's/^FQDN: /  fqdn         /p' \
-    -e 's/^Peers count: /  peers        /p' \
-    -e 's/^ *Connection type: /  conn type    /p' \
-    -e 's/^ *Last WireGuard handshake: /  handshake    /p' \
-    | head -8
+  row address "$(printf '%s\n' "$s" | sed -n 's/^NetBird IP: //p' | head -1)"
+  row fqdn    "$(printf '%s\n' "$s" | sed -n 's/^FQDN: //p' | head -1)"
+  # "Peers count: 0/1 Connected" is NetBird's own wording and reads as a
+  # contradiction next to a 0. Spell it out instead.
+  pc=$(printf '%s\n' "$s" | sed -n 's/.*Peers count: \([0-9]*\)\/\([0-9]*\).*/\1 of \2/p' | head -1)
+  row peers "${pc:-unknown} connected"
+  # Per-peer rows are only meaningful once a peer is actually connected; with
+  # none they are all "-", which looks like something is wrong rather than idle.
+  ct=$(printf '%s\n' "$s" | sed -n 's/^ *Connection type: //p' | head -1)
+  case "$ct" in ""|"-") ;; *) row "conn type" "$ct"; row handshake "$(printf '%s\n' "$s" | sed -n 's/^ *Last WireGuard handshake: //p' | head -1)" ;; esac
 }
 
 # tmux hands back the full range name, "user|net", so match on a substring.

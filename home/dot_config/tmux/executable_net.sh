@@ -39,7 +39,16 @@ fi
 
 glyph() { printf -v h '%08X' "0x$1"; printf "\\U$h"; }
 
-opt() { tmux show -gv "$1" 2>/dev/null; }
+# ONE tmux round-trip, not one per option. `tmux show -gv` costs ~13ms and this
+# script reads eight options, so the naive version spent ~100ms of its budget
+# just asking tmux the same question eight times. Parsed in-process instead,
+# which needs the bash 4+ we already re-exec into above.
+declare -A _TOPT
+while IFS=' ' read -r _k _v; do
+  _v=${_v%\"}; _v=${_v#\"}
+  [ -n "$_k" ] && _TOPT[$_k]=$_v
+done <<< "$(tmux show -g 2>/dev/null)"
+opt() { printf '%s' "${_TOPT[$1]-}"; }
 bg=$(opt @theme_bg);         bg=${bg:-#fbf1c7}
 blue=$(opt @theme_blue);     blue=${blue:-#458588}
 green=$(opt @theme_green);   green=${green:-#98971a}
@@ -73,14 +82,29 @@ peer_g=$(glyph F0C0)   # nf-fa-users, marks the NetBird peer tally
 # take the first physical en* that actually holds an address, which is the
 # primary link regardless of which tunnel owns the default route.
 if [ "$(uname)" = Darwin ]; then
-  lan_if=""
-  while read -r _dev; do
-    case "$_dev" in en*) ;; *) continue ;; esac
-    if ipconfig getifaddr "$_dev" >/dev/null 2>&1; then lan_if="$_dev"; break; fi
-  done < <(networksetup -listnetworkserviceorder 2>/dev/null \
-             | sed -n 's/.*Device: \([^)]*\)).*/\1/p')
-  wifi_dev=$(networksetup -listallhardwareports 2>/dev/null \
-    | awk '/Hardware Port: Wi-Fi/{getline; print $2; exit}')
+  # The two networksetup calls below cost ~160ms together, which is a lot for
+  # something the bar runs every status-interval. The answers (which en* is
+  # primary, which is the Wi-Fi device) change only when you plug or unplug
+  # something, so cache them. Self-healing: the cached interface is only trusted
+  # while it still holds an address, so unplugging invalidates it immediately
+  # rather than waiting for the TTL.
+  _cache="${TMPDIR:-/tmp}/.tmux-net-iface.$UID"
+  lan_if=""; wifi_dev=""
+  if [ -r "$_cache" ]; then
+    # shellcheck source=/dev/null
+    . "$_cache"
+    ipconfig getifaddr "${lan_if:-none}" >/dev/null 2>&1 || { lan_if=""; wifi_dev=""; }
+  fi
+  if [ -z "$lan_if" ]; then
+    while read -r _dev; do
+      case "$_dev" in en*) ;; *) continue ;; esac
+      if ipconfig getifaddr "$_dev" >/dev/null 2>&1; then lan_if="$_dev"; break; fi
+    done < <(networksetup -listnetworkserviceorder 2>/dev/null \
+               | sed -n 's/.*Device: \([^)]*\)).*/\1/p')
+    wifi_dev=$(networksetup -listallhardwareports 2>/dev/null \
+      | awk '/Hardware Port: Wi-Fi/{getline; print $2; exit}')
+    printf 'lan_if=%s\nwifi_dev=%s\n' "$lan_if" "$wifi_dev" > "$_cache" 2>/dev/null || true
+  fi
 else
   lan_if=$(ip route show default 2>/dev/null | awk '/default/{print $5; exit}')
   wifi_dev=""

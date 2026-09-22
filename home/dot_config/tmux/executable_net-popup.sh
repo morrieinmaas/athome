@@ -93,8 +93,11 @@ case "${1:-}" in
   *)         body=$( { section_link; echo; section_wg; echo; section_nb; } ) ;;
 esac
 
+# No --border here on purpose: tmux draws it via `display-popup -b rounded -T`.
+# Having both meant fzf's border was clipped at the popup edge, losing the
+# top-left corner and the label. Matches pet-pick.sh, which also lets the popup
+# own the frame.
 printf '%s\n' "$body" | fzf \
   --reverse --height=100% --no-sort --no-separator --no-scrollbar \
-  --border=rounded --border-label=' network ' --border-label-pos=3 \
   --prompt='filter ▸ ' --header='esc to close' \
   --color="$COLORS" >/dev/null

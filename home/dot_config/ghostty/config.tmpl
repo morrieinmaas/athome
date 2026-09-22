@@ -65,7 +65,14 @@ mouse-shift-capture = never
 keybind = cmd+shift+m=toggle_mouse_reporting
 
 shell-integration = zsh
-shell-integration-features = cursor,sudo,title
+# ssh-terminfo + ssh-env exist for SSH into machines that do not know Ghostty.
+# Without them the remote falls back on TERM=xterm-ghostty with no matching
+# terminfo entry, and you get "unknown terminal type" plus broken keys in any
+# TUI. ssh-terminfo installs Ghostty's terminfo on the remote host on first
+# connect; ssh-env keeps TERM sane for hosts where that is not possible.
+# Ghostty's own terminfo lives in ~/.terminfo here, which is per-user and does
+# not help a remote box, which is the whole point of these two.
+shell-integration-features = cursor,sudo,title,ssh-env,ssh-terminfo
 
 cursor-style = bar
 cursor-style-blink = false

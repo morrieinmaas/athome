@@ -16,6 +16,7 @@ if [ -n "${ATHOME_CI:-}" ]; then echo "ATHOME_CI: skipping headless setup ($(bas
 
 {{ if eq .chezmoi.os "darwin" -}}
 # ── macOS ───────────────────────────────────────────────────────────────────
+{{ if eq (dig "mesh_provider" "netbird" .) "netbird" -}}
 # NetBird ships from the netbirdio/tap (not Homebrew core). nanobrew supports
 # third-party taps via `nb install owner/tap/formula`, so install through nb
 # (the canonical macOS PM); fall back to real brew if it's still around.
@@ -32,6 +33,13 @@ if ! command -v netbird >/dev/null 2>&1; then
     echo "    Install from https://docs.netbird.io/get-started/install/macos"
   fi
 fi
+{{- else }}
+# mesh_provider is not "netbird" on this machine, so no mesh client is installed
+# here. NordVPN Meshnet is a feature of the NordVPN app itself (enable it in the
+# app), and it deliberately shares 100.64.0.0/10 with NetBird and Tailscale, so
+# only one mesh may run at a time. See docs/superpowers/specs/ for why.
+echo "==> mesh_provider={{ dig "mesh_provider" "netbird" . }}: skipping NetBird install"
+{{- end }}
 
 ls -d /Applications/NordVPN.app   >/dev/null 2>&1 && echo "==> NordVPN.app present"   || true
 ls -d /Applications/ProtonVPN.app >/dev/null 2>&1 && echo "==> ProtonVPN.app present" || true
@@ -42,6 +50,7 @@ ls -d /Applications/ProtonVPN.app >/dev/null 2>&1 && echo "==> ProtonVPN.app pre
 # the instance is `netbird@main`); Fedora's ships a plain `netbird.service`. Try
 # the template first, fall back to the plain unit, else let `netbird up` bring
 # the daemon up itself.
+{{ if eq (dig "mesh_provider" "netbird" .) "netbird" -}}
 if command -v netbird >/dev/null 2>&1; then
   sudo systemctl enable --now netbird@main 2>/dev/null \
     || sudo systemctl enable --now netbird 2>/dev/null \
@@ -49,6 +58,9 @@ if command -v netbird >/dev/null 2>&1; then
 else
   echo "==> netbird not yet installed — re-run after run_onchange_02 lands it (AUR on Arch, COPR/dnf on Fedora)"
 fi
+{{- else }}
+echo "==> mesh_provider={{ dig "mesh_provider" "netbird" . }}: skipping NetBird service"
+{{- end }}
 
 # NordVPN: enable group + daemon + auto-connect
 if command -v nordvpn >/dev/null 2>&1; then

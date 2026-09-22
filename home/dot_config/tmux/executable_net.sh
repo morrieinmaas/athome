@@ -3,13 +3,18 @@
 # style as battery.sh / pet.sh. Click either pill for detail (net-popup.sh).
 #
 # Pill 1, link:  Wi-Fi/ethernet glyph + the LAN address. The address is the
-#                genuinely useful bit: it is what the break-glass path connects
-#                to, and it drifts (this machine moved .156 -> .104 in a day).
-# Pill 2, VPN:   padlock + which tunnels are up, and NetBird's peer count.
+#                genuinely useful bit: it is what you connect to, and it drifts
+#                (this machine moved .156 -> .104 within a day).
+# Pill 2, VPN:   is the default route on a tunnel, i.e. is traffic leaving
+#                through a VPN. Provider-agnostic.
+# Pill 3, mesh:  this machine's 100.64.0.0/10 address, if it has one. Works for
+#                NordVPN Meshnet, Tailscale and NetBird alike, since all three
+#                allocate from that range.
 #
 # Cost matters here: the bar re-renders every status-interval. Measured on this
-# machine: ifconfig 7ms, netbird status 142ms, system_profiler SPAirPortDataType
-# 6020ms. So system_profiler is banned from this script and lives in the popup.
+# machine: ifconfig 7ms, networksetup ~160ms (cached below), system_profiler
+# SPAirPortDataType 6020ms. system_profiler is banned from this script entirely;
+# the popup does the expensive work.
 #
 # SSID is deliberately NOT shown: recent macOS redacts it (system_profiler
 # returns "<redacted>", networksetup claims "not associated") unless the calling
@@ -54,6 +59,7 @@ blue=$(opt @theme_blue);     blue=${blue:-#458588}
 green=$(opt @theme_green);   green=${green:-#98971a}
 red=$(opt @theme_red);       red=${red:-#cc241d}
 yellow=$(opt @theme_yellow); yellow=${yellow:-#d79921}
+muted=$(opt @theme_muted);   muted=${muted:-#7c6f64}
 pl=$(opt @pill_l); pr=$(opt @pill_r)
 
 # The click target is NOT set here. tmux honours #[range=...] reliably only
@@ -69,7 +75,7 @@ wifi_g=$(glyph F1EB)   # nf-fa-wifi
 eth_g=$(glyph F0E8)    # nf-fa-sitemap
 lock_g=$(glyph F023)   # nf-fa-lock
 open_g=$(glyph F09C)   # nf-fa-unlock
-peer_g=$(glyph F0C0)   # nf-fa-users, marks the NetBird peer tally
+peer_g=$(glyph F0C0)   # nf-fa-users, marks the mesh address
 
 # ── link ────────────────────────────────────────────────────────────────────
 # Do NOT derive the physical link from the routing table. An earlier version
@@ -132,41 +138,42 @@ else
 fi
 
 # ── tunnels ─────────────────────────────────────────────────────────────────
-# wg-quick writes /var/run/wireguard/<name>.name as root-only, but the directory
-# lists fine, so existence is a privilege-free up/down probe. `wg show
-# interfaces` is no good: NetBird's utun is a WireGuard interface too, so it
-# cannot tell the two apart.
-wg_up=0
-for n in /var/run/wireguard/nord*.name; do [ -e "$n" ] && wg_up=1; done
+# Provider-agnostic on purpose. This used to probe wg-quick's
+# /var/run/wireguard/nord*.name and call `netbird status`, which tied the bar to
+# one specific arrangement that has since been abandoned. Both probes below work
+# for any NetworkExtension VPN (NordVPN, Proton, Mullvad) and for a hand-rolled
+# wg-quick tunnel alike.
 
-peers=""
-nb_raw=$(netbird status 2>/dev/null)
-case "$nb_raw" in
-  *"Management: Connected"*)
-    peers=$(printf '%s\n' "$nb_raw" | sed -n 's/.*Peers count: \([0-9]*\/[0-9]*\).*/\1/p' | head -1)
-    ;;
-esac
-
-# "$peers" is NetBird's connected/known peer count, e.g. 0/1 means one peer is
-# registered on the mesh but currently offline. Labelled explicitly, because
-# a bare "0/1" in a status bar reads as an error rather than a peer tally.
-# TWO separate pills, not one. An earlier version rendered "wg <glyph> 0/1" in a
-# single pill, which reads as though the 0/1 belongs to WireGuard. It does not:
-# wg is the NordVPN tunnel, which is simply up or down with no count, while 0/1
-# is NetBird's peer tally. Two unrelated facts, so two pills.
-if [ "$wg_up" = 1 ]; then
-  wg_pill=$(pill "$green" net_vpn "$lock_g wg")
+# VPN egress: is the DEFAULT ROUTE on a tunnel? That is the question that
+# actually matters ("is my traffic leaving through a VPN"), and it needs no
+# vendor CLI. Note this is the default route deliberately, unlike the link
+# detection above, which needs the physical interface instead.
+vpn_if=""
+if [ "$(uname)" = Darwin ]; then
+  vpn_if=$(route -n get default 2>/dev/null | awk '/interface:/{print $2; exit}')
 else
-  wg_pill=$(pill "$red" net_vpn "$open_g wg")
+  vpn_if=$(ip route show default 2>/dev/null | awk '/default/{print $5; exit}')
+fi
+case "$vpn_if" in utun*|wg*|tun*|nordlynx) vpn_up=1 ;; *) vpn_up=0 ;; esac
+
+# Mesh: NordVPN Meshnet (and Tailscale, and NetBird) all allocate from the
+# RFC 6598 shared range 100.64.0.0/10, so an address in that range on any
+# interface means "this machine is on a mesh". Cheap: one ifconfig, ~7ms.
+mesh_ip=$(ifconfig 2>/dev/null \
+  | awk '/inet 100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\./{print $2; exit}')
+
+# Muted, not red, when either is off. Both are things you switch off on purpose
+# all the time now, so red would cry wolf; red is reserved for a broken link.
+if [ "$vpn_up" = 1 ]; then
+  vpn_pill=$(pill "$green" net_vpn "$lock_g vpn")
+else
+  vpn_pill=$(pill "$muted" net_vpn "$open_g direct")
 fi
 
-# Colour tracks the DAEMON, not the peer count. NetBird being up with no peer
-# online is normal: it means this machine is on the mesh and the other machine
-# happens to be off. Coloring that amber implied a fault here when the fault, if
-# any, is on the far end. Red is reserved for "this machine is not on the mesh".
-case "$peers" in
-  "") nb_pill=$(pill "$red" net_vpn "$peer_g nb off") ;;
-  *)  nb_pill=$(pill "$green" net_vpn "$peer_g nb $peers") ;;
-esac
+if [ -n "$mesh_ip" ]; then
+  mesh_pill=$(pill "$green" net_vpn "$peer_g $mesh_ip")
+else
+  mesh_pill=$(pill "$muted" net_vpn "$peer_g no mesh")
+fi
 
-printf '%s %s %s' "$link" "$wg_pill" "$nb_pill"
+printf '%s %s %s' "$link" "$vpn_pill" "$mesh_pill"

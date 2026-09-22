@@ -9,7 +9,7 @@
 #
 # This is where the expensive calls live: net.sh must stay fast because it runs
 # every status-interval, whereas this runs only on demand. Measured here:
-# ifconfig 7ms, netbird status 142ms, system_profiler SPAirPortDataType 6020ms,
+# ifconfig 7ms, networksetup ~160ms, system_profiler SPAirPortDataType 6020ms,
 # which is why system_profiler is not used at all.
 #
 # display-popup runs in the tmux SERVER environment, which never sources
@@ -43,54 +43,58 @@ section_link() {
   if [ "$(uname)" = Darwin ] && [ -n "$lan_if" ]; then
     svc=$(networksetup -listnetworkserviceorder 2>/dev/null \
       | awk -v d="$lan_if" '/^\([0-9]+\)/{s=substr($0,index($0,") ")+2)} $0 ~ "Device: "d"\\)" {print s; exit}')
-    [ -n "$svc" ] && row dns "$(networksetup -getdnsservers "$svc" 2>/dev/null | tr '\n' ' ')"
+    if [ -n "$svc" ]; then
+      # networksetup answers with a whole sentence when nothing is pinned;
+      # "DHCP" is the useful word.
+      d=$(networksetup -getdnsservers "$svc" 2>/dev/null | tr '\n' ' ')
+      case "$d" in *"aren't any"*|"") d="DHCP" ;; esac
+      row dns "$d"
+    fi
   fi
+  # No public-IP row here: it belongs with VPN egress, and having it in both
+  # sections meant two curl calls and ~1s of avoidable latency in the popup.
+}
+
+section_vpn() {
+  echo "VPN EGRESS"
+  # Provider-agnostic: ask whether the default route is a tunnel, rather than
+  # interrogating a specific vendor's CLI. Works for NordVPN, Proton, Mullvad
+  # and a hand-rolled wg-quick tunnel alike.
+  vpn_if=$(route -n get default 2>/dev/null | awk '/interface:/{print $2; exit}')
+  case "$vpn_if" in
+    utun*|wg*|tun*|nordlynx)
+      row state "tunnelled via $vpn_if"
+      row address "$(ifconfig "$vpn_if" 2>/dev/null | awk '/inet /{print $2; exit}')"
+      ;;
+    *)
+      row state "direct (no VPN)"
+      row via   "${vpn_if:-unknown}"
+      ;;
+  esac
   row "public ip" "$(curl -4 -s --max-time 5 https://1.1.1.1/cdn-cgi/trace 2>/dev/null | sed -n 's/^ip=//p')"
 }
 
-section_wg() {
-  echo "WIREGUARD (nord0)"
-  if [ -e /var/run/wireguard/nord0.name ]; then
-    row state up
-    ifconfig 2>/dev/null | awk '/^utun/{i=substr($1,1,length($1)-1)} /inet 10\.5\./{printf "  %-12s %s (%s)\n","address",$2,i}'
-    # The user-owned copy is readable; /etc/wireguard/nord0.conf is root 600.
-    conf="$HOME/.secrets/nordvpn/nord0.conf"
-    if [ -r "$conf" ]; then
-      row server   "$(sed -n 's/^# Server: //p' "$conf")"
-      row endpoint "$(sed -n 's/^Endpoint *= *//p' "$conf")"
-    fi
+section_mesh() {
+  echo "MESH"
+  # NordVPN Meshnet, Tailscale and NetBird all allocate from the RFC 6598
+  # shared range 100.64.0.0/10, so an address there means this machine is on a
+  # mesh, whichever product is providing it.
+  mesh=$(ifconfig 2>/dev/null \
+    | awk '/inet 100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\./{print $2; exit}')
+  if [ -n "$mesh" ]; then
+    row address "$mesh"
+    mesh_if=$(ifconfig 2>/dev/null | awk '/^[a-z]/{i=substr($1,1,length($1)-1)} /inet 100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\./{print i; exit}')
+    row interface "${mesh_if:-unknown}"
   else
-    row state "DOWN"
-    row "bring up" "sudo PATH=/opt/nanobrew/prefix/bin:\$PATH wg-quick up nord0"
+    row state "not on a mesh"
+    row hint  "NordVPN app > Meshnet, or: netbird up"
   fi
-}
-
-section_nb() {
-  echo "NETBIRD"
-  s=$(netbird status -d 2>/dev/null)
-  if [ -z "$s" ]; then row state "daemon not responding"; return; fi
-  # State this machine's own mesh membership first. Without it the peer count
-  # reads as "NetBird is disconnected", when it means the far end is offline.
-  case "$s" in
-    *"Management: Connected"*) row daemon "connected to the mesh" ;;
-    *)                         row daemon "NOT connected" ;;
-  esac
-  row address "$(printf '%s\n' "$s" | sed -n 's/^NetBird IP: //p' | head -1)"
-  row fqdn    "$(printf '%s\n' "$s" | sed -n 's/^FQDN: //p' | head -1)"
-  # "Peers count: 0/1 Connected" is NetBird's own wording and reads as a
-  # contradiction next to a 0. Spell it out instead.
-  pc=$(printf '%s\n' "$s" | sed -n 's/.*Peers count: \([0-9]*\)\/\([0-9]*\).*/\1 of \2/p' | head -1)
-  row peers "${pc:-unknown} connected"
-  # Per-peer rows are only meaningful once a peer is actually connected; with
-  # none they are all "-", which looks like something is wrong rather than idle.
-  ct=$(printf '%s\n' "$s" | sed -n 's/^ *Connection type: //p' | head -1)
-  case "$ct" in ""|"-") ;; *) row "conn type" "$ct"; row handshake "$(printf '%s\n' "$s" | sed -n 's/^ *Last WireGuard handshake: //p' | head -1)" ;; esac
 }
 
 # tmux hands back the full range name, "user|net", so match on a substring.
 case "${1:-}" in
-  *net_vpn*) body=$( { section_wg; echo; section_nb; echo; section_link; } ) ;;
-  *)         body=$( { section_link; echo; section_wg; echo; section_nb; } ) ;;
+  *net_vpn*) body=$( { section_vpn; echo; section_mesh; echo; section_link; } ) ;;
+  *)         body=$( { section_link; echo; section_vpn; echo; section_mesh; } ) ;;
 esac
 
 # No --border here on purpose: tmux draws it via `display-popup -b rounded -T`.

@@ -5,6 +5,7 @@
 {{- $githubHandle        := promptStringOnce . "githubHandle"        "GitHub username (e.g. octocat)" "" -}}
 {{- $githubId            := promptStringOnce . "githubId"            "GitHub numeric user ID (`gh api user -q .id`; empty = plain noreply email)" "" -}}
 {{- $netbirdMgmtUrl      := promptStringOnce . "netbirdManagementUrl" "NetBird management URL (empty = NetBird Cloud SaaS, e.g. https://netbird.example.com when self-hosting)" "" -}}
+{{- $meshProvider        := promptStringOnce . "meshProvider"        "Mesh VPN: meshnet (NordVPN, coexists with its own VPN) | netbird (system daemon, works at the login window) | none" "meshnet" -}}
 {{- $nordvpnCountry      := promptStringOnce . "nordvpnCountry"      "NordVPN auto-connect country (empty = NordVPN picks best, e.g. Netherlands)" "" -}}
 {{- $bitwardenUrl        := promptStringOnce . "bitwardenUrl"        "Bitwarden server URL (empty = US cloud bitwarden.com; EU = https://vault.bitwarden.eu; or your self-hosted Vaultwarden URL)" "" -}}
 {{/* Work + sidebiz emails are prompted (not hardcoded) so the template
@@ -89,6 +90,10 @@
     name_sidebiz  = {{ $sidebizName | quote }}
 
     # VPN config (empty = service default)
+    # mesh_provider picks which mesh run_once_08 installs. They are mutually
+    # exclusive: NordVPN Meshnet, Tailscale and NetBird all allocate from
+    # 100.64.0.0/10, so two of them running at once fight over the same range.
+    mesh_provider          = {{ $meshProvider | quote }}
     netbird_management_url = {{ $netbirdMgmtUrl | quote }}
     nordvpn_country        = {{ $nordvpnCountry | quote }}
 
@@ -128,6 +133,7 @@
     # re-init prompt-free and non-destructive. (machineType/hostname/githubHandle/
     # githubId above are already camelCase → they need no mirror.) When you add a
     # prompt with a snake_case data key, add its camelCase mirror here too.
+    meshProvider          = {{ $meshProvider | quote }}
     netbirdManagementUrl  = {{ $netbirdMgmtUrl | quote }}
     nordvpnCountry        = {{ $nordvpnCountry | quote }}
     bitwardenUrl          = {{ $bitwardenUrl | quote }}

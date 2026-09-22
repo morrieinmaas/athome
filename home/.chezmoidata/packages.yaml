@@ -73,7 +73,14 @@ darwin:
     - maccy                          # clipboard manager (mac equivalent of cliphist)
     - zed                            # Zed editor (GUI; configured via dot_config/zed/). Arch: `zed` in extra (pacman).
     - podman-desktop                 # podman GUI (Docker Desktop replacement). Arch: AUR `podman-desktop`.
-    - swiftbar                       # menu bar VPN indicator (plugin: dot_config/swiftbar/vpn.10s.sh). Plugin dir set via `defaults write com.ameba.SwiftBar PluginDirectory ~/.config/swiftbar`.
+    # swiftbar: NOT installed as an nb cask. nanobrew's cask extraction corrupts the
+    # signed bundle (spctl: "a sealed resource is missing or invalid", and macOS
+    # then refuses to open it as "damaged"), while the SAME zip extracted with
+    # `ditto -x -k` verifies as a notarized Developer ID build. Install by hand:
+    #   curl -fsSLo sb.zip https://github.com/swiftbar/SwiftBar/releases/download/v2.1.1/SwiftBar.v2.1.1.b597.zip
+    #   ditto -x -k sb.zip /tmp/sb && ditto /tmp/sb/SwiftBar.app /Applications/SwiftBar.app
+    # Plugin lives in dot_config/swiftbar/; point SwiftBar at it with
+    # `defaults write com.ameba.SwiftBar PluginDirectory ~/.config/swiftbar`.
     - font-jetbrains-mono-nerd-font  # ghostty + the tmux pill bar need the Nerd glyphs
 
 # Linux / Arch specifics

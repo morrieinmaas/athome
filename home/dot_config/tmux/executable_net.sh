@@ -64,26 +64,14 @@ fi
 lan_ip=""
 [ -n "$lan_if" ] && lan_ip=$(ifconfig "$lan_if" 2>/dev/null | awk '/inet /{print $2; exit}')
 
-# Prefer the network NAME over the address. On recent macOS the SSID is
-# redacted system-wide unless the calling app holds Location Services
-# permission: networksetup says "not associated", and ipconfig/system_profiler
-# both return the literal string "<redacted>". Grant the terminal that
-# permission (System Settings > Privacy & Security > Location Services) and the
-# name appears; until then fall back to the address, which is still useful.
-ssid=""
-if [ -n "$wifi_dev" ] && [ "$lan_if" = "$wifi_dev" ]; then
-  if [ "$(uname)" = Darwin ]; then
-    ssid=$(networksetup -getairportnetwork "$wifi_dev" 2>/dev/null | sed -n 's/^Current Wi-Fi Network: //p')
-  else
-    ssid=$(iwgetid -r 2>/dev/null)
-  fi
-  case "$ssid" in *"<redacted>"*) ssid="" ;; esac
-fi
-
+# Shows the ADDRESS, not the network name, on purpose. macOS treats the SSID as
+# location data (network names are how device positioning works without GPS) and
+# redacts it, along with the BSSID, from any caller lacking Location Services
+# permission. Turning that on for a terminal is a real privacy trade for a
+# cosmetic label, so it is declined here. The address is the more useful value
+# anyway: it is what the break-glass path connects to, and it drifts.
 if [ -z "$lan_if" ] || [ -z "$lan_ip" ]; then
   link=$(pill "$red" net_link "$wifi_g offline")
-elif [ -n "$ssid" ]; then
-  link=$(pill "$blue" net_link "$wifi_g $ssid")
 elif [ -n "$wifi_dev" ] && [ "$lan_if" = "$wifi_dev" ]; then
   link=$(pill "$blue" net_link "$wifi_g $lan_ip")
 else

@@ -1,34 +1,39 @@
 #!/usr/bin/env bash
-# Sourceable everforest fzf palette, matched to the system appearance.
+# Sourceable fzf palette derived from the LIVE tmux theme.
 # Exports COLORS for `fzf --color="$COLORS"`.
 #
 #   . "$HOME/.config/tmux/fzf-theme.sh"
 #
+# The theme picker (~/.local/bin/theme) already writes @theme_* options into
+# tmux and records the choice in ~/.config/themes/active, so reading them back
+# is the only way a popup can track the picker instead of drifting from it.
+# An earlier version hardcoded everforest, copied from pet-pick.sh, and went
+# visibly out of step the moment a different theme was selected.
+#
 # bg AND gutter are set to the same colour on purpose: fzf's default
 # transparent gutter renders as a dark left bar inside a tmux popup.
 #
-# NOTE: pet-pick.sh carries its own copy of this block; it predates this file
-# and is left alone deliberately rather than refactored as a side effect. Fold
-# it in next time that script is touched for its own reasons.
+# Falls back to everforest-light when tmux is not running or the options are
+# unset, so this stays usable outside a tmux session.
+#
+# NOTE: pet-pick.sh still carries its own hardcoded copy. Left alone
+# deliberately rather than refactored as a side effect; fold it in next time
+# that script is edited for its own reasons.
 
-_fzf_theme_is_dark() {  # portal first, gsettings fallback, same as pet.sh
-  if [ "$(uname)" = Darwin ]; then
-    [ "$(defaults read -g AppleInterfaceStyle 2>/dev/null)" = Dark ]
-  else
-    local s
-    s=$(gdbus call --session --dest org.freedesktop.portal.Desktop \
-          --object-path /org/freedesktop/portal/desktop \
-          --method org.freedesktop.portal.Settings.ReadOne \
-          org.freedesktop.appearance color-scheme 2>/dev/null)
-    case "$s" in *'uint32 1'*) return 0 ;; *'uint32 2'*) return 1 ;; esac
-    [ "$(gsettings get org.gnome.desktop.interface color-scheme 2>/dev/null)" = "'prefer-dark'" ]
-  fi
+_t() { # $1=option, $2=fallback
+  local v
+  v=$(tmux show -gv "$1" 2>/dev/null)
+  printf '%s' "${v:-$2}"
 }
 
-if _fzf_theme_is_dark; then
-  BG=2d353b FG=d3c6aa SEL=a7c080 SELFG=2d353b HL=dbbc7f PTR=e67e80 ACC=a7c080 HDR=859289
-else
-  BG=fdf6e3 FG=5c6a72 SEL=8da101 SELFG=fdf6e3 HL=dfa000 PTR=e66868 ACC=8da101 HDR=829181
-fi
-COLORS="bg:#$BG,gutter:#$BG,fg:#$FG,bg+:#$SEL,fg+:#$SELFG,hl:#$HL,hl+:#$SELFG,pointer:#$PTR,marker:#$PTR,prompt:#$ACC,info:#$HDR,header:#$HDR,border:#$HDR,label:#$ACC"
+BG=$(_t @theme_bg    '#fdf6e3')
+FG=$(_t @theme_fg    '#5c6a72')
+ACC=$(_t @theme_green '#8da101')
+HL=$(_t @theme_yellow '#dfa000')
+PTR=$(_t @theme_red   '#e66868')
+HDR=$(_t @theme_muted '#829181')
+
+# Selected row: accent background with the page background as its text colour,
+# which keeps contrast correct in both light and dark themes.
+COLORS="bg:${BG},gutter:${BG},fg:${FG},bg+:${ACC},fg+:${BG},hl:${HL},hl+:${BG},pointer:${PTR},marker:${PTR},prompt:${ACC},info:${HDR},header:${HDR},border:${HDR},label:${ACC}"
 export COLORS

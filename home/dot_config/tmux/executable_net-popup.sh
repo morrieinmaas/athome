@@ -31,15 +31,14 @@ section_link() {
     row address "$(ifconfig "$lan_if" 2>/dev/null | awk '/inet /{print $2; exit}')"
     row router  "${gw:-unknown}"
   fi
-  if [ "$(uname)" = Darwin ]; then
-    # networksetup, NOT system_profiler: the latter costs ~6s and both return
-    # nothing useful without Location Services permission for the terminal.
-    ssid=$(networksetup -getairportnetwork "${wifi_dev:-en0}" 2>/dev/null \
-      | sed -n 's/^Current Wi-Fi Network: //p')
-    case "$ssid" in
-      ""|*"<redacted>"*) row ssid "hidden (grant the terminal Location Services)" ;;
-      *)                 row ssid "$ssid" ;;
-    esac
+  # No SSID row: macOS redacts the network name and BSSID from callers without
+  # Location Services permission, and enabling that for a terminal is not worth
+  # a cosmetic label. The DNS row matters more here anyway, because wg-quick
+  # rewrites the interface's DNS while the tunnel is up.
+  if [ "$(uname)" = Darwin ] && [ -n "$lan_if" ]; then
+    svc=$(networksetup -listnetworkserviceorder 2>/dev/null \
+      | awk -v d="$lan_if" '/^\([0-9]+\)/{s=substr($0,index($0,") ")+2)} $0 ~ "Device: "d"\\)" {print s; exit}')
+    [ -n "$svc" ] && row dns "$(networksetup -getdnsservers "$svc" 2>/dev/null | tr '\n' ' ')"
   fi
   row "public ip" "$(curl -4 -s --max-time 5 https://1.1.1.1/cdn-cgi/trace 2>/dev/null | sed -n 's/^ip=//p')"
 }

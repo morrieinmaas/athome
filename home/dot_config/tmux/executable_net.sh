@@ -28,17 +28,20 @@ red=$(opt @theme_red);       red=${red:-#cc241d}
 yellow=$(opt @theme_yellow); yellow=${yellow:-#d79921}
 pl=$(opt @pill_l); pr=$(opt @pill_r)
 
-# #[range=user|NAME] makes the pill a click target; tmux reports the name back
-# as #{mouse_status_range}, which the MouseDown1Status binding dispatches on.
-pill() { # $1=colour $2=range-name $3=text
-  printf '#[range=user|%s]#[fg=%s,bg=default]%s#[fg=%s,bg=%s,bold] %s #[fg=%s,bg=default,nobold]%s#[norange]' \
-    "$2" "$1" "$pl" "$bg" "$1" "$3" "$1" "$pr"
+# The click target is NOT set here. tmux honours #[range=...] reliably only
+# when it appears in the status option itself, not when it arrives via a #()
+# command's output, so tmux.conf wraps this whole script in one
+# #[range=user|net] instead. $2 is kept for readability at the call sites.
+pill() { # $1=colour $2=label (unused, documents which pill) $3=text
+  printf '#[fg=%s,bg=default]%s#[fg=%s,bg=%s,bold] %s #[fg=%s,bg=default,nobold]%s' \
+    "$1" "$pl" "$bg" "$1" "$3" "$1" "$pr"
 }
 
 wifi_g=$(glyph F1EB)   # nf-fa-wifi
 eth_g=$(glyph F0E8)    # nf-fa-sitemap
 lock_g=$(glyph F023)   # nf-fa-lock
 open_g=$(glyph F09C)   # nf-fa-unlock
+peer_g=$(glyph F0C0)   # nf-fa-users, marks the NetBird peer tally
 
 # ── link ────────────────────────────────────────────────────────────────────
 # Ask the routing table for the GATEWAY's interface, not the default route:
@@ -61,8 +64,26 @@ fi
 lan_ip=""
 [ -n "$lan_if" ] && lan_ip=$(ifconfig "$lan_if" 2>/dev/null | awk '/inet /{print $2; exit}')
 
+# Prefer the network NAME over the address. On recent macOS the SSID is
+# redacted system-wide unless the calling app holds Location Services
+# permission: networksetup says "not associated", and ipconfig/system_profiler
+# both return the literal string "<redacted>". Grant the terminal that
+# permission (System Settings > Privacy & Security > Location Services) and the
+# name appears; until then fall back to the address, which is still useful.
+ssid=""
+if [ -n "$wifi_dev" ] && [ "$lan_if" = "$wifi_dev" ]; then
+  if [ "$(uname)" = Darwin ]; then
+    ssid=$(networksetup -getairportnetwork "$wifi_dev" 2>/dev/null | sed -n 's/^Current Wi-Fi Network: //p')
+  else
+    ssid=$(iwgetid -r 2>/dev/null)
+  fi
+  case "$ssid" in *"<redacted>"*) ssid="" ;; esac
+fi
+
 if [ -z "$lan_if" ] || [ -z "$lan_ip" ]; then
   link=$(pill "$red" net_link "$wifi_g offline")
+elif [ -n "$ssid" ]; then
+  link=$(pill "$blue" net_link "$wifi_g $ssid")
 elif [ -n "$wifi_dev" ] && [ "$lan_if" = "$wifi_dev" ]; then
   link=$(pill "$blue" net_link "$wifi_g $lan_ip")
 else
@@ -85,12 +106,15 @@ case "$nb_raw" in
     ;;
 esac
 
+# "$peers" is NetBird's connected/known peer count, e.g. 0/1 means one peer is
+# registered on the mesh but currently offline. Labelled explicitly, because
+# a bare "0/1" in a status bar reads as an error rather than a peer tally.
 if [ "$wg_up" = 1 ] && [ -n "$peers" ]; then
-  vpn=$(pill "$green" net_vpn "$lock_g wg nb $peers")
+  vpn=$(pill "$green" net_vpn "$lock_g wg $peer_g $peers")
 elif [ "$wg_up" = 1 ]; then
   vpn=$(pill "$green" net_vpn "$lock_g wg")
 elif [ -n "$peers" ]; then
-  vpn=$(pill "$yellow" net_vpn "$lock_g nb $peers")
+  vpn=$(pill "$yellow" net_vpn "$peer_g $peers")
 else
   vpn=$(pill "$red" net_vpn "$open_g no vpn")
 fi

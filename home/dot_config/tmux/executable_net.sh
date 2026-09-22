@@ -107,10 +107,13 @@ else
   wg_pill=$(pill "$red" net_vpn "$open_g wg")
 fi
 
+# Colour tracks the DAEMON, not the peer count. NetBird being up with no peer
+# online is normal: it means this machine is on the mesh and the other machine
+# happens to be off. Coloring that amber implied a fault here when the fault, if
+# any, is on the far end. Red is reserved for "this machine is not on the mesh".
 case "$peers" in
-  "")  nb_pill=$(pill "$red" net_vpn "$peer_g nb off") ;;           # daemon down
-  0/*) nb_pill=$(pill "$yellow" net_vpn "$peer_g nb $peers") ;;     # up, none connected
-  *)   nb_pill=$(pill "$green" net_vpn "$peer_g nb $peers") ;;
+  "") nb_pill=$(pill "$red" net_vpn "$peer_g nb off") ;;
+  *)  nb_pill=$(pill "$green" net_vpn "$peer_g nb $peers") ;;
 esac
 
 printf '%s %s %s' "$link" "$wg_pill" "$nb_pill"

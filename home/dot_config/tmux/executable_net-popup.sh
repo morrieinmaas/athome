@@ -62,6 +62,12 @@ section_nb() {
   echo "NETBIRD"
   s=$(netbird status -d 2>/dev/null)
   if [ -z "$s" ]; then row state "daemon not responding"; return; fi
+  # State this machine's own mesh membership first. Without it the peer count
+  # reads as "NetBird is disconnected", when it means the far end is offline.
+  case "$s" in
+    *"Management: Connected"*) row daemon "connected to the mesh" ;;
+    *)                         row daemon "NOT connected" ;;
+  esac
   row address "$(printf '%s\n' "$s" | sed -n 's/^NetBird IP: //p' | head -1)"
   row fqdn    "$(printf '%s\n' "$s" | sed -n 's/^FQDN: //p' | head -1)"
   # "Peers count: 0/1 Connected" is NetBird's own wording and reads as a

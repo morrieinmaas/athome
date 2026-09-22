@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+# nord0: drive the NordVPN wg-quick tunnel and its launchd babysitter
+# (com.local.nord0, installed by chezmoi run_onchange_19).
+#
+# The daemon re-asserts intent every 2 minutes, so a bare `wg-quick down` gets
+# silently undone. Intent lives in a root-owned marker file instead:
+#   nord0 on            clear the marker, bring the tunnel up now
+#   nord0 off           set the marker, take the tunnel down (stays down)
+#   nord0 status        tunnel + daemon state, handshake age
+#   nord0 new [country] regenerate the config (both copies), then cycle.
+#                       Use a DIFFERENT country per machine: nord-wg-config
+#                       derives the same account-wide key everywhere, and two
+#                       machines on the SAME server steal each other's session.
+set -euo pipefail
+export PATH="/opt/nanobrew/prefix/bin:/opt/homebrew/bin:$PATH"
+
+MARKER=/etc/wireguard/nord0.down
+ENSURE=/usr/local/libexec/nord0-ensure
+
+case "${1:-status}" in
+  on)
+    sudo rm -f "$MARKER"
+    sudo "$ENSURE"
+    ;;
+  off)
+    sudo touch "$MARKER"
+    if [ -e /var/run/wireguard/nord0.name ]; then
+      sudo PATH="$PATH" wg-quick down nord0
+    fi
+    ;;
+  new)
+    shift || true
+    tmp=$(mktemp)
+    trap 'rm -f "$tmp"' EXIT
+    # Generate ONCE and install both copies from it: two nord-wg-config runs
+    # can pick two different servers, and the user-readable copy (which the
+    # tmux popup displays) must describe the tunnel actually running.
+    nord-wg-config "$@" > "$tmp"
+    sudo mkdir -p /etc/wireguard && sudo chmod 700 /etc/wireguard
+    sudo install -m 600 -o root "$tmp" /etc/wireguard/nord0.conf
+    mkdir -p "$HOME/.secrets/nordvpn"
+    install -m 600 "$tmp" "$HOME/.secrets/nordvpn/nord0.conf"
+    grep '^# Server:' "$tmp" || true
+    if [ -e /var/run/wireguard/nord0.name ]; then
+      sudo PATH="$PATH" wg-quick down nord0
+    fi
+    sudo rm -f "$MARKER"
+    sudo "$ENSURE"
+    ;;
+  status)
+    if [ -e /var/run/wireguard/nord0.name ]; then
+      echo "tunnel:  up ($(cat /var/run/wireguard/nord0.name 2>/dev/null || echo utun?))"
+      sudo wg show "$(cat /var/run/wireguard/nord0.name)" latest-handshakes 2>/dev/null \
+        | awk -v now="$(date +%s)" '{printf "handshake: %ds ago\n", now-$2; exit}'
+    else
+      echo "tunnel:  down"
+    fi
+    [ -f "$MARKER" ] && echo "intent:  OFF (marker set — daemon keeps it down)" \
+                     || echo "intent:  on (daemon keeps it up)"
+    sudo launchctl print system/com.local.nord0 >/dev/null 2>&1 \
+      && echo "daemon:  loaded" || echo "daemon:  NOT loaded (run chezmoi apply)"
+    grep '^# Server:' "$HOME/.secrets/nordvpn/nord0.conf" 2>/dev/null || true
+    ;;
+  *)
+    echo "usage: nord0 [on|off|status|new [country]]" >&2
+    exit 64
+    ;;
+esac

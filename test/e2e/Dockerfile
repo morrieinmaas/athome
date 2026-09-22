@@ -28,14 +28,28 @@ RUN pacman -Syu --noconfirm --needed git curl sudo base-devel openssh which rust
 # every libalpm bump — exactly the breakage paru-bin had). The bootstrap then
 # skips its own yay build (`command -v yay`). Cached layer → done once at image
 # build, never per `podman run`.
-RUN pacman-key --init \
-    && pacman-key --recv-key 3056513887B78AEB --keyserver keyserver.ubuntu.com \
-    && pacman-key --lsign-key 3056513887B78AEB \
+#
+# chaotic's published instructions pull the signing key from a public keyserver,
+# but keyserver.ubuntu.com is flaky from CI (hkp timeout / HTTP 500 — it broke
+# this build on 2026-09-21). The keyring PACKAGE ships that same key, so take it
+# from there instead: one less host to depend on, since the CDN is already the
+# source of the packages below. Trust anchor is unchanged — `--lsign-key` pins
+# the full fingerprint, so a substituted keyring fails the build rather than
+# being trusted, and `pacman -U` then verifies the package signatures against it.
+RUN curl -fsSL --retry 3 --retry-all-errors \
+         -o /tmp/chaotic-keyring.pkg.tar.zst \
+         'https://cdn-mirror.chaotic.cx/chaotic-aur/chaotic-keyring.pkg.tar.zst' \
+    && bsdtar -xOf /tmp/chaotic-keyring.pkg.tar.zst \
+         usr/share/pacman/keyrings/chaotic.gpg > /tmp/chaotic.gpg \
+    && pacman-key --init \
+    && pacman-key --add /tmp/chaotic.gpg \
+    && pacman-key --lsign-key EF925EA60F33D0CB85C44AD13056513887B78AEB \
     && pacman -U --noconfirm \
          'https://cdn-mirror.chaotic.cx/chaotic-aur/chaotic-keyring.pkg.tar.zst' \
          'https://cdn-mirror.chaotic.cx/chaotic-aur/chaotic-mirrorlist.pkg.tar.zst' \
     && printf '\n[chaotic-aur]\nInclude = /etc/pacman.d/chaotic-mirrorlist\n' >> /etc/pacman.conf \
-    && pacman -Sy --noconfirm yay
+    && pacman -Sy --noconfirm yay \
+    && rm -f /tmp/chaotic-keyring.pkg.tar.zst /tmp/chaotic.gpg
 
 # makepkg/yay refuse to run as root → a passwordless-sudo build user.
 RUN useradd -m -G wheel ci \

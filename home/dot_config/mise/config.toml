@@ -52,7 +52,7 @@ sd         = "latest"   # sed alternative
 grex       = "latest"   # regex generator
 choose     = "latest"   # field selector (was choose / choose-rust)
 ast-grep   = "latest"   # structural search/rewrite
-lychee     = "0.24.2"   # link/URL checker for docs+markdown. Pinned as you had it in the live config (bump to "latest" if intentional)
+lychee     = "latest"   # link/URL checker for docs+markdown. Was pinned to 0.24.2 only because that is what the live config happened to hold; nothing depends on that version.
 
 # ── Modern CLI: system / inspection ─────────────────────────────────────────
 dust       = "latest"        # du
@@ -103,7 +103,7 @@ xh         = "latest"   # HTTPie-like client
 croc       = "latest"   # relay file transfer
 lazydocker = "latest"
 helm       = "latest"   # k8s package manager
-"aqua:int128/kubelogin" = "1.36.3"  # kubectl oidc-login (AKS/Entra); pinned — was added straight to the live config, captured here so chezmoi stops dropping it
+"aqua:int128/kubelogin" = "latest"  # kubectl oidc-login (AKS/Entra). Was pinned to 1.36.3 only because it was added straight to the live config and captured here verbatim. If an AKS/Entra cluster ever needs a specific oidc-login, re-pin it deliberately and say so here.
 jqp        = "latest"   # interactive jq playground
 act        = "latest"   # run GitHub Actions locally
 

@@ -106,27 +106,29 @@ gone after the history squash; the fixes live in the current tree).
 | First boot lands in TTY not a graphical login | archinstall's Niri profile pins lightdm, our setup expects greetd | `run_once_11` handles any display-manager and only enables greetd if NO DM is configured (respects archinstall's pick) |
 | zsh's Ctrl+A prints literal `^A` | `$EDITOR=nvim` triggers zsh's vi-mode auto-detect (substring match on "vi") | force `bindkey -e` |
 | Git push / ssh auth | GPG/gpg-agent retired (Phase 5). SSH keys are passphrase-less (`ssh-keygen -N ""`) and pinned per-host via `IdentityFile` + `IdentitiesOnly`, so ssh + SSH commit signing read the key files directly — **no agent needed**. Don't re-introduce an `SSH_AUTH_SOCK` override pointing at a gpg/ssh agent. | Phase 5 design |
-| Noctalia bar says "wifi disabled" but `nmcli` works | Noctalia shells out to `nmcli` (not D-Bus); needs to be RESTARTED after switching backend so `nmcli -t monitor` re-attaches | `networkmanager` is pinned; recover with `pkill -f "qs.*noctalia-shell" && qs -c noctalia-shell &` |
-| Noctalia never spawns on niri start | `noctalia-shell` is a Quickshell config NAME, not a binary — must launch via `qs -c noctalia-shell` | spawn-at-startup uses `qs -c noctalia-shell` |
+| Noctalia bar says "wifi disabled" but `nmcli` works | Noctalia shells out to `nmcli` (not D-Bus); needs to be RESTARTED after switching backend so `nmcli -t monitor` re-attaches | `networkmanager` is pinned; recover with `pkill -x noctalia && noctalia -d` |
+| Noctalia never spawns on niri start | v4 only: `noctalia-shell` was a Quickshell config NAME, not a binary. **v5 ships a real `noctalia` binary** and is launched directly | spawn-at-startup uses `noctalia` |
 | Bootstrap installs an outdated shell stack on a fresh box | bootstrap defaulted `--ref` to a stale tag | tag after every shell-stack change |
 | `--machine work` / `ATHOME_WORK_EMAIL` ignored; chezmoi prompts for every value on first `init` despite "pre-filled" flags | `chezmoi --promptString KEY=VAL` matches on the prompt's **display text**, not the field name (`promptStringOnce . "machineType" "Machine type …"`) — so `--promptString machineType=…` was silently dropped | bootstrap seeds answers into `~/.config/chezmoi/chezmoi.toml` `[data]` **before** `chezmoi init` (`promptStringOnce` reuses existing data → no prompt), resolved `ATHOME_*` env → `--config` TOML (`examples/bootstrap.toml.example`) → derivation. Don't reintroduce `--promptString field=…`. |
 
 ## Things Noctalia replaces — don't double-spawn
 
-Noctalia (Quickshell-based) provides these natively. Do NOT add them to `packages.yaml` or `spawn-at-startup`:
+Noctalia provides these natively. Do NOT add them to `packages.yaml` or `spawn-at-startup`.
+IPC is `noctalia msg <command>` in v5; v4's `qs -c noctalia-shell ipc call <a> <b>` is gone:
 
-- launcher (was fuzzel) — use `qs -c noctalia-shell ipc call launcher toggle`
-- notifications (was mako) — built-in; `notifications toggleHistory` etc.
-- lockscreen (was swaylock) — `lockScreen lock`
-- idle handler (was swayidle) — `idleInhibitor toggle`
-- clipboard history (was cliphist) — `launcher clipboard`
+- launcher (was fuzzel): `noctalia msg panel-toggle launcher`
+- notifications (was mako): built-in; `noctalia msg notification-clear-history`, `notification-dnd-toggle`
+- lockscreen (was swaylock): `noctalia msg session lock` (also suspend/logout/reboot/shutdown)
+- idle handler (was swayidle): built-in
+- clipboard history (was cliphist): `noctalia msg panel-toggle launcher clipboard`
 - polkit agent (was polkit-gnome) — Noctalia ships its own
-- wallpaper daemon (was swww as primary) — `wallpaper toggle/random/set/get/refresh`
-- media keys → wpctl; brightness keys → brightnessctl — both via `volume increase` / `brightness increase` IPC
+- wallpaper daemon (was swww as primary): `noctalia msg wallpaper-next|-random|-set|-get`
+- media/volume/brightness keys: `noctalia msg volume-up|volume-mute|mic-mute|brightness-up|media toggle`
 
-**Noctalia does NOT ship a greeter.** It has `Modules/LockScreen/` but no `Modules/Greeter/`. The login screen at boot is `ly` / `greetd-tuigreet` / `lightdm` — Noctalia takes over after login.
+**Noctalia v5 DOES ship a greeter** (`noctalia-greeter`, for greetd; it selects user + Wayland session and supports a default session). athome still uses GDM, chosen because it offers a session picker; noctalia-greeter is a viable alternative that would match the shell's palette. v4 shipped no greeter, which is what the following note was written against.
+**v4 note:** v4 had `Modules/LockScreen/` but no `Modules/Greeter/`, so the login screen came from elsewhere. athome now installs **GDM** (`run_once_11` sets niri as the per-user default via AccountsService, GNOME stays selectable at the gear); Noctalia takes over after login either way.
 
-Authoritative IPC verb list: [`Services/Control/IPCService.qml`](https://github.com/noctalia-dev/noctalia-shell/blob/main/Services/Control/IPCService.qml). On-machine discovery: `qs -c noctalia-shell ipc show`.
+Authoritative IPC verb list: `noctalia msg --help` on the machine (57 verbs in v5.1.0). The old v4 pointer was `Services/Control/IPCService.qml` in the noctalia-shell repo.
 
 ## Packaging discipline
 
@@ -151,7 +153,7 @@ When you need ground truth (rather than my paraphrase), go here:
 | Tool | Authoritative source |
 | --- | --- |
 | niri config grammar | [niri-wm/niri](https://github.com/niri-wm/niri) — `niri-config/src/lib.rs` for the actual struct definitions |
-| niri compositor settings for Noctalia | [docs.noctalia.dev/v4/getting-started/compositor-settings/niri](https://docs.noctalia.dev/v4/getting-started/compositor-settings/niri/) |
+| niri compositor settings for Noctalia | [docs.noctalia.dev/noctalia](https://docs.noctalia.dev/noctalia/) (v5; the v4 docs tree is unmaintained) |
 | Noctalia IPC verbs | [`noctalia-dev/noctalia-shell` — `Services/Control/IPCService.qml`](https://github.com/noctalia-dev/noctalia-shell/blob/main/Services/Control/IPCService.qml) |
 | opensessions sidebar (tmux) | [`Ataraxy-Labs/opensessions` — `docs/reference/`](https://github.com/Ataraxy-Labs/opensessions/tree/main/docs/reference) — `~/.config/opensessions/config.json` fields, built-in theme names, programmatic API |
 | chezmoi `.chezmoiroot`, `chezmoi add --autotemplate`, `chezmoi state` | [chezmoi.io](https://www.chezmoi.io/) — `Reference / Special files and directories` |

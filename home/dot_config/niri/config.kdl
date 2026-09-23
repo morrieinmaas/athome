@@ -3,9 +3,9 @@
 // Validate manually: `niri validate -c ~/.config/niri/config.kdl`
 //
 // Shell: Noctalia (Quickshell). Authoritative IPC verb list lives at
-//   https://github.com/noctalia-dev/noctalia-shell/blob/main/Services/Control/IPCService.qml
+//   `noctalia msg --help` on the machine (57 verbs in v5.1.0)
 // Compositor recommendations from upstream:
-//   https://docs.noctalia.dev/v4/getting-started/compositor-settings/niri/
+//   https://docs.noctalia.dev/noctalia/   (v5; the v4 tree is unmaintained)
 //
 // Anything Noctalia replaces natively (fuzzel/mako/swayidle/swaylock/polkit-
 // gnome/cliphist/wpctl/brightnessctl direct calls) is NOT spawned/used here.
@@ -101,12 +101,15 @@ cursor {
 // wallpaper daemon (was swww-daemon). Adding any of those alongside
 // Noctalia is duplicate work that fights over the same Wayland
 // protocols / D-Bus names.
-spawn-at-startup "qs" "-c" "noctalia-shell"
+// v5 ships a real binary; v4 was a Quickshell CONFIG NAME launched as
+// `qs -c noctalia-shell`. Bare `noctalia` runs the shell in the foreground,
+// which is what niri wants for a spawned child (`-d` would daemonise it).
+spawn-at-startup "noctalia"
 
 screenshot-path "~/Pictures/Screenshots/screenshot-%Y-%m-%d-%H-%M-%S.png"
 
 // ── window rules ────────────────────────────────────────────────────────────
-// Per docs.noctalia.dev/v4/getting-started/compositor-settings/niri/ —
+// Per docs.noctalia.dev/noctalia/ (v5),
 // 20px corner radius is the Noctalia upstream recommendation; matches
 // the panel/dock visuals.
 window-rule {
@@ -124,7 +127,8 @@ debug {
 // ── binds ───────────────────────────────────────────────────────────────────
 // Noctalia IPC verbs verified against:
 //   https://github.com/noctalia-dev/noctalia-shell/blob/main/Services/Control/IPCService.qml
-// Discover full verb tree on-machine: `qs -c noctalia-shell ipc show`
+// Discover the full verb tree on-machine: `noctalia msg --help`,
+// and per-verb arguments with e.g. `noctalia msg session --help`.
 binds {
     // Hotkey overlay (niri's own — shows everything below)
     Mod+Shift+Slash    { show-hotkey-overlay; }
@@ -139,23 +143,23 @@ binds {
 
     // ─── Noctalia panels / launchers (via its IPC) ──────────────────────────
     // Generic launcher (Noctalia's, replaces fuzzel).
-    Mod+Space          { spawn "qs" "-c" "noctalia-shell" "ipc" "call" "launcher" "toggle"; }
+    Mod+Space          { spawn "noctalia" "msg" "panel-toggle" "launcher"; }
     // Launcher in dedicated modes — much nicer than the cliphist+fuzzel chain.
-    Ctrl+Alt+V         { spawn "qs" "-c" "noctalia-shell" "ipc" "call" "launcher" "clipboard"; }
-    Ctrl+Alt+E         { spawn "qs" "-c" "noctalia-shell" "ipc" "call" "launcher" "emoji"; }
-    Ctrl+Alt+W         { spawn "qs" "-c" "noctalia-shell" "ipc" "call" "launcher" "windows"; }
+    Ctrl+Alt+V         { spawn "noctalia" "msg" "panel-toggle" "launcher" "clipboard"; }
+    Ctrl+Alt+E         { spawn "noctalia" "msg" "panel-toggle" "launcher" "emoji"; }
+    Ctrl+Alt+W         { spawn "noctalia" "msg" "panel-toggle" "launcher" "windows"; }
     // Control center + settings + bar peek (per Noctalia's recommended binds).
-    Mod+S              { spawn "qs" "-c" "noctalia-shell" "ipc" "call" "controlCenter" "toggle"; }
-    Mod+Comma          { spawn "qs" "-c" "noctalia-shell" "ipc" "call" "settings" "toggle"; }
-    Mod+N              { spawn "qs" "-c" "noctalia-shell" "ipc" "call" "notifications" "toggleHistory"; }
-    Mod+Shift+T        { spawn "qs" "-c" "noctalia-shell" "ipc" "call" "darkMode" "toggle"; }
+    Mod+S              { spawn "noctalia" "msg" "panel-toggle" "control-center"; }
+    Mod+Comma          { spawn "noctalia" "msg" "settings-toggle"; }
+    Mod+N              { spawn "noctalia" "msg" "panel-toggle" "notifications"; }
+    Mod+Shift+T        { spawn "noctalia" "msg" "theme-mode-toggle"; }
 
     // ─── Lock / session ─────────────────────────────────────────────────────
     // Use Noctalia's native lockscreen IPC. systemd-logind compatibility
     // is preserved separately: loginctl lock-session is the standard
     // event Noctalia listens for too, so either path triggers the same
     // lockscreen.
-    Mod+L              { spawn "qs" "-c" "noctalia-shell" "ipc" "call" "lockScreen" "lock"; }
+    Mod+L              { spawn "noctalia" "msg" "session" "lock"; }
 
     // ─── Window focus / move ────────────────────────────────────────────────
     Mod+Left           { focus-column-left;  }
@@ -194,13 +198,13 @@ binds {
     Mod+Shift+Print    { screenshot-window;   }
 
     // ─── Media + brightness via Noctalia IPC (was wpctl + brightnessctl) ────
-    XF86AudioRaiseVolume   { spawn "qs" "-c" "noctalia-shell" "ipc" "call" "volume" "increase"; }
-    XF86AudioLowerVolume   { spawn "qs" "-c" "noctalia-shell" "ipc" "call" "volume" "decrease"; }
-    XF86AudioMute          { spawn "qs" "-c" "noctalia-shell" "ipc" "call" "volume" "muteOutput"; }
-    XF86AudioMicMute       { spawn "qs" "-c" "noctalia-shell" "ipc" "call" "volume" "muteInput"; }
-    XF86AudioPlay          { spawn "qs" "-c" "noctalia-shell" "ipc" "call" "media" "playPause"; }
-    XF86AudioNext          { spawn "qs" "-c" "noctalia-shell" "ipc" "call" "media" "next"; }
-    XF86AudioPrev          { spawn "qs" "-c" "noctalia-shell" "ipc" "call" "media" "previous"; }
-    XF86MonBrightnessUp    { spawn "qs" "-c" "noctalia-shell" "ipc" "call" "brightness" "increase"; }
-    XF86MonBrightnessDown  { spawn "qs" "-c" "noctalia-shell" "ipc" "call" "brightness" "decrease"; }
+    XF86AudioRaiseVolume   { spawn "noctalia" "msg" "volume-up"; }
+    XF86AudioLowerVolume   { spawn "noctalia" "msg" "volume-down"; }
+    XF86AudioMute          { spawn "noctalia" "msg" "volume-mute"; }
+    XF86AudioMicMute       { spawn "noctalia" "msg" "mic-mute"; }
+    XF86AudioPlay          { spawn "noctalia" "msg" "media" "toggle"; }
+    XF86AudioNext          { spawn "noctalia" "msg" "media" "next"; }
+    XF86AudioPrev          { spawn "noctalia" "msg" "media" "previous"; }
+    XF86MonBrightnessUp    { spawn "noctalia" "msg" "brightness-up"; }
+    XF86MonBrightnessDown  { spawn "noctalia" "msg" "brightness-down"; }
 }

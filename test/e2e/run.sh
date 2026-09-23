@@ -63,7 +63,7 @@ if [ "$platform" = "linux/amd64" ] && [ "$host_arch" != "x86_64" ] && [ "$host_a
     arch)
       # slow_aur compiles from source under qemu; heavy_gui/heavy_desktop are big
       # prebuilt downloads. Trim freely — names are Arch/AUR-specific.
-      slow_aur="nirimod-git bandwhich gping trippy noctalia-shell podman-tui prettierd"
+      slow_aur="nirimod-git bandwhich gping trippy podman-tui prettierd"
       heavy_gui="zed ghostty opencode-bin zen-browser-bin librewolf-bin"
       heavy_desktop="niri gdm gnome-shell gnome-session gnome-control-center mutter nautilus gnome-shell-extensions evolution-data-server"
       skip_list="$slow_aur $heavy_gui $heavy_desktop"
@@ -73,7 +73,7 @@ if [ "$platform" = "linux/amd64" ] && [ "$host_arch" != "x86_64" ] && [ "$host_a
       # compiles — but the GUI/desktop RPMs are large. Skip the same not-asserted
       # heavy set, using Fedora names (from packages.yaml fedora.dnf / fedora.copr).
       heavy_gui="zed ghostty zen-browser"
-      heavy_desktop="niri gdm noctalia-shell gnome-shell gnome-session gnome-control-center mutter nautilus gnome-extensions-app evolution-data-server"
+      heavy_desktop="niri gdm noctalia gnome-shell gnome-session gnome-control-center mutter nautilus gnome-extensions-app evolution-data-server"
       skip_list="$heavy_gui $heavy_desktop"
       ;;
   esac

@@ -132,14 +132,20 @@ linux:
     - gnome-keyring                  # credential storage (native ssh-agent path on Linux; many GNOME apps)
     - gdm                            # display manager. Chosen over greetd because it is the only greeter here with a SESSION PICKER: run_once_11 sets niri as the per-user default via AccountsService, and GNOME stays one click away in the gear menu. tuigreet can launch a session but has no per-user default, so that arrangement cannot exist under greetd.
     - nautilus                       # file manager
-    # ── Noctalia shell deps (per docs.noctalia.dev/v4/getting-started/installation) ──
+    # ── Noctalia deps (docs.noctalia.dev/noctalia/getting-started/installation) ──
+    # v5 needs wayland/mesa/pipewire/libsecret/polkit, which are already pulled
+    # by the package itself. What follows are the OPTIONAL feature deps: the
+    # panels for bluetooth, brightness and calendar only appear if these exist.
     # Core: brightnessctl + git + imagemagick + python are already in our
     # list elsewhere. Optional integrations listed below.
     - wlsunset                       # blue-light filter Noctalia controls
     - evolution-data-server          # calendar/contact backend Noctalia integrates with (optional)
     - ddcutil                        # external monitor brightness via DDC/CI (optional; can cause issues w/ some monitors)
     - power-profiles-daemon          # power-profile selector backend (performance/balanced/saver)
-    - kimageformats                  # Qt6/KF6 plugin: AVIF/JXL/PSD/etc — Quickshell previews
+    # Noctalia v5. In [extra] as `noctalia`, NOT the AUR `noctalia-shell` that
+    # packaged v4. v5 is a ground-up rewrite, not a Quickshell shell, so it
+    # pulls neither quickshell nor the KF6 image plugins v4 needed.
+    - noctalia
     - qt6-imageformats               # Qt6 plugin: ICO/MNG/TIFF/WBMP/WEBP — same reason
     - bluez                          # BlueZ stack — the kernel-side bluetooth daemon
     - bluez-utils                    # bluetoothctl CLI; required for Noctalia bluetooth panel
@@ -173,8 +179,7 @@ linux:
     - zen-browser-bin
     - librewolf-bin                  # privacy-hardened Firefox fork
     - nirimod-git
-    - matugen-bin                    # auto-theming from wallpaper — used by Noctalia's color generation
-    - noctalia-shell                 # the shell itself (Quickshell-based — pulls noctalia-qs as a dep)
+    - matugen-bin                    # wallpaper-derived palettes for anything that wants them. NOTE: Noctalia v5 generates its own palette internally (theme.source = "wallpaper"), so this is no longer required BY Noctalia; kept as a general-purpose tool.
     - nordvpn-bin
     - bandwhich                      # needs root/caps; kept native (matches the brew formula on macOS)
     - gping                          # ICMP; kept native
@@ -199,7 +204,10 @@ fedora:
   # ARE in Fedora main, so no COPR for them.
   copr:
     - yalter/niri                  # niri compositor
-    - zhangyi6324/noctalia-shell   # noctalia-shell (Quickshell) + deps
+    # Noctalia v5 is in Fedora's default repos from F44, and the e2e targets
+    # fedora:latest, so no COPR is needed. On F43 or older, enable
+    # LionHeartP/noctalia-git instead. The old zhangyi6324/noctalia-shell COPR
+    # packaged v4 (Quickshell), which upstream no longer maintains.
     - scottames/ghostty            # ghostty terminal
     - sneexy/zen-browser           # Zen browser (RPM)
     - pgdev/zed                    # Zed editor (GUI) — no Fedora main-repo pkg
@@ -233,7 +241,7 @@ fedora:
     - uv                           # Astral's Python tool/env manager (Arch+mac get it via `common`; Fedora's list is self-contained so it's listed explicitly). Fedora main repo, F40+. Deliberately NOT the curl|sh installer: that extracts a tarball with GNU tar, which dies under the e2e's qemu emulation — dnf avoids it.
     # ── niri + Noctalia + ghostty + zen + zed + greetd + nerd font ──
     - niri
-    - noctalia-shell
+    - noctalia                     # v5; see the COPR note above
     - ghostty
     - zen-browser
     - zed
@@ -255,7 +263,6 @@ fedora:
     - xdg-desktop-portal
     - xdg-desktop-portal-gtk
     - xdg-desktop-portal-wlr
-    - kf6-kimageformats
     - qt6-qtimageformats
     - evolution-data-server
     - nautilus

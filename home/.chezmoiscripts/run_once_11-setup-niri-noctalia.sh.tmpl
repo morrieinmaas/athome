@@ -24,23 +24,29 @@ exit 0
 
 {{ if eq .chezmoi.os "linux" -}}
 
-# Noctalia post-install. Noctalia uses an in-shell setup wizard on first
-# launch — there's nothing to configure from the chezmoi side beyond
-# "make sure the package landed and the config dir exists". User runs the
-# wizard interactively the first time they log into niri.
-if command -v noctalia-shell >/dev/null 2>&1; then
-  echo "✓ noctalia-shell present ($(noctalia-shell --version 2>/dev/null || echo unversioned))"
-  mkdir -p "$HOME/.config/noctalia"
+# Noctalia v5 post-install. The binary is `noctalia`; the v4 one was
+# `noctalia-shell` and is a DIFFERENT, Quickshell-based program that upstream
+# no longer maintains. They can coexist, which is exactly why this checks for
+# the v5 name specifically rather than either.
+#
+# Settings live at ~/.local/state/noctalia/settings.toml and athome ships a
+# starter with create_ semantics, so chezmoi writes it once and then never
+# again. That matters because Noctalia rewrites the file itself from its own
+# UI; overwriting it on every apply would throw away your changes.
+if command -v noctalia >/dev/null 2>&1; then
+  echo "✓ noctalia v5 present ($(noctalia --version 2>/dev/null || echo unversioned))"
+  mkdir -p "$HOME/.local/state/noctalia"
 else
-  echo "!! 'noctalia-shell' binary not found after package install"
+  echo "!! 'noctalia' binary not found after package install"
   if command -v dnf >/dev/null 2>&1 && ! command -v pacman >/dev/null 2>&1; then
-    followup "noctalia-shell not on PATH — check the dnf install:"
-    followup "    dnf list installed noctalia-shell"
-    followup "    sudo dnf install -y noctalia-shell    # if missing (needs the zhangyi6324/noctalia-shell COPR)"
+    followup "noctalia not on PATH, check the dnf install:"
+    followup "    dnf list installed noctalia"
+    followup "    sudo dnf install -y noctalia          # F44+ ships it in the default repos"
+    followup "    # on F43 or older: sudo dnf copr enable LionHeartP/noctalia-git"
   else
-    followup "noctalia-shell not on PATH — check the AUR install:"
-    followup "    yay -Q noctalia-shell"
-    followup "    yay -S noctalia-shell    # if missing"
+    followup "noctalia not on PATH, check the install:"
+    followup "    pacman -Q noctalia                    # it is in [extra], not the AUR"
+    followup "    sudo pacman -S noctalia               # if missing"
   fi
 fi
 

@@ -64,14 +64,25 @@ fi
 
 if [[ -n "$current_dm" ]] && systemctl is-enabled "$current_dm" 2>/dev/null | grep -q enabled; then
   echo "✓ display manager already configured: $current_dm — leaving it alone"
-  echo "  (to migrate to greetd: sudo systemctl disable $current_dm && sudo systemctl enable greetd)"
+  echo "  (to switch to GDM: sudo systemctl disable $current_dm && sudo systemctl enable gdm)"
+elif command -v gdm >/dev/null 2>&1 || [[ -f /usr/lib/systemd/system/gdm.service ]]; then
+  # GDM preferred over greetd. It is the only greeter here that offers a SESSION
+  # PICKER, which is the whole point of keeping GNOME as a fallback: niri is the
+  # default (set below via AccountsService) and GNOME is one click away in the
+  # gear menu. tuigreet can launch a session but has no per-user default, so the
+  # niri-default half of that arrangement simply does not exist under greetd.
+  echo "==> no display manager configured — enabling gdm"
+  sudo systemctl enable gdm
+  current_dm=gdm   # so the AccountsService step below runs on this same pass
+  followup "Display manager set to GDM — reboot to land in niri; GNOME is selectable at the login gear"
 else
-  echo "==> no display manager configured — enabling greetd as the default"
+  echo "==> no display manager configured and gdm not installed — enabling greetd"
   sudo systemctl enable greetd
   followup "Display manager changed to greetd — reboot to land in the niri session via tuigreet"
 fi
 
-# If GDM is the active DM (e.g. archinstall's GNOME profile installed it), make
+# If GDM is the active DM (installed above, or already present from e.g.
+# archinstall's GNOME profile), make
 # niri the DEFAULT login session — GNOME stays one click away in the GDM gear
 # menu. GDM reads the per-user default from AccountsService. Only acts once niri
 # is actually installed (its wayland session file exists).

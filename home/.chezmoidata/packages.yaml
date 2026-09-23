@@ -112,17 +112,25 @@ linux:
     - wl-clipboard                   # generic Wayland clipboard CLI; Noctalia uses it under the hood for some actions
     - ttf-jetbrains-mono-nerd        # ghostty font + Nerd glyphs for the tmux pill bar
     - noto-fonts-emoji               # color emoji (the tmux pet etc.) — macOS ships Apple Color Emoji; Linux needs this or emoji render as tofu
-    # GNOME — on a fresh box the FULL GNOME DE + GDM come from archinstall's
-    # GNOME profile ("just works": external displays, floating). This minimal
-    # subset is just a safety net for a Minimal/no-DE install. GDM is the display
-    # manager with niri as the DEFAULT session (set by run_once_11); GNOME stays
-    # selectable at the GDM gear. greetd is only auto-enabled if NO DM exists.
-    # No `gnome` group install (avoids gnome-music/weather/etc. bloat).
+    # GNOME — a deliberate minimal subset as the FALLBACK desktop, not the daily
+    # driver. niri + Noctalia is the daily driver; GNOME exists for when a
+    # Wayland compositor bug or an external-display problem needs a known-good
+    # session to fall back to. No `gnome` group install (that drags in
+    # gnome-music/weather/etc.).
+    #
+    # GDM is installed EXPLICITLY below rather than assumed from archinstall's
+    # GNOME profile, which is what the previous version did: on a Minimal or
+    # non-GNOME install you silently got greetd instead, and the niri-as-default
+    # logic in run_once_11 never fired because it is gated on GDM being active.
+    # run_once_11 sets niri as the per-user default session via AccountsService;
+    # GNOME stays one click away in the GDM gear menu. greetd remains only as a
+    # fallback for machines where gdm is somehow absent.
     - gnome-shell                    # core GNOME compositor
     - gnome-session                  # session manager + .desktop entries
     - gnome-control-center           # settings
     - mutter                         # GNOME's window manager
     - gnome-keyring                  # credential storage (native ssh-agent path on Linux; many GNOME apps)
+    - gdm                            # display manager. Chosen over greetd because it is the only greeter here with a SESSION PICKER: run_once_11 sets niri as the per-user default via AccountsService, and GNOME stays one click away in the gear menu. tuigreet can launch a session but has no per-user default, so that arrangement cannot exist under greetd.
     - nautilus                       # file manager
     # ── Noctalia shell deps (per docs.noctalia.dev/v4/getting-started/installation) ──
     # Core: brightnessctl + git + imagemagick + python are already in our
@@ -256,6 +264,7 @@ fedora:
     - gnome-control-center
     - gnome-extensions-app         # = Arch gnome-shell-extensions (manage GNOME extensions)
     - gnome-keyring
+    - gdm                          # display manager; niri default + GNOME selectable (see the Arch note)
     - mutter
     # ── rootless podman backing bits ──
     - fuse-overlayfs

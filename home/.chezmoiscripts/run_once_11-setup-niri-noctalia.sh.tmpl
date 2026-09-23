@@ -71,12 +71,12 @@ elif command -v gdm >/dev/null 2>&1 || [[ -f /usr/lib/systemd/system/gdm.service
   # default (set below via AccountsService) and GNOME is one click away in the
   # gear menu. tuigreet can launch a session but has no per-user default, so the
   # niri-default half of that arrangement simply does not exist under greetd.
-  echo "==> no display manager configured — enabling gdm"
+  echo "==> no display manager configured, enabling gdm"
   sudo systemctl enable gdm
   current_dm=gdm   # so the AccountsService step below runs on this same pass
-  followup "Display manager set to GDM — reboot to land in niri; GNOME is selectable at the login gear"
+  followup "Display manager set to GDM. Reboot to land in niri; GNOME is selectable at the login gear"
 else
-  echo "==> no display manager configured and gdm not installed — enabling greetd"
+  echo "==> no display manager configured and gdm not installed, enabling greetd"
   sudo systemctl enable greetd
   followup "Display manager changed to greetd — reboot to land in the niri session via tuigreet"
 fi

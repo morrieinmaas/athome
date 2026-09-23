@@ -112,7 +112,7 @@ linux:
     - wl-clipboard                   # generic Wayland clipboard CLI; Noctalia uses it under the hood for some actions
     - ttf-jetbrains-mono-nerd        # ghostty font + Nerd glyphs for the tmux pill bar
     - noto-fonts-emoji               # color emoji (the tmux pet etc.) — macOS ships Apple Color Emoji; Linux needs this or emoji render as tofu
-    # GNOME — a deliberate minimal subset as the FALLBACK desktop, not the daily
+    # GNOME: a deliberate minimal subset as the FALLBACK desktop, not the daily
     # driver. niri + Noctalia is the daily driver; GNOME exists for when a
     # Wayland compositor bug or an external-display problem needs a known-good
     # session to fall back to. No `gnome` group install (that drags in

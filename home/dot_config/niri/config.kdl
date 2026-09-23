@@ -59,19 +59,19 @@ layout {
 
     focus-ring {
         width 2
-        active-color   "#cba6f7"
-        inactive-color "#45475a"
+        active-color   "#83a598"
+        inactive-color "#a89984"
     }
 
     border {
         off
         width 2
-        active-color   "#cba6f7"
-        inactive-color "#45475a"
+        active-color   "#83a598"
+        inactive-color "#a89984"
     }
 
     insert-hint {
-        color "#cba6f7"
+        color "#d8a657"
     }
 }
 

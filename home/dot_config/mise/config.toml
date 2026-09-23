@@ -67,7 +67,13 @@ viddy      = "latest"        # modern watch(1)
 
 # ── Git / VCS ────────────────────────────────────────────────────────────────
 lazygit    = "latest"
-difftastic = "latest"   # difft
+# PINNED DELIBERATELY (2026-09-23). 0.71.0 exists but mise cannot install it:
+# upstream started embedding the version in the asset name
+# (difft-0.71.0-aarch64-apple-darwin.tar.gz) while mise's aqua registry still
+# asks for difft-aarch64-apple-darwin.tar.gz, so `mise upgrade` fails with
+# "no asset found". Pinned to the last version that resolves, so upgrades stop
+# erroring. Retry "latest" once the aqua registry catches up.
+difftastic = "0.69.0"   # difft
 jj         = "latest"   # Jujutsu (was jj / jujutsu)
 "cargo:worktrunk" = "latest"  # wt — git-worktree manager built for parallel Claude Code / dev sessions (binary: wt). Not in the mise registry → cargo (binstall-accelerated). Config: dot_config/worktrunk/config.toml; shell init: dot_zsh/completions.zsh.
 # gitleaks is NOT here — it's native (packages.yaml). The global git pre-commit
@@ -126,7 +132,12 @@ taplo      = "latest"   # TOML formatter (was taplo / taplo-cli)
 stylua     = "latest"   # Lua formatter
 shfmt      = "latest"   # shell formatter (pre-commit shellcheck pairs with it)
 actionlint = "latest"   # GitHub Actions YAML linter
-"go:golang.org/x/tools/cmd/goimports" = "latest"  # Go formatter for nvim conform — cross-platform (Arch's go-tools was Linux-only)
+# Stuck at 0.46.0 (2026-09-23): mise's go backend fails this one with a bare
+# "go exited with non-zero status", while `go install ...@latest` run by hand
+# succeeds. The installed 0.46.0 works fine and is on PATH, so this is a broken
+# UPGRADE path, not a broken tool. Left on "latest" so it self-heals if mise
+# fixes the backend.
+"go:golang.org/x/tools/cmd/goimports" = "latest"  # Go formatter for nvim conform, cross-platform (Arch's go-tools was Linux-only)
 
 # ── LSP servers (nvim built-in vim.lsp.enable; replaces mason.nvim) ───────────
 # nvim's lsp.lua enables each only if its binary is on PATH, so a box that hasn't

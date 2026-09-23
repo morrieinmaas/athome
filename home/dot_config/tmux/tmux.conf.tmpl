@@ -1,0 +1,33 @@
+# ~/.config/tmux/tmux.conf — managed by chezmoi, three lines long on purpose.
+#
+# Everything that used to be here now lives in canopy
+# (~/.local/share/canopy), a tmux configuration distribution with its own
+# tests and its own container acceptance suite. What stayed behind, because
+# it names this machine's tools and this machine's paths, is in
+# ~/.config/canopy/user.conf, which canopy sources LAST so it wins over
+# every default canopy ships.
+#
+# Why chezmoi still owns this file rather than canopy: one owner per file.
+# `canopy install` would take this path over and record a restore point for
+# it, and then every `chezmoi apply` would quietly put it back, which is a
+# fight with no winner. chezmoi owns the pointer; canopy owns everything the
+# pointer leads to. The cost is that `canopy restore` has nothing to restore
+# here, which is fine, because chezmoi is already that mechanism.
+#
+# The paths are absolute literals rather than $VARIABLES because tmux
+# expands a variable in a source-file path from the tmux SERVER's
+# environment, which nothing outside tmux populates. The set-environment
+# lines below are what put them there for the layers that follow.
+#
+# To go back: `git revert` this commit in athome and `chezmoi apply`. The
+# previous 308-line config is one commit away, and nothing canopy does
+# writes to this file.
+
+set-environment -g CANOPY_STORE "{{ .chezmoi.homeDir }}/.local/share/canopy"
+set-environment -g CANOPY_STATE "{{ .chezmoi.homeDir }}/.local/state/canopy"
+set-environment -g CANOPY_CONFIG "{{ .chezmoi.homeDir }}/.config/canopy"
+
+# -q so a machine that has not cloned canopy yet still starts a usable tmux
+# instead of erroring on every new session. run_onchange_18-install-canopy
+# is what puts it there.
+source-file -q "{{ .chezmoi.homeDir }}/.local/share/canopy/tmux/tmux.conf"

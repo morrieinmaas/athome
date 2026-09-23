@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# Put canopy on this machine, and keep it current.
+#
+# canopy is a tmux configuration distribution: ~/.config/tmux/tmux.conf is a
+# three-line stub that sources it, and ~/.config/canopy/user.conf holds what
+# belongs to this machine. See https://github.com/morrieinmaas/canopy.
+#
+# Deliberately NOT `canopy install`. That command takes ownership of the tmux
+# entry point and records a restore point for it, which is the right thing on
+# a machine with no dotfile manager and the wrong thing here: chezmoi already
+# owns that file, and two owners means every `chezmoi apply` silently reverts
+# whichever wrote last. chezmoi owns the pointer, canopy owns what it points
+# at. So this script only clones or updates the store and regenerates the
+# files canopy generates.
+#
+# run_onchange, keyed on the pinned ref below: change the ref, and the next
+# `chezmoi apply` moves the checkout. Nothing else re-runs it.
+#
+# canopy ref: {{ "main" }}
+set -euo pipefail
+
+store="${HOME}/.local/share/canopy"
+repo="https://github.com/morrieinmaas/canopy.git"
+ref="main"
+
+if ! command -v git >/dev/null 2>&1; then
+  printf 'canopy: git not found, skipping install\n' >&2
+  exit 0
+fi
+
+if [ -d "${store}/.git" ]; then
+  printf 'canopy: updating %s\n' "${store}"
+  git -C "${store}" fetch --quiet origin "${ref}"
+  git -C "${store}" checkout --quiet "${ref}"
+  git -C "${store}" merge --quiet --ff-only "origin/${ref}" || {
+    printf 'canopy: %s has local commits or diverged; leaving it alone\n' "${store}" >&2
+  }
+else
+  printf 'canopy: cloning into %s\n' "${store}"
+  mkdir -p "$(dirname "${store}")"
+  git clone --quiet --branch "${ref}" "${repo}" "${store}"
+fi
+
+# The three generated files: capability flags, the command index, and the key
+# layer. They live in ~/.local/state/canopy rather than in the checkout,
+# because the store is read-only by convention and a generated file inside a
+# git tree shows up as a local modification on every machine.
+#
+# Each is run from a bare environment on purpose. canopy resolves its own
+# paths; exporting CANOPY_* here would hide a bug where it cannot.
+for cmd in caps index keys; do
+  if [ -x "${store}/bin/canopy-${cmd}" ]; then
+    "${store}/bin/canopy-${cmd}" || printf 'canopy: canopy %s failed\n' "${cmd}" >&2
+  fi
+done
+
+# Said rather than assumed: persistence needs both of these, and without
+# either it does nothing at all while everything still looks healthy.
+command -v bash >/dev/null 2>&1 ||
+  printf 'canopy: bash not found, so the vendored plugins will not run: no autosave, no restore\n' >&2
+ps -o ppid= -p $$ >/dev/null 2>&1 ||
+  printf 'canopy: this ps cannot report a process parent, so no pane will be recognised as an agent\n' >&2
+
+printf 'canopy: ready. `canopy doctor` reports what this machine can do.\n'

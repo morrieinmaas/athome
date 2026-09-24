@@ -62,3 +62,33 @@ ps -o ppid= -p $$ >/dev/null 2>&1 ||
   printf 'canopy: this ps cannot report a process parent, so no pane will be recognised as an agent\n' >&2
 
 printf 'canopy: ready. `canopy doctor` reports what this machine can do.\n'
+
+# What to do about a tmux server that is already running.
+#
+# chezmoi has just rewritten the config on disk, and a running server is
+# still holding the old one. The two ways forward are not equivalent, and
+# the difference is worth stating rather than leaving to be discovered.
+#
+# Re-sourcing into the running server picks up the new settings, but it
+# does NOT undo what the old config already did. The old config loaded
+# tmux-resurrect and tmux-continuum through TPM; canopy loads its own
+# vendored copies. Re-sourcing leaves that server with both, which is two
+# autosave loops writing one file. Fine for an hour, wrong to leave.
+#
+# A fresh server is the clean switch, and it is also the only way to see
+# the restore path work, because continuum only arms its boot restore for
+# a server that started within the last few seconds.
+if command -v tmux >/dev/null 2>&1 && tmux list-sessions >/dev/null 2>&1; then
+  printf '\n'
+  printf 'canopy: a tmux server is already running, and it still holds the old config.\n'
+  printf '  to try it here and now, in that server:\n'
+  printf '      tmux source-file ~/.config/tmux/tmux.conf\n'
+  printf '    this leaves resurrect and continuum loaded twice for the life of\n'
+  printf '    that server, once from TPM and once from canopy. Do not leave it.\n'
+  printf '  to switch properly, when the work in it can be let go:\n'
+  printf '      tmux kill-server     # ends every session on this machine\n'
+  printf '    then start tmux again. Check it with: canopy reboot-check\n'
+  printf '\n'
+  printf '  before killing anything, ask what would come back:\n'
+  printf '      canopy reboot-check\n'
+fi

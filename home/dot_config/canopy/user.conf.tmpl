@@ -63,18 +63,34 @@ bind -n MouseDown1Status if -F '#{m:*net*,#{mouse_status_range}}' \
 # --- plugins canopy does not vendor ----------------------------------------
 # resurrect and continuum are deliberately absent: canopy ships both, pinned
 # by commit, and loads them before this file is read.
+# How TPM finds these, which is not what it looks like. TPM does not read tmux
+# OPTIONS to discover plugins; it GREPS config files for `@plugin` lines, and
+# its search is one level deep: /etc/tmux.conf, ~/.config/tmux/tmux.conf, and
+# the files that one sources DIRECTLY. This file is two levels away -- the stub
+# sources canopy's tmux.conf, which sources this -- so `set -g @plugin` lines
+# here are invisible and TPM loads nothing, silently, with exit status 0. The
+# symptom is that every plugin key falls back to a tmux default (prefix s went
+# back to choose-tree instead of sessionx).
+#
+# @tpm_plugins is TPM's older list form, and the one thing it DOES read from a
+# real tmux option (`show-option -gqv @tpm_plugins`, first line of
+# tpm_plugins_list_helper). An option survives being sourced from any depth,
+# so this is the form to use under canopy. Keep the trailing backslashes: this
+# is the continuation syntax TPM's own README documents.
 set-environment -g TMUX_PLUGIN_MANAGER_PATH '~/.config/tmux/plugins/'
 
-set -g @plugin 'tmux-plugins/tpm'
-set -g @plugin 'tmux-plugins/tmux-sensible'
-set -g @plugin 'tmux-plugins/tmux-yank'
-set -g @plugin 'sainnhe/tmux-fzf'
-set -g @plugin 'christoomey/vim-tmux-navigator'
-set -g @plugin 'omerxx/tmux-sessionx'
-set -g @plugin 'alexwforsythe/tmux-which-key'
-set -g @plugin 'Ataraxy-Labs/opensessions'
-set -g @plugin 'wfxr/tmux-fzf-url'
-set -g @plugin 'craftzdog/tmux-claude-session-manager'
+set -g @tpm_plugins '                        \
+  tmux-plugins/tpm                           \
+  tmux-plugins/tmux-sensible                 \
+  tmux-plugins/tmux-yank                     \
+  sainnhe/tmux-fzf                           \
+  christoomey/vim-tmux-navigator             \
+  omerxx/tmux-sessionx                       \
+  alexwforsythe/tmux-which-key               \
+  Ataraxy-Labs/opensessions                  \
+  wfxr/tmux-fzf-url                          \
+  craftzdog/tmux-claude-session-manager      \
+'
 
 set -g @fzf-url-history-limit '2000'
 set -g @claude_launch_key 'a'

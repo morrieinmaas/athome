@@ -85,3 +85,10 @@ __pycache__/
 dist/
 build/
 target/
+
+# Claude Code per-machine state. settings.local.json holds machine-local
+# permissions and paths; the shared .claude/settings.json (if one is ever
+# added) is meant to be committed, so only the .local variant is ignored.
+# This matters because athome is publishable and a stray `git add -A` would
+# otherwise sweep it in.
+.claude/settings.local.json

@@ -20,7 +20,14 @@
 set -euo pipefail
 
 store="${HOME}/.local/share/canopy"
-repo="https://github.com/morrieinmaas/canopy.git"
+# SSH first, because canopy is a private repo and this machine's other
+# remotes are SSH, so the key is already the thing that works. HTTPS is the
+# fallback for a machine with a credential helper and no key. If neither
+# reaches it, say so and leave: a dotfile apply should not fail over an
+# optional tool, and the tmux entry point sources canopy with -q precisely
+# so a machine without it still starts a usable tmux.
+repo_ssh="git@github.com:morrieinmaas/canopy.git"
+repo_https="https://github.com/morrieinmaas/canopy.git"
 ref="main"
 
 if ! command -v git >/dev/null 2>&1; then
@@ -38,7 +45,13 @@ if [ -d "${store}/.git" ]; then
 else
   printf 'canopy: cloning into %s\n' "${store}"
   mkdir -p "$(dirname "${store}")"
-  git clone --quiet --branch "${ref}" "${repo}" "${store}"
+  if ! git clone --quiet --branch "${ref}" "${repo_ssh}" "${store}" 2>/dev/null; then
+    if ! git clone --quiet --branch "${ref}" "${repo_https}" "${store}" 2>/dev/null; then
+      printf 'canopy: could not clone over ssh or https, skipping\n' >&2
+      printf '  clone it by hand into %s, then re-run: chezmoi apply\n' "${store}" >&2
+      exit 0
+    fi
+  fi
 fi
 
 # The three generated files: capability flags, the command index, and the key

@@ -1,9 +1,16 @@
 #!/usr/bin/env bash
-# Headless install/update of TPM-managed tmux plugins whenever tmux.conf
-# changes. Re-runs because chezmoi hashes the file content below.
+# Headless install/update of TPM-managed tmux plugins whenever the file that
+# declares them changes. Re-runs because chezmoi hashes the content below.
+#
+# That file is no longer tmux.conf. canopy owns the tmux entry point now, and
+# the `set -g @plugin` lines live in canopy's user.conf, so hashing tmux.conf
+# would mean this never re-ran when a plugin was added or removed. Both are
+# hashed: the entry point because a change there can move which config loads
+# at all, and user.conf because that is where the plugin list is.
 set -euo pipefail
 
-# tmux.conf hash = {{ include "dot_config/tmux/tmux.conf" | sha256sum }}
+# entry point hash = {{ include "dot_config/tmux/tmux.conf.tmpl" | sha256sum }}
+# plugin list hash = {{ include "dot_config/canopy/user.conf.tmpl" | sha256sum }}
 
 command -v tmux >/dev/null 2>&1 || { echo "tmux not installed; skipping"; exit 0; }
 [[ -d "$HOME/.config/tmux/plugins/tpm" ]] || { echo "tpm missing; chezmoi external should fetch on apply"; exit 0; }

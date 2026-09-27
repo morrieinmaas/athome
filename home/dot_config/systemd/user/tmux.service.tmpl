@@ -1,0 +1,32 @@
+# ~/.config/systemd/user/tmux.service — managed by chezmoi (Linux only).
+#
+# Starts the tmux server when the desktop session comes up (niri or GNOME), so
+# canopy's tmux-continuum restore runs at login and `tmux attach` / `ta` lands
+# straight back in the restored sessions, Claude Code panes resumed. Without
+# it nothing started tmux after a reboot: `tmux attach` said "no sessions", and
+# `tmux new-session` restored everything into the background while attaching
+# you to a fresh, empty session.
+#
+# Bound to graphical-session.target rather than default.target (what
+# continuum's own @continuum-boot generates) so the server inherits
+# WAYLAND_DISPLAY and friends: panes restored before the desktop existed could
+# not reach the clipboard or open anything.
+#
+# On logout the layout is saved first, then the server stops; the next login
+# restores it.
+[Unit]
+Description=tmux server with canopy session restore
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+Type=forking
+# One detached default session gives continuum a fresh server to restore into;
+# tmux-resurrect replaces it with the saved sessions.
+ExecStart={{ lookPath "tmux" | default "/usr/bin/tmux" }} new-session -d
+ExecStop=-{{ .chezmoi.homeDir }}/.local/share/canopy/plugins/tmux-resurrect/scripts/save.sh quiet
+ExecStop={{ lookPath "tmux" | default "/usr/bin/tmux" }} kill-server
+KillMode=control-group
+
+[Install]
+WantedBy=graphical-session.target

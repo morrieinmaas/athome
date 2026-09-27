@@ -1,0 +1,22 @@
+{{ if eq .chezmoi.os "linux" -}}
+#!/usr/bin/env bash
+# Enable the tmux user service (~/.config/systemd/user/tmux.service) so the
+# tmux server, and with it canopy's session restore, starts with the desktop.
+# Re-runs when the unit changes:
+# unit hash = {{ include "dot_config/systemd/user/tmux.service.tmpl" | sha256sum }}
+#
+# Enable only, never --now: a tmux server is usually already running when you
+# apply, and starting the unit then would add a stray session to it. It takes
+# effect from the next login.
+set -euo pipefail
+
+if [ -n "${ATHOME_CI:-}" ]; then echo "ATHOME_CI: skipping headless setup ($(basename "$0"))"; exit 0; fi
+command -v systemctl >/dev/null 2>&1 || exit 0
+
+systemctl --user daemon-reload
+if systemctl --user enable tmux.service >/dev/null 2>&1; then
+  echo "==> tmux.service enabled: tmux (and your Claude panes) come back at next login"
+else
+  echo "!! couldn't enable tmux.service; enable it later with: systemctl --user enable tmux.service"
+fi
+{{ end -}}

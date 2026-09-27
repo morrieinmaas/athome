@@ -97,6 +97,21 @@ fi
 #    running compositor. No-op on machines without a niri config (i.e. macOS). ──
 [ -x "$dir/apply-niri.sh" ] && "$dir/apply-niri.sh" || true
 
+# ── Noctalia: switch the shell to the same family when it ships one built in.
+#    `noctalia msg` writes Noctalia's own state file, never a managed one, and
+#    its gtk/qt templates then recolour apps to match. Families it doesn't ship
+#    leave the shell on its current scheme. No-op when Noctalia isn't running. ──
+case "$name" in
+  gruvbox)    noc=Gruvbox ;;
+  kanagawa)   noc=Kanagawa ;;
+  catppuccin) noc=Catppuccin ;;
+  tokyonight) noc=Tokyo-Night ;;
+  *)          noc="" ;;
+esac
+if [ -n "$noc" ] && command -v noctalia >/dev/null 2>&1; then
+  noctalia msg color-scheme-set builtin "$noc" >/dev/null 2>&1 || true
+fi
+
 # ── btm (bottom): nothing to do — its config follows the terminal's ANSI palette
 #    automatically, so it recolours with ghostty/tmux above. See registry.sh. ──
 

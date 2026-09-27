@@ -18,7 +18,7 @@ chezmoi diff
 
 # 2. For any file with user-tuned local state you want to preserve, capture FIRST:
 chezmoi add <path>
-# e.g. chezmoi add ~/.config/noctalia/      # Noctalia settings the user tuned via UI
+# e.g. copy keys from ~/.local/state/noctalia/settings.toml into home/dot_config/noctalia/athome.toml
 #      chezmoi add ~/.config/some-tool/      # any other tool the user has configured
 
 # 3. Verify the capture landed in chezmoi source:
@@ -42,7 +42,8 @@ chezmoi apply --force
 | --- | --- |
 | `~/.zshrc`, `~/.gitconfig`, `~/.ssh/config`, `~/.config/ghostty/config`, `~/.config/niri/config.kdl`, `~/.config/tmux/tmux.conf`, etc. | Yes — sources are under `home/dot_*` |
 | `~/Pictures/Wallpapers/` | Yes — ships a plain black default (`black.png`); the user drops their own images in and picks via Noctalia's UI |
-| `~/.config/noctalia/` | **No** — Noctalia writes this on first launch; user tunes via UI; we only capture it when the user runs `chezmoi add ~/.config/noctalia/` |
+| `~/.config/noctalia/athome.toml` | Yes — athome's Noctalia defaults (builtin scheme, dark, gtk/qt templates, bar). Noctalia merges every `*.toml` there |
+| `~/.local/state/noctalia/settings.toml` | **No** — Noctalia's settings window and `noctalia msg` write it, and it loads LAST, so the user's choices win over `athome.toml`. Never ship it (athome once did, `create_`-once, and its `[theme]` blocked every later default) |
 | `~/.local/state/*`, `~/.cache/*` | No — runtime state, never tracked |
 | Secrets | **Two models** (see `docs/secrets.md`). **Default/preferred = B**: mise + plaintext `~/.secrets/<repo>/.env`, Bitwarden as backup (works offline, no unlock to use; via `secrets-backup`/`secrets-restore`). **Exception = A**: direnv `use_rbw` — pulled from Bitwarden at runtime, nothing on disk (high-sensitivity/shared machines). Neither path is chezmoi-managed — `~/.secrets/<repo>/.env` is restored by `secrets-restore`, never `chezmoi apply`. The dedicated `~/.secrets/` tree keeps secrets out of `~/.config` so the dotfiles repo can manage `~/.config/*` cleanly. |
 

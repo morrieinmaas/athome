@@ -1,0 +1,7 @@
+# Overrides /etc/xdg/autostart/nm-applet.desktop for this user. Noctalia has its
+# own network widget, so nm-applet showed up as a second network icon in the
+# tray; GNOME has its own too. nm-connection-editor still works when needed.
+[Desktop Entry]
+Type=Application
+Name=Network
+Hidden=true

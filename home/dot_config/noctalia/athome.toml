@@ -1,0 +1,64 @@
+# ~/.config/noctalia/athome.toml — athome's Noctalia v5 defaults, managed by chezmoi.
+#
+# Noctalia merges every *.toml in this directory, then loads
+# ~/.local/state/noctalia/settings.toml LAST. That state file is where the
+# shell's own settings window (and `noctalia msg …`) writes, so anything you
+# change in the shell wins over this file and survives `chezmoi apply`. These
+# are only the starting point, and unlike a create_-once state file they can
+# still be improved later.
+#
+# Schema: docs.noctalia.dev/noctalia/configuration and /noctalia/theming
+
+[theme]
+# A built-in scheme, not the wallpaper-derived palette: the m3 generators turn
+# most wallpapers into a washed-out grey. Gruvbox is athome's default family; the
+# `theme` command switches this to match when Noctalia has the family built in
+# (Gruvbox, Kanagawa, Catppuccin, Tokyo-Night, Rosé Pine).
+source  = "builtin"
+builtin = "Gruvbox"
+
+# dark, not "auto": auto switches on a sunrise/sunset schedule, not with the
+# system preference. Toggle any time with Mod+Shift+T.
+mode            = "dark"
+shell_mode      = "follow"
+pure_black_dark = false
+
+    # Recolour GTK and Qt apps from the shell's palette. gtk3/gtk4 write
+    # ~/.config/gtk-{3,4}.0/noctalia.css and set adw-gtk3(-dark) plus the
+    # light/dark preference; qt writes a qt5ct/qt6ct colour scheme (selected in
+    # ~/.config/qt6ct/qt6ct.conf). NOT the niri template: athome's `theme`
+    # already colours niri, and the template would edit config.kdl behind
+    # chezmoi's back.
+    [theme.templates]
+    enable_builtin_templates = true
+    builtin_ids              = ["gtk3", "gtk4", "qt"]
+
+[shell]
+font_family = "Inter"
+
+[bar.default]
+position      = "top"
+thickness     = 34
+enabled       = true
+reserve_space = true        # niri gets an exclusive zone so windows do not sit under the bar
+layer         = "top"
+padding       = 14
+margin_edge   = 6
+margin_ends   = 12
+radius        = 12
+
+# Capsules are the pills: each widget in its own rounded container, the same
+# visual language as the tmux status line.
+capsule           = true
+capsule_fill      = "surface_variant"
+capsule_thickness = 0.76    # fraction of bar thickness
+capsule_radius    = 8.0
+capsule_opacity   = 1.0
+
+background_opacity = 0.95
+shadow             = true
+border_width       = 0.0
+
+start  = ["launcher", "workspaces"]
+center = ["clock"]
+end    = ["media", "tray", "notifications", "volume", "battery"]

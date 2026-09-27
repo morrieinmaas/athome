@@ -113,6 +113,15 @@ linux:
     - wl-clipboard                   # generic Wayland clipboard CLI; Noctalia uses it under the hood for some actions
     - ttf-jetbrains-mono-nerd        # ghostty font + Nerd glyphs for the tmux pill bar
     - noto-fonts-emoji               # color emoji (the tmux pet etc.) — macOS ships Apple Color Emoji; Linux needs this or emoji render as tofu
+    # Desktop look (niri + Noctalia; GNOME picks these up too). Noctalia's launcher
+    # and tray use the system icon theme, and Adwaita alone is mostly monochrome
+    # symbolic icons. adw-gtk3 + qt6ct/qt5ct let Noctalia's gtk/qt templates
+    # recolour apps to match the shell. Set up by run_onchange_after_25.
+    - papirus-icon-theme
+    - adw-gtk-theme                  # adw-gtk3: libadwaita look for GTK3 apps
+    - qt6ct
+    - qt5ct
+    - inter-font                     # Noctalia's UI font
     # GNOME: a deliberate minimal subset as the FALLBACK desktop, not the daily
     # driver. niri + Noctalia is the daily driver; GNOME exists for when a
     # Wayland compositor bug or an external-display problem needs a known-good
@@ -181,6 +190,7 @@ linux:
     - zen-browser-bin
     - nirimod-git
     - matugen-bin                    # wallpaper-derived palettes for anything that wants them. NOTE: Noctalia v5 generates its own palette internally (theme.source = "wallpaper"), so this is no longer required BY Noctalia; kept as a general-purpose tool.
+    - bibata-cursor-theme-bin        # the cursor niri's config names (Bibata-Modern-Classic); prebuilt, not in the official repos
     - nordvpn-bin
     - bandwhich                      # needs root/caps; kept native (matches the brew formula on macOS)
     - gping                          # ICMP; kept native
@@ -254,6 +264,12 @@ fedora:
     - iwd
     - fastfetch
     - google-noto-emoji-fonts      # = Arch noto-fonts-emoji
+    - papirus-icon-theme           # desktop look, see the Arch list
+    - adw-gtk3-theme               # = Arch adw-gtk-theme
+    - qt6ct
+    - qt5ct
+    - rsms-inter-fonts             # = Arch inter-font
+    # (no Bibata cursor in the Fedora repos; niri falls back to the default cursor)
     - wl-clipboard
     - gpaste                       # GNOME fallback clipboard history (Arch: one pkg; Fedora splits out the Shell extension)
     - gnome-shell-extension-gpaste

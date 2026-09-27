@@ -120,9 +120,13 @@ GNOME and GDM come from the OS install. athome adds:
 - **niri**, a scrolling tiling Wayland compositor, set as your default session
   ([config](../home/.chezmoitemplates/niri/config.kdl)).
 - **Noctalia**, the shell running inside niri: bar, launcher, notifications,
-  lock screen, and clipboard history on `Ctrl+Alt+V`. It writes its own
-  settings to `~/.config/noctalia/`, which athome doesn't track until you
-  `chezmoi add` it.
+  lock screen, and clipboard history on `Ctrl+Alt+V`. athome's defaults are in
+  `~/.config/noctalia/athome.toml`: a built-in dark scheme that follows
+  `theme`, the Inter font, and templates that recolour GTK and Qt apps to
+  match. Anything you change in Noctalia's own settings is saved to
+  `~/.local/state/noctalia/settings.toml`, which wins.
+- **Icons and cursor:** Papirus-Dark and Bibata, with adw-gtk3 for GTK apps and
+  qt6ct for Qt apps.
 - **GPaste** for clipboard history when you're in the GNOME session.
 - iwd as NetworkManager's Wi-Fi backend (switched over on the next reboot) so
   `impala` works, plus power-profiles-daemon and Bluetooth.

@@ -14,4 +14,7 @@ Library/**
 .config/fastfetch/**
 .config/greetd/**
 .config/systemd/**
+.config/autostart/**
+.config/qt5ct/**
+.config/qt6ct/**
 {{- end }}

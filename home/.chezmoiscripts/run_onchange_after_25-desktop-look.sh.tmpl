@@ -1,0 +1,53 @@
+{{ if eq .chezmoi.os "linux" -}}
+#!/usr/bin/env bash
+# Desktop look for niri + Noctalia (GNOME picks the same settings up): icon and
+# cursor themes, plus a one-time clean-up of the Noctalia theme athome used to
+# ship. Re-runs when the Noctalia defaults change:
+# noctalia defaults hash = {{ include "dot_config/noctalia/athome.toml" | sha256sum }}
+set -euo pipefail
+
+if [ -n "${ATHOME_CI:-}" ]; then echo "ATHOME_CI: skipping headless setup ($(basename "$0"))"; exit 0; fi
+
+# ── Noctalia: drop the theme athome used to write into the state file ────────
+# athome shipped ~/.local/state/noctalia/settings.toml as a write-once file with
+# a wallpaper-derived palette and mode = "auto" (a sunrise/sunset schedule).
+# That file loads after ~/.config/noctalia/*.toml and wins, so those values
+# blocked the new defaults in athome.toml forever. Remove exactly those lines,
+# and only while they still hold athome's old values: anything you picked in the
+# shell's settings stays.
+state="$HOME/.local/state/noctalia/settings.toml"
+if [[ -f "$state" ]]; then
+  tmp="$(mktemp)"
+  awk '
+    /^\[/ { in_theme = ($0 == "[theme]") }
+    in_theme && /^source[[:space:]]*=[[:space:]]*"wallpaper"[[:space:]]*$/           { next }
+    in_theme && /^wallpaper_scheme[[:space:]]*=[[:space:]]*"m3-content"[[:space:]]*$/ { next }
+    in_theme && /^mode[[:space:]]*=[[:space:]]*"auto"[[:space:]]*$/                   { next }
+    { print }
+  ' "$state" > "$tmp"
+  if cmp -s "$state" "$tmp"; then
+    rm -f "$tmp"
+  else
+    cat "$tmp" > "$state" && rm -f "$tmp"
+    echo "==> Noctalia: removed athome's old wallpaper palette + auto mode from settings.toml"
+  fi
+fi
+
+# ── Icons and cursor ─────────────────────────────────────────────────────────
+# Noctalia's launcher and tray, GTK apps and the portal all read these keys.
+# gsettings writes through the session bus, so this needs a desktop session.
+if command -v gsettings >/dev/null 2>&1 && [[ -n "${DBUS_SESSION_BUS_ADDRESS:-}" ]]; then
+  iface=org.gnome.desktop.interface
+  if [[ -d /usr/share/icons/Papirus-Dark ]]; then
+    gsettings set "$iface" icon-theme 'Papirus-Dark'
+    echo "==> icons: Papirus-Dark"
+  fi
+  if [[ -d /usr/share/icons/Bibata-Modern-Classic ]]; then
+    gsettings set "$iface" cursor-theme 'Bibata-Modern-Classic'
+    gsettings set "$iface" cursor-size 24
+    echo "==> cursor: Bibata-Modern-Classic"
+  fi
+else
+  echo "!! no desktop session: run \`chezmoi apply\` again from niri or GNOME to set icons and cursor"
+fi
+{{ end -}}

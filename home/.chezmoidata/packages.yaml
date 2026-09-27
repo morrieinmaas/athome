@@ -133,6 +133,7 @@ linux:
     - gnome-keyring                  # credential storage (native ssh-agent path on Linux; many GNOME apps)
     - gdm                            # display manager. Chosen over greetd because it is the only greeter here with a SESSION PICKER: run_once_11 sets niri as the per-user default via AccountsService, and GNOME stays one click away in the gear menu. tuigreet can launch a session but has no per-user default, so that arrangement cannot exist under greetd.
     - nautilus                       # file manager
+    - gpaste                         # clipboard history for the GNOME fallback session (ships its Shell extension; enabled by run_once_after_23). niri has Noctalia's own (Ctrl+Alt+V) — GPaste only runs under GNOME.
     # ── Noctalia deps (docs.noctalia.dev/noctalia/getting-started/installation) ──
     # v5 needs wayland/mesa/pipewire/libsecret/polkit, which are already pulled
     # by the package itself. What follows are the OPTIONAL feature deps: the
@@ -254,6 +255,8 @@ fedora:
     - fastfetch
     - google-noto-emoji-fonts      # = Arch noto-fonts-emoji
     - wl-clipboard
+    - gpaste                       # GNOME fallback clipboard history (Arch: one pkg; Fedora splits out the Shell extension)
+    - gnome-shell-extension-gpaste
     - wlsunset
     - power-profiles-daemon
     - ddcutil

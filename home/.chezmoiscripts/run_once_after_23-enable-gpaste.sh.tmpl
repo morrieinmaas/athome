@@ -1,0 +1,33 @@
+{{ if eq .chezmoi.os "linux" -}}
+#!/usr/bin/env bash
+# Clipboard history for the GNOME fallback session: switch on GPaste's Shell
+# extension (the package comes from packages.yaml). niri doesn't need this —
+# Noctalia has its own clipboard panel (Ctrl+Alt+V). Only touches the GNOME
+# enabled-extensions list, so it is a no-op for the niri session.
+set -euo pipefail
+
+if [ -n "${ATHOME_CI:-}" ]; then echo "ATHOME_CI: skipping headless setup ($(basename "$0"))"; exit 0; fi
+
+uuid="GPaste@gnome-shell-extensions.gnome.org"
+command -v gsettings >/dev/null 2>&1 || { echo "gsettings missing; skipping GPaste enable"; exit 0; }
+[[ -d "/usr/share/gnome-shell/extensions/$uuid" ]] || { echo "GPaste extension not installed; skipping"; exit 0; }
+# gsettings writes through the session bus; without one (ssh, TTY) the write
+# would be lost, so leave it for the next apply from a desktop session.
+if [[ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ]]; then
+  echo "!! no session bus — enable later from GNOME: gnome-extensions enable $uuid"
+  exit 0
+fi
+
+cur="$(gsettings get org.gnome.shell enabled-extensions)"
+if [[ "$cur" == *"'$uuid'"* ]]; then
+  echo "==> GPaste extension already enabled"
+  exit 0
+fi
+if [[ "$cur" == "@as []" || "$cur" == "[]" ]]; then
+  new="['$uuid']"
+else
+  new="${cur%]}, '$uuid']"
+fi
+gsettings set org.gnome.shell enabled-extensions "$new"
+echo "==> GPaste enabled for GNOME (clipboard history in the top bar; niri uses Noctalia's)"
+{{ end -}}

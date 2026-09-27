@@ -19,6 +19,12 @@ Secrets live in Bitwarden (log in with `bw-setup` at the end).
 your freshly-generated SSH keys to *your* GitHub (so SSH push + commit signing
 work). If you'd rather fork-and-personalize first, fork it, then clone your fork.
 
+> **Before you run it**, two things this assumes about you. It expects a
+> **Bitwarden account** (or a self-hosted Vaultwarden) for secrets, though
+> [docs/secrets.md](docs/secrets.md) describes both models and you can skip the vault
+> entirely. And it runs with `sudo`, generates SSH keys and installs from third-party
+> package sources, so read [SECURITY.md](SECURITY.md) first if any of that matters to you.
+
 ```bash
 # ── one-time prep (fresh box, ~30 seconds): install gh for YOUR OS, then auth ──
 # macOS  — nanobrew is the canonical PM; install it, then gh:
@@ -844,3 +850,28 @@ call directly.
 - [docs/spatial-model.md](docs/spatial-model.md) — tmux + nvim mental model for VSCode refugees (the seven everyday actions translated)
 - [docs/nvim-pack-lock-workflow.md](docs/nvim-pack-lock-workflow.md) — committing `nvim-pack-lock.json` for reproducible nvim plugin pins (vim.pack)
 - [docs/netbird-cloud.md](docs/netbird-cloud.md) — NetBird Cloud free-tier sign-in + the self-host exit (Scaleway + Caddy + Docker Compose)
+- [AGENTS.md](AGENTS.md) — operational runbook: capture-before-apply, tag discipline, known pitfalls
+- [CONTRIBUTING.md](CONTRIBUTING.md) — fork-first expectations, where a change belongs, how to test
+- [SECURITY.md](SECURITY.md) — what bootstrap does to a machine, the trade-offs you inherit, how to report a vulnerability
+
+## Contributing
+
+This is one person's workstation config, published because the wiring is worth reading, not
+because it wants to be a framework. **Forking and making it yours is the intended use**, not a
+contribution. PRs are welcome for genuinely general fixes. See
+[CONTRIBUTING.md](CONTRIBUTING.md), and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
+
+## Security disclosure and trade-offs
+
+(For the machine-level posture, see [Security model](#security-model-defense-in-depth-primary-control-first) above.)
+
+`scripts/bootstrap.sh` runs with `sudo`, generates SSH keys and uploads their public halves to
+your GitHub account, and installs software from Homebrew/nanobrew, the AUR, Fedora COPRs and
+the mise registry. Those are trust decisions you are making. [SECURITY.md](SECURITY.md) spells
+out what it touches, the deliberate trade-offs you inherit by forking (passphrase-less SSH
+keys, a user-owned package prefix), and how to report a vulnerability privately.
+
+## Licence
+
+[MIT](LICENSE). Do what you like with it; no warranty, and no liability if a bootstrap script
+eats an afternoon.

@@ -16,19 +16,24 @@
 # run_onchange, keyed on the pinned ref below: change the ref, and the next
 # `chezmoi apply` moves the checkout. Nothing else re-runs it.
 #
-# canopy ref: {{ "main" }}
+# canopy ref: {{ "v0.1.0" }}
 set -euo pipefail
 
 store="${HOME}/.local/share/canopy"
-# SSH first, because canopy is a private repo and this machine's other
-# remotes are SSH, so the key is already the thing that works. HTTPS is the
-# fallback for a machine with a credential helper and no key. If neither
-# reaches it, say so and leave: a dotfile apply should not fail over an
-# optional tool, and the tmux entry point sources canopy with -q precisely
-# so a machine without it still starts a usable tmux.
+# SSH first, because this machine's other remotes are SSH, so the key is
+# already the thing that works. HTTPS is the fallback for a machine with a
+# credential helper and no key, and now that canopy is public it also works
+# for a machine with neither. If neither reaches it, say so and leave: a
+# dotfile apply should not fail over an optional tool, and the tmux entry
+# point sources canopy with -q precisely so a machine without it still
+# starts a usable tmux.
 repo_ssh="git@github.com:morrieinmaas/canopy.git"
 repo_https="https://github.com/morrieinmaas/canopy.git"
-ref="main"
+# A tag, not a branch, so a machine only moves when a release is cut rather
+# than on whatever canopy's main happened to be that morning. Bumping it is
+# two edits in one place: this line, and the `canopy ref:` comment above,
+# which is what makes chezmoi re-run this script at all.
+ref="v0.1.0"
 
 if ! command -v git >/dev/null 2>&1; then
   printf 'canopy: git not found, skipping install\n' >&2
@@ -37,10 +42,22 @@ fi
 
 if [ -d "${store}/.git" ]; then
   printf 'canopy: updating %s\n' "${store}"
-  git -C "${store}" fetch --quiet origin "${ref}"
-  git -C "${store}" checkout --quiet "${ref}"
-  git -C "${store}" merge --quiet --ff-only "origin/${ref}" || {
-    printf 'canopy: %s has local commits or diverged; leaving it alone\n' "${store}" >&2
+  # --tags --force, because a tag is the thing being tracked and a moved tag
+  # would otherwise be ignored by a fetch that already has one by that name.
+  git -C "${store}" fetch --quiet --tags --force origin
+  # A tag is not a branch, and the difference matters here: there is no
+  # origin/<tag> to fast-forward onto, so the old `merge --ff-only
+  # origin/${ref}` would fail on every apply and print the "has local
+  # commits" warning at a machine that was perfectly healthy. Checking the
+  # tag out detaches HEAD, which is correct for a store nothing should be
+  # committing to.
+  if git -C "${store}" rev-parse --quiet --verify "refs/tags/${ref}" >/dev/null 2>&1; then
+    target="refs/tags/${ref}"
+  else
+    target="origin/${ref}"
+  fi
+  git -C "${store}" checkout --quiet --detach "${target}" || {
+    printf 'canopy: could not move %s to %s; leaving it as it is\n' "${store}" "${ref}" >&2
   }
 else
   printf 'canopy: cloning into %s\n' "${store}"

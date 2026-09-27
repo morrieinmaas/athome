@@ -95,6 +95,17 @@ if command -v nordvpn >/dev/null 2>&1; then
   # Self-heals machines that previously had it on (idempotent set).
   nordvpn set killswitch off      >/dev/null 2>&1 || true
   nordvpn set notify on           >/dev/null 2>&1 || true
+{{- if eq (dig "mesh_provider" "netbird" .) "meshnet" }}
+
+  # meshProvider = meshnet only skipped NetBird above; nothing ever switched
+  # NordVPN's Meshnet on, so the mesh pill stayed "no mesh". Needs a logged-in
+  # account, hence the fallback hint.
+  if nordvpn set meshnet on >/dev/null 2>&1; then
+    echo "==> nordvpn meshnet: enabled"
+  else
+    echo "==> nordvpn meshnet: after \`nordvpn login\`, run: nordvpn set meshnet on"
+  fi
+{{- end }}
 fi
 {{- end }}
 

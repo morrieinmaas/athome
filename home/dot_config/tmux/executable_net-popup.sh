@@ -51,6 +51,11 @@ section_link() {
     gw=$(ip route show default 2>/dev/null | awk '/default/{print $3; exit}')
   fi
   row interface "${lan_if:-none}"
+  # SSID on Linux only: macOS redacts it (see below), Linux hands it over.
+  if [ "$(uname)" != Darwin ] && [ -n "$lan_if" ] && [ -d "/sys/class/net/$lan_if/wireless" ]; then
+    row network "$(nmcli -t -f IN-USE,SSID device wifi list ifname "$lan_if" --rescan no 2>/dev/null \
+      | awk -F: '$1=="*"{sub(/^\*:/, ""); gsub(/\\:/, ":"); print; exit}')"
+  fi
   if [ -n "$lan_if" ]; then
     row address "$(ifconfig "$lan_if" 2>/dev/null | awk '/inet /{print $2; exit}')"
     row router  "${gw:-unknown}"

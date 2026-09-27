@@ -134,7 +134,8 @@ fi
 lan_ip=""
 [ -n "$lan_if" ] && lan_ip=$(ifconfig "$lan_if" 2>/dev/null | awk '/inet /{print $2; exit}')
 
-# Shows the ADDRESS, not the network name, on purpose. macOS treats the SSID as
+# On macOS this shows the ADDRESS, not the network name, on purpose (Linux shows
+# the SSID, see below). macOS treats the SSID as
 # location data (network names are how device positioning works without GPS) and
 # redacts it, along with the BSSID, from any caller lacking Location Services
 # permission. Turning that on for a terminal is a real privacy trade for a
@@ -143,7 +144,16 @@ lan_ip=""
 if [ -z "$lan_if" ] || [ -z "$lan_ip" ]; then
   link=$(pill "$red" net_link "$wifi_g offline")
 elif [ -n "$wifi_dev" ] && [ "$lan_if" = "$wifi_dev" ]; then
-  link=$(pill "$blue" net_link "$wifi_g $lan_ip")
+  # Linux doesn't redact the SSID, so show the network name there (the address
+  # is one click away in the popup). NetworkManager is required on both Arch
+  # and Fedora; --rescan no reads the cached list (~45ms, no radio scan).
+  # macOS, or no answer, keeps the address.
+  ssid=""
+  if [ "$(uname)" != Darwin ] && command -v nmcli >/dev/null 2>&1; then
+    ssid=$(nmcli -t -f IN-USE,SSID device wifi list ifname "$wifi_dev" --rescan no 2>/dev/null \
+      | awk -F: '$1=="*"{sub(/^\*:/, ""); gsub(/\\:/, ":"); print; exit}')
+  fi
+  link=$(pill "$blue" net_link "$wifi_g ${ssid:-$lan_ip}")
 else
   link=$(pill "$blue" net_link "$eth_g $lan_if $lan_ip")
 fi

@@ -67,10 +67,11 @@ esac
 mkdir -p "$dir"
 printf '%s\n' "$name" > "$dir/active"   # nvim fs-watches this dir; tmux.conf reads it on start
 
-# ── ghostty: rewrite the active `theme = ` line, then hot-reload via SIGUSR2 ──
-gcfg="${HOME}/.config/ghostty/config"
-if [ -f "$gcfg" ] && grep -qE '^theme = ' "$gcfg"; then
-  sed -i.bak -E "s|^theme = .*|theme = $(theme_ghostty "$name")|" "$gcfg" && rm -f "$gcfg.bak"
+# ── ghostty: write the unmanaged override its config loads last (`config-file =
+#    ?theme`), then hot-reload via SIGUSR2. Never touch the chezmoi-managed
+#    config itself — that made every later apply fight the pick. ──
+if [ -d "${HOME}/.config/ghostty" ]; then
+  printf 'theme = %s\n' "$(theme_ghostty "$name")" > "${HOME}/.config/ghostty/theme"
   pkill -USR2 -x ghostty 2>/dev/null || true   # Ghostty reloads its config on SIGUSR2
 fi
 

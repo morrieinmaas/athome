@@ -52,6 +52,10 @@ scrollback-limit = 25000000
 
 copy-on-select = false
 clipboard-trim-trailing-spaces = true
+# No "Copied to clipboard" toast (GTK only): tmux copies on every mouse
+# selection via OSC 52, so the default popped it up on each drag. Keeps the
+# config-reload toast, which is the useful one.
+app-notifications = no-clipboard-copy
 
 # ── Mouse / links under tmux ───────────────────────────────────────────────
 # tmux runs with `mouse on`, which grabs every click before Ghostty's link
@@ -81,3 +85,9 @@ shell-integration-features = cursor,sudo,title,ssh-env,ssh-terminfo
 
 cursor-style = bar
 cursor-style-blink = false
+
+# Runtime theme override written by `theme` (~/.local/bin/theme). Kept in its
+# own unmanaged file so picking a theme never edits this chezmoi-managed config
+# (which made the next apply prompt, or silently revert the pick). Loaded after
+# this whole file, so its `theme =` wins; `?` = fine if it doesn't exist yet.
+config-file = ?theme

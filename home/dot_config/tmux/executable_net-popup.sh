@@ -16,6 +16,17 @@
 # ~/.zshenv, so PATH is set explicitly (same reason cockpit and pet-pick do it).
 export PATH="$HOME/.local/share/mise/shims:/opt/nanobrew/prefix/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
+# Arch (and Fedora minimal) don't ship net-tools, so there is no `ifconfig` and
+# the address lookups below came back empty: the bar said "offline" on a live
+# link. Emulate just the two line shapes the awk parsers read, "<if>:" headers
+# and "inet <addr>" rows, from iproute2.
+if ! command -v ifconfig >/dev/null 2>&1 && command -v ip >/dev/null 2>&1; then
+  ifconfig() {
+    ip -4 -o addr show ${1:+dev "$1"} 2>/dev/null \
+      | awk '{sub(/\/.*/, "", $4); print $2 ":"; print "\tinet " $4}'
+  }
+fi
+
 . "$HOME/.config/tmux/fzf-theme.sh"
 
 row() { printf '  %-12s %s\n' "$1" "$2"; }
@@ -25,12 +36,20 @@ section_link() {
   # Same idiom as net.sh: macOS service priority order, not the routing table.
   # A VPN holding a real default route otherwise reports the tunnel as the link.
   lan_if=""
-  while read -r _dev; do
-    case "$_dev" in en*) ;; *) continue ;; esac
-    if ipconfig getifaddr "$_dev" >/dev/null 2>&1; then lan_if="$_dev"; break; fi
-  done < <(networksetup -listnetworkserviceorder 2>/dev/null \
-             | sed -n 's/.*Device: \([^)]*\)).*/\1/p')
-  gw=$(ipconfig getoption "${lan_if:-en0}" router 2>/dev/null)
+  if [ "$(uname)" = Darwin ]; then
+    while read -r _dev; do
+      case "$_dev" in en*) ;; *) continue ;; esac
+      if ipconfig getifaddr "$_dev" >/dev/null 2>&1; then lan_if="$_dev"; break; fi
+    done < <(networksetup -listnetworkserviceorder 2>/dev/null \
+               | sed -n 's/.*Device: \([^)]*\)).*/\1/p')
+  else
+    lan_if=$(ip route show default 2>/dev/null | awk '/default/{print $5; exit}')
+  fi
+  if [ "$(uname)" = Darwin ]; then
+    gw=$(ipconfig getoption "${lan_if:-en0}" router 2>/dev/null)
+  else
+    gw=$(ip route show default 2>/dev/null | awk '/default/{print $3; exit}')
+  fi
   row interface "${lan_if:-none}"
   if [ -n "$lan_if" ]; then
     row address "$(ifconfig "$lan_if" 2>/dev/null | awk '/inet /{print $2; exit}')"
@@ -51,6 +70,13 @@ section_link() {
       row dns "$d"
     fi
   fi
+  # Linux (Arch + Fedora): per-link DNS from systemd-resolved when it runs,
+  # else whatever /etc/resolv.conf points at (NetworkManager writes it).
+  if [ "$(uname)" != Darwin ] && [ -n "$lan_if" ]; then
+    d=$(resolvectl dns "$lan_if" 2>/dev/null | sed 's/^[^:]*: *//')
+    [ -z "$d" ] && d=$(awk '/^nameserver/{printf "%s ", $2}' /etc/resolv.conf 2>/dev/null)
+    row dns "${d:-unknown}"
+  fi
   # No public-IP row here: it belongs with VPN egress, and having it in both
   # sections meant two curl calls and ~1s of avoidable latency in the popup.
 }
@@ -60,7 +86,11 @@ section_vpn() {
   # Provider-agnostic: ask whether the default route is a tunnel, rather than
   # interrogating a specific vendor's CLI. Works for NordVPN, Proton, Mullvad
   # and a hand-rolled wg-quick tunnel alike.
-  vpn_if=$(route -n get default 2>/dev/null | awk '/interface:/{print $2; exit}')
+  if [ "$(uname)" = Darwin ]; then
+    vpn_if=$(route -n get default 2>/dev/null | awk '/interface:/{print $2; exit}')
+  else
+    vpn_if=$(ip route show default 2>/dev/null | awk '/default/{print $5; exit}')
+  fi
   case "$vpn_if" in
     utun*|wg*|tun*|nordlynx)
       row state "tunnelled via $vpn_if"

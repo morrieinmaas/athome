@@ -30,6 +30,17 @@
 # launchd at boot will not have.
 export PATH="/opt/nanobrew/prefix/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
+# Arch (and Fedora minimal) don't ship net-tools, so there is no `ifconfig` and
+# the address lookups below came back empty: the bar said "offline" on a live
+# link. Emulate just the two line shapes the awk parsers read, "<if>:" headers
+# and "inet <addr>" rows, from iproute2.
+if ! command -v ifconfig >/dev/null 2>&1 && command -v ip >/dev/null 2>&1; then
+  ifconfig() {
+    ip -4 -o addr show ${1:+dev "$1"} 2>/dev/null \
+      | awk '{sub(/\/.*/, "", $4); print $2 ":"; print "\tinet " $4}'
+  }
+fi
+
 # printf's \U escape needs bash 4+. macOS ships bash 3.2 as /bin/bash, and with
 # a lean PATH `/usr/bin/env bash` resolves to exactly that, which renders the
 # literal text \U0000F1EB into the status bar. The shebang is resolved before

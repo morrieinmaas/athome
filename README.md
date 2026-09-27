@@ -873,5 +873,5 @@ keys, a user-owned package prefix), and how to report a vulnerability privately.
 
 ## Licence
 
-[MIT](LICENSE). Do what you like with it; no warranty, and no liability if a bootstrap script
-eats an afternoon.
+[Apache-2.0](LICENSE). Do what you like with it; no warranty, and no liability if a bootstrap
+script eats an afternoon.

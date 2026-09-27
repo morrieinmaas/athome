@@ -1,19 +1,20 @@
 #!/usr/bin/env bash
-# WiFi backend: point NetworkManager at the iwd backend.
+# WiFi backend: NetworkManager on its default backend, wpa_supplicant.
 #
-# Why: impala (the WiFi TUI in packages.yaml) drives WiFi by talking to iwd over
-# D-Bus, but our stack manages WiFi through NetworkManager, whose default
-# backend is wpa_supplicant. Switching NM to wifi.backend=iwd gives ONE wireless
-# stack that both NM (so Noctalia's nmcli-based NetworkService keeps working) and
-# impala can drive. iwd is enabled as a service so it's always up for impala —
-# not only when NM happens to D-Bus-activate it.
+# athome used to switch NM to wifi.backend=iwd, only so the `impala` TUI (which
+# talks to iwd directly) would work. It cost more than it gave:
+#   - iwd recreates the wireless interface at startup and renames it
+#     (wlp61s0 -> wlan0), so profiles bound to the old name stopped
+#     autoconnecting and saved passwords looked forgotten;
+#   - after suspend, iwd's own autoconnect and NM fought: iwd started
+#     connecting, NM tore it down, and NM never started its own attempt, so
+#     Wi-Fi stayed down until reconnected by hand.
+# wpa_supplicant is what NM is built and tested around; Noctalia, GNOME, nmtui
+# and nmcli all go through NM and work the same. impala was dropped.
 #
-# Safety: we DELIBERATELY don't restart NetworkManager here. That would tear down
-# the active connection mid-apply — possibly the very session running chezmoi,
-# and the network the package installs are still using. The drop-in is staged and
-# iwd is enabled (not started), so the new stack comes up cleanly on the next
-# reboot, or on the manual restart printed below. Idempotent: a no-op once the
-# drop-in is already in place and iwd is enabled.
+# This script undoes the iwd switch on machines that had it. Safety as before:
+# NetworkManager is NOT restarted here (that would drop the connection mid-apply);
+# the change lands on the next reboot or the restart printed below.
 set -euo pipefail
 
 # Headless CI/e2e (ATHOME_CI=1): systemd, GUI and hardware are absent —
@@ -21,50 +22,36 @@ set -euo pipefail
 if [ -n "${ATHOME_CI:-}" ]; then echo "ATHOME_CI: skipping headless setup ($(basename "$0"))"; exit 0; fi
 
 {{ if eq .chezmoi.os "linux" -}}
-# Both NetworkManager and iwd are installed by run_onchange_02 (packages.yaml).
-# Bail politely if this runs before that has landed them.
 if ! command -v nmcli >/dev/null 2>&1; then
   echo "==> NetworkManager not installed yet — re-run after run_onchange_02 lands it"
   exit 0
 fi
-if ! command -v iwctl >/dev/null 2>&1; then   # iwd ships iwctl — distro-neutral (Arch + Fedora)
-  echo "==> iwd not installed yet — re-run after run_onchange_02 lands it"
-  exit 0
-fi
 
+changed=0
+
+# Remove the iwd backend drop-in athome used to write.
 conf=/etc/NetworkManager/conf.d/wifi_backend.conf
-staged=0
-
 if [[ -f "$conf" ]] && grep -q '^wifi\.backend=iwd' "$conf"; then
-  echo "==> NM wifi.backend=iwd already configured ($conf)"
-else
-  echo "==> staging NM wifi.backend=iwd → $conf"
-  printf '[device]\nwifi.backend=iwd\n' | sudo tee "$conf" >/dev/null
-  staged=1
+  echo "==> NM: back to the default wpa_supplicant backend (removing $conf)"
+  sudo rm -f "$conf"
+  changed=1
 fi
 
-# Keep the kernel's interface name. By default iwd destroys and recreates the
-# wireless interface at startup, which renames it (wlp61s0 → wlan0). NetworkManager
-# profiles created before the switch are bound to the OLD name, so after the first
-# reboot on iwd nothing autoconnected and saved passwords looked forgotten:
-# "The device 'wlan0' has no connections available for activation".
-iwd_conf=/etc/iwd/main.conf
-if [[ -f "$iwd_conf" ]] && grep -q '^DefaultInterface' "$iwd_conf"; then
-  echo "==> iwd already keeps the default interface ($iwd_conf)"
-else
-  echo "==> iwd: keep the kernel's interface name → $iwd_conf"
-  sudo mkdir -p /etc/iwd
-  if [[ -f "$iwd_conf" ]] && grep -q '^\[DriverQuirks\]' "$iwd_conf"; then
-    sudo sed -i '/^\[DriverQuirks\]/a DefaultInterface=*' "$iwd_conf"
-  else
-    printf '\n[DriverQuirks]\nDefaultInterface=*\n' | sudo tee -a "$iwd_conf" >/dev/null
-  fi
-  staged=1
+# iwd must not run alongside wpa_supplicant: both would try to drive the card.
+# Disable only (not --now), for the same reason NM isn't restarted.
+if systemctl is-enabled iwd >/dev/null 2>&1; then
+  echo "==> disabling iwd.service (from next boot)"
+  sudo systemctl disable iwd >/dev/null 2>&1 || true
+  changed=1
+fi
+if systemctl list-unit-files wpa_supplicant.service >/dev/null 2>&1 \
+   && ! systemctl is-enabled wpa_supplicant >/dev/null 2>&1; then
+  sudo systemctl enable wpa_supplicant >/dev/null 2>&1 || true
 fi
 
-# Belt and braces for any rename (and for machines that already went through
-# one): unbind saved Wi-Fi profiles from an interface NAME. A profile then applies
-# to whichever wireless device is present, so the saved password is used.
+# Unbind saved Wi-Fi profiles from an interface NAME, so a profile saved under
+# one name (wlp61s0, or wlan0 from the iwd days) applies to whichever wireless
+# device is present and its saved password is used.
 for uuid in $(nmcli -g UUID,TYPE connection show 2>/dev/null | awk -F: '$2 == "802-11-wireless" {print $1}'); do
   ifname="$(nmcli -g connection.interface-name connection show "$uuid" 2>/dev/null)"
   [[ -n "$ifname" ]] || continue
@@ -72,36 +59,14 @@ for uuid in $(nmcli -g UUID,TYPE connection show 2>/dev/null | awk -F: '$2 == "8
   sudo nmcli connection modify "$uuid" connection.interface-name "" || true
 done
 
-# wpa_supplicant is the backend NM just stopped using; left enabled it can grab
-# the wireless device alongside iwd. Disable only (not --now): before the reboot
-# NM is still on it, and stopping it now would drop the connection mid-apply.
-if systemctl is-enabled wpa_supplicant >/dev/null 2>&1; then
-  echo "==> disabling wpa_supplicant.service (iwd replaces it from next boot)"
-  sudo systemctl disable wpa_supplicant >/dev/null 2>&1 || true
-fi
-
-# Enable (not --now): starting iwd while NM is still on the wpa_supplicant
-# backend lets the two contend for the wireless device. The reboot/restart
-# below brings the iwd-backed stack up in one clean step.
-if systemctl is-enabled iwd >/dev/null 2>&1; then
-  echo "==> iwd.service already enabled"
-else
-  echo "==> enabling iwd.service (starts on next boot)"
-  sudo systemctl enable iwd >/dev/null 2>&1 || echo "   ! couldn't enable iwd.service"
-  staged=1
-fi
-
-if [[ "$staged" == 1 ]]; then
+if [[ "$changed" == 1 ]]; then
   cat <<'EOF'
 
-==> WiFi backend staged (NetworkManager → iwd). NOT activated now, to avoid
-    dropping your connection mid-apply. Activate with a reboot, or manually:
+==> WiFi backend reverted to wpa_supplicant. NOT activated now, to avoid dropping
+    your connection mid-apply. Activate with a reboot, or manually:
 
-      sudo systemctl restart iwd
+      sudo systemctl stop iwd
       sudo systemctl restart NetworkManager
-
-    Afterwards NetworkManager drives iwd (nmcli / Noctalia keep working) and
-    `impala` can manage WiFi directly.
 EOF
 fi
 {{- end }}

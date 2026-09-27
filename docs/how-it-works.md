@@ -128,8 +128,8 @@ GNOME and GDM come from the OS install. athome adds:
 - **Icons and cursor:** Papirus-Dark and Bibata, with adw-gtk3 for GTK apps and
   qt6ct for Qt apps.
 - **GPaste** for clipboard history when you're in the GNOME session.
-- iwd as NetworkManager's Wi-Fi backend (switched over on the next reboot) so
-  `impala` works, plus power-profiles-daemon and Bluetooth.
+- power-profiles-daemon and Bluetooth. Wi-Fi is NetworkManager on its default
+  wpa_supplicant backend: manage it from Noctalia, GNOME, `nmtui` or `nmcli`.
 
 The `theme` command recolours Ghostty, tmux, Neovim and niri together; see
 [theme-switching.md](theme-switching.md).

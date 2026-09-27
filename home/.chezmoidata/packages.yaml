@@ -102,8 +102,6 @@ linux:
     - pinentry                       # pinentry prompt — required by rbw (Bitwarden master-password entry)
     - libjxl                         # equivalent of brew's jpeg-xl
     - networkmanager                 # Noctalia's NetworkService.qml shells out to nmcli; relying on archinstall to install NM is fragile
-    - iwd                            # iNet wireless daemon — the WiFi backend NetworkManager is pointed at (run_once_15) so impala has a daemon to talk to. Arch extra.
-    - impala                         # WiFi TUI (pythops/impala) — Arch `extra`. LINUX-ONLY: no macOS build (talks to iwd over D-Bus), so it can't live in the cross-platform mise [tools]. Needs iwd running + NM on the iwd backend; both are wired up by run_once_15-setup-wifi-backend.
     # Noctalia replaces the following natively: launcher (was fuzzel),
     # notifications (was mako), lockscreen (was swaylock), idle handler
     # (was swayidle), clipboard history+picker (was cliphist), polkit
@@ -261,7 +259,6 @@ fedora:
     - nerd-fonts-jetbrains-mono    # from che/nerd-fonts COPR. Non-fatal if absent: the nerd-font COPRs often lag the NEWEST Fedora (no F44 build yet as of 2026-06), so this may skip on a bleeding-edge release until the COPR catches up — cosmetic only (ghostty/tmux glyphs).
     # ── wayland / GNOME fallback / desktop (the GNOME spin ships most already) ──
     - NetworkManager
-    - iwd
     - fastfetch
     - google-noto-emoji-fonts      # = Arch noto-fonts-emoji
     - papirus-icon-theme           # desktop look, see the Arch list
@@ -302,5 +299,5 @@ fedora:
     - netbird-ui
     # Pulled via MISE on Fedora (release binaries via ubi/github/cargo/go — SAME
     # as Arch + macOS, not duplicated here): matugen,
-    # impala, bandwhich, gping, trippy, prettierd, wush, opencode. librewolf +
+    # bandwhich, gping, trippy, prettierd, wush, opencode. librewolf +
     # nordvpn have their own upstream dnf repos if you want them.

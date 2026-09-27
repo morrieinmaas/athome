@@ -64,6 +64,11 @@ mouse-shift-capture = never
 # drag selects natively; toggle back on to restore tmux scroll/resize.
 keybind = cmd+shift+m=toggle_mouse_reporting
 
+# Pin the shell instead of taking Ghostty's default, which is $SHELL before the
+# passwd entry. On a fresh box the desktop session predates the chsh to zsh, so
+# its $SHELL is still bash and every new tab/window opened bash until re-login.
+# Bare name → looked up on PATH (/usr/bin/zsh on Arch, /bin/zsh on macOS).
+command = zsh
 shell-integration = zsh
 # ssh-terminfo + ssh-env exist for SSH into machines that do not know Ghostty.
 # Without them the remote falls back on TERM=xterm-ghostty with no matching

@@ -96,6 +96,21 @@ if command -v gh >/dev/null 2>&1; then
   }
   autoload -Uz add-zsh-hook
   add-zsh-hook precmd _ghtok_load
+
+  # gh refuses `auth login/refresh` while GITHUB_TOKEN is set ("first clear the
+  # value from the environment") — which the export above guarantees. So run
+  # `gh auth …` without the env copies, then re-export whatever token the
+  # keyring holds now (refresh/login can rotate it).
+  gh() {
+    if [[ "$1" == auth ]]; then
+      env -u GITHUB_TOKEN -u GH_TOKEN gh "$@"   # env execs the binary, not this function
+      local rc=$? t
+      t="$(env -u GITHUB_TOKEN -u GH_TOKEN gh auth token 2>/dev/null)"
+      [[ -n "$t" ]] && export GITHUB_PERSONAL_ACCESS_TOKEN="$t" GITHUB_TOKEN="$t" MISE_GITHUB_TOKEN="$t"
+      return $rc
+    fi
+    command gh "$@"
+  }
 fi
 
 # ─── SSH keys (no agent required) ────────────────────────────────────────────

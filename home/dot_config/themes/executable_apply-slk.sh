@@ -6,11 +6,12 @@
 set -euo pipefail
 
 dir="${HOME}/.config/themes"
-cfg="${HOME}/.config/slk/config.toml"
+# $1 = file to recolour instead (the chezmoi modify_ script passes a temp copy).
+cfg="${1:-${HOME}/.config/slk/config.toml}"
 [ -f "$cfg" ] || exit 0   # slk not configured yet — nothing to do
 
 # shellcheck source=/dev/null
-. "$dir/registry.sh"
+. "$(dirname "${BASH_SOURCE[0]}")/registry.sh"   # own dir: works from ~/.config/themes and the source repo
 
 family="$(cat "$dir/active" 2>/dev/null || echo gruvbox)"
 

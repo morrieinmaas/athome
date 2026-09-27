@@ -50,10 +50,18 @@ terminal background — `Reset` can't.)
 
 ## Runtime-only
 
-`theme` edits your live `~/.config` for instant effect — it never touches the
-athome repo. The committed **default is gruvbox-light** (ghostty line, tmux
-`@theme_*` defaults, nvim fallback). A fresh `chezmoi apply` / sync always lands
-on gruvbox-light; the picker is a per-machine runtime layer on top.
+`theme` edits your live `~/.config` for instant effect and never touches the
+athome repo. The committed default is gruvbox; the picker is a per-machine
+layer on top, remembered in `~/.config/themes/active`.
+
+Your pick survives `chezmoi apply`. Ghostty reads it from its own unmanaged
+file (`~/.config/ghostty/theme`, loaded last via `config-file = ?theme`). The
+niri, slk and gh-dash configs are chezmoi `modify_` scripts: they render the
+repo's version and re-apply the picked theme with the same `apply-*.sh`
+script `theme` uses, so repo updates still land and `chezmoi status` stays
+clean. To change one of those three configs, edit it under
+`home/.chezmoitemplates/` (`niri/config.kdl`, `slk/config.toml`,
+`gh-dash/config.yml`), not the `modify_` script.
 
 ## Adding a theme
 

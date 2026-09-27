@@ -118,7 +118,7 @@ takes an explicit `SKIP_GIT_HOOKS=1 git commit`.
 GNOME and GDM come from the OS install. athome adds:
 
 - **niri**, a scrolling tiling Wayland compositor, set as your default session
-  ([config](../home/dot_config/niri/config.kdl)).
+  ([config](../home/.chezmoitemplates/niri/config.kdl)).
 - **Noctalia**, the shell running inside niri: bar, launcher, notifications,
   lock screen, and clipboard history on `Ctrl+Alt+V`. It writes its own
   settings to `~/.config/noctalia/`, which athome doesn't track until you

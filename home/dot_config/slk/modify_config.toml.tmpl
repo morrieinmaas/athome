@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# chezmoi modify_ script for ~/.config/slk/config.toml. The real content lives in
+# .chezmoitemplates/slk/config.toml — edit that, not this.
+#
+# Why a modify_ script: `theme` recolours this file at runtime (via
+# themes/apply-slk.sh), and a plain managed file made every later apply either prompt
+# ("changed since chezmoi last wrote it") or silently undo the theme pick. So
+# render the repo's version, then re-apply the picked theme on top with the
+# same script `theme` uses. Nothing picked yet → the repo's version, unchanged.
+set -euo pipefail
+cat >/dev/null   # current contents: not needed, the theme is re-derived
+
+tmp="$(mktemp)"; trap 'rm -f "$tmp"' EXIT
+cat >"$tmp" <<'ATHOME_EOF'
+{{ includeTemplate ".chezmoitemplates/slk/config.toml" . | trimSuffix "\n" }}
+ATHOME_EOF
+
+if [ -s "$HOME/.config/themes/active" ]; then
+  bash "{{ .chezmoi.sourceDir }}/dot_config/themes/executable_apply-slk.sh" "$tmp" >/dev/null 2>&1 || true
+fi
+cat "$tmp"

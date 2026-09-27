@@ -13,7 +13,8 @@
 set -euo pipefail
 
 dir="${HOME}/.config/themes"
-cfg="${HOME}/.config/niri/config.kdl"
+# $1 = file to recolour instead (the chezmoi modify_ script passes a temp copy).
+cfg="${1:-${HOME}/.config/niri/config.kdl}"
 [ -f "$cfg" ] || { echo "apply-niri: no $cfg, skipping"; exit 0; }
 
 name="$(cat "$dir/active" 2>/dev/null || echo gruvbox)"
@@ -34,7 +35,7 @@ is_dark() {  # same detection as pet.sh / battery.sh / fzf-theme.sh
 if is_dark; then mode=dark; else mode=light; fi
 
 # shellcheck source=/dev/null
-. "$dir/registry.sh"
+. "$(dirname "${BASH_SOURCE[0]}")/registry.sh"   # own dir: works from ~/.config/themes and the source repo
 pal="$(theme_palette "$name" "$mode" 2>/dev/null || true)"
 [ -z "$pal" ] && pal="$(theme_palette gruvbox "$mode")"
 eval "$pal"   # sets BG FG BLUE YELLOW GREEN GREY MUTED
@@ -68,8 +69,8 @@ awk -v blue="$BLUE" -v muted="$MUTED" -v yellow="$YELLOW" '
 ' "$cfg" > "$tmp"
 
 if cmp -s "$cfg" "$tmp"; then
-  echo "apply-niri: already ${name}/${mode}"
+  echo "apply-niri: already ${name}/${mode}" >&2
 else
   cat "$tmp" > "$cfg"   # write in place so niri's watcher sees one modification
-  echo "apply-niri: niri recoloured to ${name}/${mode}"
+  echo "apply-niri: niri recoloured to ${name}/${mode}" >&2
 fi

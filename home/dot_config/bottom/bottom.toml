@@ -1,7 +1,7 @@
 # bottom (btm) — cross-platform system monitor. github.com/ClementTsang/bottom
 # Installed via mise (see home/dot_config/mise/config.toml [tools]); replaced btop.
 #
-# THEME STRATEGY — mirrors slk's "ANSI" trick (see dot_config/slk/config.toml):
+# THEME STRATEGY — mirrors slk's "ANSI" trick (see .chezmoitemplates/slk/config.toml):
 # every colour is either "Reset" (the terminal's own foreground — legible on
 # light OR dark by construction) or an ANSI accent name (Red/Green/Blue/…), which
 # maps to the terminal's 16-colour palette. So btm automatically follows whatever

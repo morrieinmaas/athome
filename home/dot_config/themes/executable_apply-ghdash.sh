@@ -10,11 +10,12 @@
 set -euo pipefail
 
 dir="${HOME}/.config/themes"
-cfg="${HOME}/.config/gh-dash/config.yml"
+# $1 = file to recolour instead (the chezmoi modify_ script passes a temp copy).
+cfg="${1:-${HOME}/.config/gh-dash/config.yml}"
 [ -f "$cfg" ] || exit 0
 
 # shellcheck source=/dev/null
-. "$dir/registry.sh"
+. "$(dirname "${BASH_SOURCE[0]}")/registry.sh"   # own dir: works from ~/.config/themes and the source repo
 
 family="$(cat "$dir/active" 2>/dev/null || echo gruvbox)"
 
@@ -65,4 +66,4 @@ awk -v b="$beg" -v e="$end" '
 # Ensure a trailing newline before appending.
 [ -n "$(tail -c1 "$tmp")" ] && printf '\n' >> "$tmp"
 printf '%s\n' "$block" >> "$tmp"
-mv "$tmp" "$cfg"
+cat "$tmp" > "$cfg" && rm -f "$tmp"   # not mv: a mktemp file is mode 600, which chezmoi then flags as drift

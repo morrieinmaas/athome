@@ -121,7 +121,7 @@ act        = "latest"   # run GitHub Actions locally
 # tokens live in their configs; they're portable Go binaries pulled straight
 # from GitHub releases via mise's github backend (verifies checksums + SLSA
 # provenance). gh-dash binds `T` to launch gh-enhance/ENHANCE in a new tmux
-# window — see dot_config/gh-dash/config.yml.
+# window — see .chezmoitemplates/gh-dash/config.yml.
 "github:dlvhdr/gh-dash"    = "latest"   # gh-dash — PR/issue dashboard TUI (binary: gh-dash)
 "github:dlvhdr/gh-enhance" = "latest"   # ENHANCE — GitHub Actions TUI (binary: gh-enhance)
 "github:gammons/slk"       = "latest"   # slk — Slack TUI; browser-session auth, tokens in ~/.local/share/slk/tokens (never tracked)

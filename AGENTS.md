@@ -48,6 +48,17 @@ chezmoi apply --force
 
 Use `.chezmoiignore` to gate OS-specific paths. The existing block at `home/.chezmoiignore` already filters Linux-only Wayland-shell paths off macOS. **Add to that block** when shipping new Linux-only config; don't ignore via per-file conditionals.
 
+## Theme-aware configs are `modify_` scripts
+
+`~/.config/niri/config.kdl`, `~/.config/slk/config.toml` and
+`~/.config/gh-dash/config.yml` are recoloured at runtime by `theme`. Their real
+content lives in `home/.chezmoitemplates/{niri,slk,gh-dash}/`; the files under
+`home/dot_config/` are `modify_*.tmpl` scripts that render that content and
+re-apply the active theme. Edit the `.chezmoitemplates` copy. Don't turn them
+back into plain managed files, and don't `chezmoi add` them: that brings back
+the apply-vs-theme fight. Ghostty uses an unmanaged `~/.config/ghostty/theme`
+include instead.
+
 ## Tag discipline
 
 `scripts/bootstrap.sh` defaults `--ref` to the latest git tag (via `git describe --tags --abbrev=0`). **Stale tags = old behavior on every new install.**
@@ -100,7 +111,7 @@ gone after the history squash; the fixes live in the current tree).
 | Symptom | Root cause | Fix (current behavior) |
 | --- | --- | --- |
 | `git pull` in `~/.local/share/chezmoi` fails with "Could not resolve hostname github-personal" | gitconfig's `url.insteadOf` rewrote to an SSH alias that wasn't in `~/.ssh/config` yet | bootstrap.sh AND chezmoi `run_before_00` seed the SSH host aliases first |
-| niri config silently doesn't apply (no Mod keys, no rounded corners, the shell reports "failed to parse config file") | niri config has a parse error — cascade affects every customization at once | keep `home/dot_config/niri/config.kdl` valid against the current niri schema |
+| niri config silently doesn't apply (no Mod keys, no rounded corners, the shell reports "failed to parse config file") | niri config has a parse error — cascade affects every customization at once | keep `home/.chezmoitemplates/niri/config.kdl` valid against the current niri schema |
 | `chezmoi apply` hangs on file-modified prompt with broken TTY input in tmux | Default `chezmoi apply` prompts when destination diverges from source; the prompt input is flaky in tmux | bootstrap passes `--force` to `chezmoi init --apply` |
 | Bootstrap uploads a work SSH key to GitHub on a personal machine | SSH keygen + upload looped over all three identities regardless of `--machine` | gate by the `IDENTITIES` array |
 | First boot lands in TTY not a graphical login | archinstall's Niri profile pins lightdm, our setup expects greetd | `run_once_11` handles any display-manager and only enables greetd if NO DM is configured (respects archinstall's pick) |

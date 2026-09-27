@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# chezmoi modify_ script for ~/.config/niri/config.kdl. The real content lives in
+# .chezmoitemplates/niri/config.kdl — edit that, not this.
+#
+# Why a modify_ script: `theme` recolours this file at runtime (via
+# themes/apply-niri.sh), and a plain managed file made every later apply either prompt
+# ("changed since chezmoi last wrote it") or silently undo the theme pick. So
+# render the repo's version, then re-apply the picked theme on top with the
+# same script `theme` uses. Nothing picked yet → the repo's version, unchanged.
+set -euo pipefail
+cat >/dev/null   # current contents: not needed, the theme is re-derived
+
+tmp="$(mktemp)"; trap 'rm -f "$tmp"' EXIT
+cat >"$tmp" <<'ATHOME_EOF'
+{{ include ".chezmoitemplates/niri/config.kdl" | trimSuffix "\n" }}
+ATHOME_EOF
+
+if [ -s "$HOME/.config/themes/active" ]; then
+  bash "{{ .chezmoi.sourceDir }}/dot_config/themes/executable_apply-niri.sh" "$tmp" >/dev/null 2>&1 || true
+fi
+cat "$tmp"

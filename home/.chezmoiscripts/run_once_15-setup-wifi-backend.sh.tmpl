@@ -43,6 +43,43 @@ else
   staged=1
 fi
 
+# Keep the kernel's interface name. By default iwd destroys and recreates the
+# wireless interface at startup, which renames it (wlp61s0 → wlan0). NetworkManager
+# profiles created before the switch are bound to the OLD name, so after the first
+# reboot on iwd nothing autoconnected and saved passwords looked forgotten:
+# "The device 'wlan0' has no connections available for activation".
+iwd_conf=/etc/iwd/main.conf
+if [[ -f "$iwd_conf" ]] && grep -q '^DefaultInterface' "$iwd_conf"; then
+  echo "==> iwd already keeps the default interface ($iwd_conf)"
+else
+  echo "==> iwd: keep the kernel's interface name → $iwd_conf"
+  sudo mkdir -p /etc/iwd
+  if [[ -f "$iwd_conf" ]] && grep -q '^\[DriverQuirks\]' "$iwd_conf"; then
+    sudo sed -i '/^\[DriverQuirks\]/a DefaultInterface=*' "$iwd_conf"
+  else
+    printf '\n[DriverQuirks]\nDefaultInterface=*\n' | sudo tee -a "$iwd_conf" >/dev/null
+  fi
+  staged=1
+fi
+
+# Belt and braces for any rename (and for machines that already went through
+# one): unbind saved Wi-Fi profiles from an interface NAME. A profile then applies
+# to whichever wireless device is present, so the saved password is used.
+for uuid in $(nmcli -g UUID,TYPE connection show 2>/dev/null | awk -F: '$2 == "802-11-wireless" {print $1}'); do
+  ifname="$(nmcli -g connection.interface-name connection show "$uuid" 2>/dev/null)"
+  [[ -n "$ifname" ]] || continue
+  echo "==> NM: unbinding Wi-Fi profile $uuid from interface '$ifname'"
+  sudo nmcli connection modify "$uuid" connection.interface-name "" || true
+done
+
+# wpa_supplicant is the backend NM just stopped using; left enabled it can grab
+# the wireless device alongside iwd. Disable only (not --now): before the reboot
+# NM is still on it, and stopping it now would drop the connection mid-apply.
+if systemctl is-enabled wpa_supplicant >/dev/null 2>&1; then
+  echo "==> disabling wpa_supplicant.service (iwd replaces it from next boot)"
+  sudo systemctl disable wpa_supplicant >/dev/null 2>&1 || true
+fi
+
 # Enable (not --now): starting iwd while NM is still on the wpa_supplicant
 # backend lets the two contend for the wireless device. The reboot/restart
 # below brings the iwd-backed stack up in one clean step.

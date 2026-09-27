@@ -30,4 +30,11 @@ else
 fi
 gsettings set org.gnome.shell enabled-extensions "$new"
 echo "==> GPaste enabled for GNOME (clipboard history in the top bar; niri uses Noctalia's)"
+# GNOME Shell on Wayland only scans for newly installed system extensions at
+# startup, so a session that predates the gpaste install can't load it: no
+# top-bar icon, and GPaste's standalone window pops up instead of the dropdown.
+if ! gnome-extensions info "$uuid" >/dev/null 2>&1; then
+  echo "    Log out and back in to GNOME to get the top-bar icon (the running shell"
+  echo "    can't load an extension installed after it started)."
+fi
 {{ end -}}

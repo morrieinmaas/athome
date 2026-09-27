@@ -5,8 +5,9 @@
 # On a fresh checkout, `mise trust` this file once. Extra args pass through after
 # the task name, e.g. `mise run teardown --all --execute`.
 #
-# Tasks only — no [tools] here, so this merges cleanly with the global
-# ~/.config/mise/config.toml (which owns the installed toolchain).
+# The machine's toolchain lives in the global ~/.config/mise/config.toml. The
+# only [tools] here are dev deps for working ON this repo — they resolve only
+# inside it, so nothing leaks into the global toolset.
 
 [settings]
 # Never auto-install missing tools when running a task in this repo. mise
@@ -21,6 +22,10 @@ auto_install = false
 # that on PATH yet (the zsh config that does is what `apply` deploys) — so
 # `mise run apply` straight after bootstrap failed with "chezmoi: command not found".
 _.path = ["{{env.HOME}}/.local/bin"]
+
+[tools]
+# Test runner for test/*.bats (`mise run test`). CI apt-installs its own.
+bats = "1.14.0"
 
 [tasks.bootstrap]
 description = "Provision this machine (args pass through, e.g. --config bootstrap.local.toml)"
@@ -102,8 +107,9 @@ description = "shellcheck the shell scripts (same config as CI)"
 run = "pre-commit run shellcheck --all-files"
 
 [tasks.test]
-description = "run the bats test suite"
-run = "bats test"
+description = "run the bats test suite (installs the pinned bats on first use)"
+# auto_install is off repo-wide, so fetch just this task's own dep explicitly.
+run = ["mise install --quiet bats", "mise exec -- bats test"]
 
 [tasks.e2e]
 description = "build + run the Arch bootstrap e2e in a container (docker/podman)"

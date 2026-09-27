@@ -53,6 +53,7 @@ locally before opening a PR:
 
 ```bash
 mise run lint
+mise run test              # bats unit tests; fetches the pinned bats (a repo-only dev dep) on first run
 ```
 
 Note that `*.tmpl` and `*.zsh` files are excluded from shellcheck and shfmt on purpose: they

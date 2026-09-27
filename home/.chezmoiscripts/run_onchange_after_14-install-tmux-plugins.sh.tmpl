@@ -9,6 +9,10 @@
 # at all, and user.conf because that is where the plugin list is.
 set -euo pipefail
 
+# `after_`: TPM only finds its config once canopy (run_onchange_18) is cloned,
+# since canopy's tmux.conf is what sources user.conf. As a plain run_onchange_14
+# this ran before 18 on a fresh box and TPM died "not configured in tmux.conf".
+
 # entry point hash = {{ include "dot_config/tmux/tmux.conf.tmpl" | sha256sum }}
 # plugin list hash = {{ include "dot_config/canopy/user.conf.tmpl" | sha256sum }}
 

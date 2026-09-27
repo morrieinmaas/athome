@@ -92,6 +92,7 @@ linux:
     - openssh
     - zed                            # Zed editor (GUI; in extra). macOS: `zed` cask. Config under dot_config/zed/.
     - ghostty
+    - librewolf                      # privacy-hardened Firefox fork (moved from AUR librewolf-bin into extra)
     - niri
     - greetd
     - greetd-tuigreet
@@ -177,7 +178,6 @@ linux:
     - netbird                        # mesh VPN client (replaces tailscale). NetBird Cloud free tier; self-host is a no-penalty future exit. `netbird up` in run_once_08.
     - opencode-bin
     - zen-browser-bin
-    - librewolf-bin                  # privacy-hardened Firefox fork
     - nirimod-git
     - matugen-bin                    # wallpaper-derived palettes for anything that wants them. NOTE: Noctalia v5 generates its own palette internally (theme.source = "wallpaper"), so this is no longer required BY Noctalia; kept as a general-purpose tool.
     - nordvpn-bin

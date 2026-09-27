@@ -73,6 +73,14 @@ install_one() {
     INSTALL_OK=$((INSTALL_OK + 1))
     return 0
   fi
+  # Already satisfied, possibly by a provider (yay-bin provides yay, *-git
+  # variants, …): `--needed` only skips the exact package, so yay would try to
+  # install `yay` over `yay-bin` and fail on the conflict.
+  if [[ "$pm" == pacman || "$pm" == yay ]] && pacman -T "$pkg" >/dev/null 2>&1; then
+    printf '  ✓ %s: %s (already satisfied)\n' "$label" "$pkg"
+    INSTALL_OK=$((INSTALL_OK + 1))
+    return 0
+  fi
   local out
   if out=$("${cmd[@]}" 2>&1); then
     printf '  ✓ %s: %s\n' "$label" "$pkg"

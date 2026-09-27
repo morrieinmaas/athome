@@ -46,7 +46,26 @@ chezmoi apply --force
 | `~/.local/state/*`, `~/.cache/*` | No — runtime state, never tracked |
 | Secrets | **Two models** (see `docs/secrets.md`). **Default/preferred = B**: mise + plaintext `~/.secrets/<repo>/.env`, Bitwarden as backup (works offline, no unlock to use; via `secrets-backup`/`secrets-restore`). **Exception = A**: direnv `use_rbw` — pulled from Bitwarden at runtime, nothing on disk (high-sensitivity/shared machines). Neither path is chezmoi-managed — `~/.secrets/<repo>/.env` is restored by `secrets-restore`, never `chezmoi apply`. The dedicated `~/.secrets/` tree keeps secrets out of `~/.config` so the dotfiles repo can manage `~/.config/*` cleanly. |
 
-Use `.chezmoiignore` to gate OS-specific paths. The existing block at `home/.chezmoiignore` already filters Linux-only Wayland-shell paths off macOS. **Add to that block** when shipping new Linux-only config; don't ignore via per-file conditionals.
+Use `.chezmoiignore` to gate OS-specific **paths**: a file that has no meaning at
+all on the other OS, like the Wayland-shell configs the existing block at
+`home/.chezmoiignore` already filters off macOS. **Add to that block** when
+shipping new Linux-only config of that kind.
+
+Gate on the OS *inside* a file instead when the file ships everywhere and only
+some of its contents differ. Two ways, and which one depends on who reads it:
+
+- **A chezmoi template conditional**, `{{ if eq .chezmoi.os "darwin" }}`, when
+  the value is decided at apply time and the reader is a plain config file.
+  `dot_zsh/path.zsh.tmpl` and `dot_zsh/exports.zsh.tmpl` do this.
+- **A runtime conditional in the shell itself**, `case "$OSTYPE"`, when the
+  reader is a shell that already knows which OS it is on. `dot_zshrc.tmpl`
+  picks between `dot_zsh/aliases-darwin.zsh` and `dot_zsh/aliases-linux.zsh`
+  that way, and both files ship to both machines.
+
+The reason to prefer the last one where it applies: a file that is absent and a
+file that `.chezmoiignore` filtered out look identical on disk and are very
+different problems, so shipping both and letting the shell choose keeps
+`chezmoi diff` showing the whole picture on either machine.
 
 ## Theme-aware configs are `modify_` scripts
 
@@ -187,6 +206,10 @@ The gist URL is paste-able into a chat for a remote agent to read with `gh gist 
 
 ---
 
-*Last updated: 2026-06-05. Reflects the tooling & secrets migration: mise-primary
-toolchain, nanobrew on macOS, NetBird mesh, Bitwarden+rbw (GPG/pass/age retired),
-Zed by default. `Ideas.md` retired into `README.md`. Tag after applying on a machine.*
+*Last updated: 2026-09-27. Since the 2026-06-05 entry: tmux handed over to
+[canopy](https://github.com/morrieinmaas/canopy), pinned by tag in
+`run_onchange_18` rather than tracking its main branch; the zsh alias files
+split into a common set plus one per OS. Earlier: the tooling & secrets
+migration, mise-primary toolchain, nanobrew on macOS, NetBird mesh,
+Bitwarden+rbw (GPG/pass/age retired), Zed by default. `Ideas.md` retired into
+`README.md`. Tag after applying on a machine.*

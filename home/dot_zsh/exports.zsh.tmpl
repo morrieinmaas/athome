@@ -5,9 +5,26 @@
 export EDITOR=nvim
 export VISUAL=nvim
 export SUDO_EDITOR=nvim
+
 export PAGER=less
 export LESS='-FRXM'
 export MANPAGER='nvim +Man!'
+
+# Over SSH, fall back to vim. The far side of an ssh session is not necessarily
+# one of these machines: it may be a server with vim and no nvim, and a git
+# commit that opens a missing editor fails after you have already staged
+# everything. vim is the thing that is actually there.
+#
+# SUDO_EDITOR is left alone deliberately: sudoedit runs on this machine, not
+# the far one. MANPAGER is unset for the same reason EDITOR changes, since it
+# is `nvim +Man!` above and on a box without nvim every `man` page would fail
+# to open. Unset rather than set to empty, because man implementations disagree
+# about what an empty MANPAGER means, while unset falls back to PAGER.
+#
+# Placed AFTER those exports, not with the editor block above, because this
+# overrides them: written earlier, the unset was undone two lines later by the
+# MANPAGER export and the fallback silently did half its job.
+[[ -n "$SSH_CONNECTION" ]] && { export EDITOR=vim VISUAL=vim; unset MANPAGER; }
 
 # ─── Locale ──────────────────────────────────────────────────────────────────
 export LANG="${LANG:-en_US.UTF-8}"
@@ -45,6 +62,15 @@ export DOCKER_HOST="unix:///run/user/$(id -u)/podman/podman.sock"
 # testcontainers — only its own SDKs read these.
 export TESTCONTAINERS_RYUK_DISABLED=true
 export TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE="${DOCKER_HOST#unix://}"
+
+{{ if eq .chezmoi.os "darwin" -}}
+# ─── Legacy Homebrew ─────────────────────────────────────────────────────────
+# nanobrew is the canonical package manager now, but Homebrew is still at
+# /opt/homebrew with everything that predates the cutover. Without this,
+# `brew install` also runs an upgrade-and-cleanup pass over those leftovers,
+# which is how an unrelated install uninstalls something you were still using.
+export HOMEBREW_NO_INSTALL_CLEANUP=1
+{{- end }}
 
 # ─── History (self-contained — was "+ OMZ history lib", OMZ now purged) ──────
 export HISTFILE="${HISTFILE:-$HOME/.zsh_history}"

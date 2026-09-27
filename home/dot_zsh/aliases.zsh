@@ -1,6 +1,11 @@
 # ~/.zsh/aliases.zsh — managed by chezmoi
 # Sourced from ~/.zshrc after exports.zsh.
 #
+# This file is the COMMON set: everything that behaves the same on macOS and
+# Linux. What differs by OS lives in aliases-darwin.zsh and aliases-linux.zsh,
+# and ~/.zshrc sources the matching one right after this file, so either can
+# override anything here. Both ship to every machine; the shell picks.
+#
 # All `command -v X >/dev/null && alias …` guards mean an alias only
 # activates if the underlying tool is installed. Safe to source on any
 # machine, no broken-alias errors.
@@ -27,10 +32,6 @@ command -v btm    >/dev/null && alias top='btm'
 command -v viddy  >/dev/null && alias watch='viddy'
 command -v choose >/dev/null && alias cut='choose'
 command -v tldr   >/dev/null && alias man='tldr'   # `command man` still hits real man
-# macOS: nanobrew is the canonical PM — muscle-memory `brew` resolves to `nb`.
-# Interactive only; scripts call `nb` directly (an alias won't fire in scripts).
-command -v nb     >/dev/null && alias brew='nb'
-
 # ─── Python via uv (NOT mise) ────────────────────────────────────────────────
 # Per CLAUDE.md global rule: never bare `python` / `python3` — always uv.
 if command -v uv >/dev/null 2>&1; then
@@ -129,4 +130,25 @@ alias cp='cp -i'
 # `paths` not `path`: zsh's `path` is the special array tied to $PATH (used in
 # path.zsh as `path=(...)`); aliasing the bare word `path` shadows it.
 alias paths='print -l $path'
+
+# ─── Editing and reloading this configuration ────────────────────────────────
+# Two ways to re-read the config, and the difference matters when something is
+# broken. `zfresh` re-sources ~/.zshrc into the shell you are already in, which
+# keeps your directory, history and anything you set by hand, but it cannot
+# undo what the old config did: an alias you deleted or a PATH entry you moved
+# is still there until the shell dies. `reload` replaces the shell outright,
+# which is the honest answer to "does this work from scratch" and the one to
+# use after editing path.zsh or exports.zsh.
+#
+# $EDITOR rather than a hardcoded nvim, because exports.zsh sets EDITOR=vim
+# over an SSH connection, where nvim may not be installed on the far side.
+alias zconfig='$EDITOR ~/.zshrc'
+alias zconf='$EDITOR ~/.zshrc'
+alias zfresh='source ~/.zshrc'
 alias reload='exec zsh'
+
+# ─── SSH ─────────────────────────────────────────────────────────────────────
+# Two hops in one command: `sshjump <host>` reaches <host> through the bastion
+# that ~/.ssh/config calls `jumphost`. -t forces a TTY, without which the
+# second ssh has no terminal to be interactive on.
+alias sshjump='ssh -t jumphost ssh'

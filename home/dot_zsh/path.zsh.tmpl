@@ -66,6 +66,24 @@ for gnudir in coreutils gnu-sed gawk findutils; do
 done
 {{- end }}
 
+# ─── Tools installed by their own installer, not by a package manager ────────
+# Each guarded by -d, so a machine that never installed one simply skips it.
+# These are here rather than in ~/.zsh/local.zsh because they are the same on
+# every machine: local.zsh is for what is true of ONE machine.
+[[ -d "$HOME/.opencode/bin" ]] && path=("$HOME/.opencode/bin" $path)  # opencode
+[[ -d "$HOME/.aspire/bin" ]]   && path=("$HOME/.aspire/bin" $path)    # .NET Aspire
+[[ -d "$HOME/.pixi/bin" ]]     && path=("$HOME/.pixi/bin" $path)      # pixi
+
+{{ if eq .chezmoi.os "darwin" -}}
+# libpq for `psql` and friends. Keg-only in both package managers, so it is
+# never on PATH by default: without this, psql is simply not found on a machine
+# that has it installed.
+for pglibdir in /opt/nanobrew/prefix/opt/libpq/bin /opt/homebrew/opt/libpq/bin; do
+  [[ -d "$pglibdir" ]] && path=("$pglibdir" $path) && break
+done
+unset pglibdir
+{{- end }}
+
 # de-dupe and export
 typeset -U path
 export PATH

@@ -103,9 +103,25 @@ zinit wait lucid for \
 zinit cdreplay -q
 
 # ─── Source thematic config (order matters: each builds on the prior) ───────
-for f in exports.zsh git-aliases.zsh aliases.zsh functions.zsh completions.zsh; do
+# The OS-specific alias file is selected here rather than at chezmoi template
+# time, and both files ship to every machine. Two reasons. A shell already
+# knows which OS it is on, so this needs no template; and `chezmoi diff` on
+# either machine then shows the whole picture instead of hiding half of it
+# behind an ignore rule, which is the difference between a file that is absent
+# and a file that was filtered out.
+#
+# It loads AFTER aliases.zsh, so the OS file can override the common set
+# rather than only add to it.
+case "$OSTYPE" in
+  darwin*) os_aliases=aliases-darwin.zsh ;;
+  linux*)  os_aliases=aliases-linux.zsh  ;;
+  *)       os_aliases=                   ;;
+esac
+
+for f in exports.zsh git-aliases.zsh aliases.zsh $os_aliases functions.zsh completions.zsh; do
   [[ -f "$HOME/.zsh/$f" ]] && source "$HOME/.zsh/$f"
 done
+unset os_aliases
 
 # ─── Machine-specific overrides (un-tracked; create on the machine itself) ──
 [[ -f "$HOME/.zsh/local.zsh" ]] && source "$HOME/.zsh/local.zsh"

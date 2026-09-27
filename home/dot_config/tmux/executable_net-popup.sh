@@ -94,10 +94,13 @@ section_vpn() {
   if [ "$(uname)" = Darwin ]; then
     vpn_if=$(route -n get default 2>/dev/null | awk '/interface:/{print $2; exit}')
   else
-    vpn_if=$(ip route show default 2>/dev/null | awk '/default/{print $5; exit}')
+    # Where would a packet actually go? Not the main table's default: NordVPN
+    # (and wg-quick) route through their own table via ip rules and leave the
+    # main default on the Wi-Fi, so that read "direct" while connected.
+    vpn_if=$(ip route get 1.1.1.1 2>/dev/null | awk '{for (i = 1; i < NF; i++) if ($i == "dev") {print $(i+1); exit}}')
   fi
   case "$vpn_if" in
-    utun*|wg*|tun*|nordlynx)
+    utun*|wg*|tun*|nordlynx|nordtun|qtun)
       row state "tunnelled via $vpn_if"
       row address "$(ifconfig "$vpn_if" 2>/dev/null | awk '/inet /{print $2; exit}')"
       ;;

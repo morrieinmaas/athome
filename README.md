@@ -612,6 +612,7 @@ out of the repo, written only into your private `~/.config/chezmoi/chezmoi.toml`
 | `personalName` | empty | Personal git display name; `ATHOME_PERSONAL_NAME` env (empty = your handle). Not derived — GitHub's display name is often a real name, which we deliberately keep out of commits |
 | `netbirdManagementUrl` | empty (NetBird Cloud SaaS) | Set to `https://netbird.example.com` when self-hosting; see [docs/netbird-cloud.md](docs/netbird-cloud.md) |
 | `nordvpnCountry` | empty (NordVPN picks best) | E.g. `Netherlands` to pin |
+| `meshProvider` | `meshnet` | Mesh VPN: `meshnet` (NordVPN) \| `netbird` \| `none`; `ATHOME_MESH_PROVIDER` env |
 | `includeAgents` | `true` (or `false` via `--no-agents`) | Master on/off for the `~/.config/agents` skills sync |
 | `agentsRepo` | empty | Repo synced into `~/.config/agents` as `owner/repo`; `ATHOME_AGENTS_REPO` env. Empty = nothing synced (a fork points it at its own, or skips) |
 

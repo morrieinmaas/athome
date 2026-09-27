@@ -16,6 +16,12 @@
 # explicit `mise install`, never implicitly on task-run.
 auto_install = false
 
+[env]
+# bootstrap installs chezmoi to ~/.local/bin, but on a fresh box nothing has put
+# that on PATH yet (the zsh config that does is what `apply` deploys) — so
+# `mise run apply` straight after bootstrap failed with "chezmoi: command not found".
+_.path = ["{{env.HOME}}/.local/bin"]
+
 [tasks.bootstrap]
 description = "Provision this machine (args pass through, e.g. --config bootstrap.local.toml)"
 run = "./scripts/bootstrap.sh"

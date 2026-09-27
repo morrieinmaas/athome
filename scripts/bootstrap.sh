@@ -200,6 +200,7 @@ load_config() {
   : "${ATHOME_MATTERHORN_USER:=$(cfg_get matterhornUser)}"         # Mattermost login email/username (empty = none)
   : "${ATHOME_NETBIRD_MGMT_URL:=$(cfg_get netbirdManagementUrl)}"
   : "${ATHOME_NORDVPN_COUNTRY:=$(cfg_get nordvpnCountry)}"
+  : "${ATHOME_MESH_PROVIDER:=$(cfg_get meshProvider)}"             # meshnet | netbird | none (empty = meshnet)
   : "${ATHOME_EXTRA_PACKAGES:=$(cfg_get extraPackages)}"
   # Interactive-flow controls (also overridable via --non-interactive + config):
   : "${ATHOME_USE_BITWARDEN:=$(cfg_get useBitwarden)}"      # "false" = local-only secrets, skip Bitwarden
@@ -855,6 +856,7 @@ cat > "$chezmoi_config" <<TOMLSEED
     sidebizName          = "$(toml_str "${ATHOME_SIDEBIZ_NAME:-}")"
     netbirdManagementUrl = "$(toml_str "${ATHOME_NETBIRD_MGMT_URL:-}")"
     nordvpnCountry       = "$(toml_str "${ATHOME_NORDVPN_COUNTRY:-}")"
+    meshProvider         = "$(toml_str "${ATHOME_MESH_PROVIDER:-meshnet}")"
     bitwardenUrl         = "$(toml_str "${ATHOME_BW_BASE_URL:-}")"
     agentsRepo           = "$(toml_str "${ATHOME_AGENTS_REPO:-}")"
     extraPackages        = "$(toml_str "${ATHOME_EXTRA_PACKAGES:-}")"
@@ -899,8 +901,10 @@ c_blue "==> baseline: package manager"
 chezmoi execute-template < "$SOURCE_FOR_CHEZMOI/.chezmoiscripts/$BASELINE_PM_SCRIPT" | bash || deps_rc=$?
 # Make a just-installed nb (and mise, below) findable for the rest of bootstrap.
 export PATH="/opt/nanobrew/prefix/bin:$HOME/.local/bin:$PATH"
-c_blue "==> baseline: gh + rbw (the two deps bootstrap's own steps need)"
-pm_install gh rbw || deps_rc=$?
+# gitleaks too: step 7 installs a pre-commit hook that refuses to commit without
+# it, so leaving it to `mise run apply` blocked every commit in between.
+c_blue "==> baseline: gh + rbw + gitleaks (deps bootstrap's own steps need)"
+pm_install gh rbw gitleaks || deps_rc=$?
 c_blue "==> baseline: project dirs"
 chezmoi execute-template < "$SOURCE_FOR_CHEZMOI/.chezmoiscripts/$BASELINE_DIRS_SCRIPT" | bash || deps_rc=$?
 # Ensure the mise BINARY exists so `mise run apply` works even for a direct
@@ -1062,7 +1066,7 @@ Next manual steps:
        sudo netbird up                                   # mesh (NetBird Cloud SSO)
        nordvpn login --username "..." --password "..."   # Linux; macOS uses the GUI
 
-  4. Switch your current shell to zsh (default already changed; this just
-     reloads THIS terminal):
+  4. After \`mise run apply\` (it installs zsh + makes it your login shell),
+     switch THIS terminal over:
        exec zsh
 EOF

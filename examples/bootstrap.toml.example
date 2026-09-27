@@ -85,6 +85,8 @@ generateSshKey = "true"
 # VPN (optional). Empty = service default.
 # NetBird management URL — empty = NetBird Cloud SaaS; set when self-hosting.
 netbirdManagementUrl = ""
+# Mesh VPN: meshnet (NordVPN) | netbird | none. Empty = meshnet.
+meshProvider = ""
 # NordVPN auto-connect country — empty = NordVPN picks best.
 nordvpnCountry = ""
 

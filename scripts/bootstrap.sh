@@ -1067,6 +1067,7 @@ Next manual steps:
        nordvpn login --username "..." --password "..."   # Linux; macOS uses the GUI
 
   4. After \`mise run apply\` (it installs zsh + makes it your login shell),
-     switch THIS terminal over:
+     log out and back in so new terminals pick it up (the running desktop
+     session keeps the old \$SHELL). For THIS terminal right now:
        exec zsh
 EOF

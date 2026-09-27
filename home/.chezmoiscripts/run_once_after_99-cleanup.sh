@@ -22,3 +22,11 @@ if [[ "$remote" == https://github.com/* ]]; then
 fi
 
 echo "==> chezmoi apply complete. Reload your shell: exec zsh"
+# chsh (run_onchange_03) only changes the account's login shell. A desktop
+# session started before that keeps the old $SHELL, and every terminal it
+# spawns inherits it, so new windows still open bash until the next login.
+login_shell="$(getent passwd "$USER" 2>/dev/null | cut -d: -f7 || dscl . -read "/Users/$USER" UserShell 2>/dev/null | awk '{print $2}')"
+if [[ -n "$login_shell" && "${SHELL:-}" != "$login_shell" ]]; then
+  echo "    Login shell is now $login_shell but this session still has SHELL=${SHELL:-unset}:"
+  echo "    log out and back in so new terminals open $(basename "$login_shell")."
+fi

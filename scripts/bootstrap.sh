@@ -556,6 +556,35 @@ ssh_github_authenticates() {
   [[ "$out" == *"successfully authenticated"* ]]
 }
 
+# signing_pub: the key git actually signs with. Mirrors dot_gitconfig-*.tmpl:
+# ~/.ssh/id_ed25519.pub when present (gh auth login's key), else the per-host
+# key. Uploading the per-host key while git signed with id_ed25519 left every
+# commit "Unverified" on GitHub.
+signing_pub() {
+  if [[ -f "$HOME/.ssh/id_ed25519.pub" ]]; then printf '%s\n' "$HOME/.ssh/id_ed25519.pub"
+  else printf '%s\n' "${ssh_key}.pub"; fi
+}
+
+# ensure_signing_key_on_github: the "SSH already works, skip upload" paths only
+# prove the AUTH key is registered; the signing key is a separate GitHub list.
+# Upload it when gh has the scope, else say exactly how (a refresh needs a browser).
+ensure_signing_key_on_github() {
+  local pub; pub="$(signing_pub)"
+  [[ -f "$pub" ]] || return 0
+  if ! gh_has_scope admin:ssh_signing_key; then
+    c_yellow "  ! commit-signing key not uploaded: gh lacks the admin:ssh_signing_key scope."
+    c_yellow "    Commits sign locally but show \"Unverified\" on GitHub until you run:"
+    c_yellow "      gh auth refresh -h github.com -s admin:ssh_signing_key"
+    c_yellow "      gh ssh-key add $pub --title \"$(short_hostname)-sign\" --type signing"
+    return 0
+  fi
+  if key_on_gh_signing "$pub"; then
+    c_green "  ✓ signing key already on GitHub ($(basename "$pub"))"
+  else
+    add_gh_ssh_key "$pub" "$(short_hostname)-sign" "--type signing" || true
+  fi
+}
+
 # local_key_on_github: print the first local ~/.ssh/*.pub whose key is already
 # registered on GitHub (auth keys), else return 1. Lets a machine that already
 # has an uploaded key skip the upload prompt — even when that key isn't this
@@ -585,12 +614,14 @@ elif [[ -f "${ssh_key}.pub" ]] && command -v gh >/dev/null 2>&1 && gh auth statu
   # from this host's ${ssh_host}_ed25519) that's already registered on GitHub.
   if (( ssh_force_upload == 0 )) && ssh_github_authenticates; then
     c_green "✓ SSH already authenticates to GitHub — skipping key upload (already set up)"
+    ensure_signing_key_on_github
     if (( ssh_keys_were_generated )); then
       printf '    note: a fresh per-host key was generated at %s\n' "$ssh_key"
       printf '          upload it later with: gh ssh-key add %s.pub\n' "$ssh_key"
     fi
   elif (( ssh_force_upload == 0 )) && existing_pub="$(local_key_on_github)"; then
     c_green "✓ A local SSH key is already on GitHub ($(basename "$existing_pub")) — skipping upload."
+    ensure_signing_key_on_github
     # The github.com block in ~/.ssh/config pins this host's per-host key with
     # IdentitiesOnly, so `git push` over SSH uses that key — not necessarily the
     # registered one above. If SSH push fails with 'publickey', point github.com
@@ -672,10 +703,11 @@ elif [[ -f "${ssh_key}.pub" ]] && command -v gh >/dev/null 2>&1 && gh auth statu
         add_gh_ssh_key "$pub" "$title" "" || true
       fi
 
-      if key_on_gh_signing "$pub"; then
+      sign_pub="$(signing_pub)"
+      if key_on_gh_signing "$sign_pub"; then
         c_green "  ✓ signing key already on GitHub: matching ${title}-sign"
       else
-        add_gh_ssh_key "$pub" "${title}-sign" "--type signing" || true
+        add_gh_ssh_key "$sign_pub" "${title}-sign" "--type signing" || true
       fi
     fi
 

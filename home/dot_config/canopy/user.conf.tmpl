@@ -29,6 +29,14 @@
 # but takes no view on how wide it should be.
 setw -g main-pane-width 50%
 
+# Pin the pane shell. tmux defaults it to the server's $SHELL, and on a fresh
+# box the desktop session predates the chsh to zsh, so SHELL=bash and every
+# new pane opened bash (same trap as Ghostty's `command`). default-shell must
+# be an absolute path, hence lookPath at render time.
+{{ with lookPath "zsh" -}}
+set -g default-shell "{{ . }}"
+{{ end -}}
+
 # --- this machine's keys ---------------------------------------------------
 # Every one of these names a tool or a path that belongs to this machine, so
 # none of them could ship in a distribution.

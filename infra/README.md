@@ -81,7 +81,7 @@ driven from your mac instead of typed at the target.
 Works the same way for any SSH-reachable Linux. The most common cases:
 
 - **Physical**: a ThinkPad you just installed Arch on through the
-  upstream `archinstall` TUI (see the main [README](../README.md#from-bare-metal-no-os-yet)).
+  upstream `archinstall` TUI (see the main [install guide](../docs/install.md#fresh-arch-install)).
   Enable sshd manually after first boot (`sudo systemctl enable --now sshd`)
   and authorized_keys gets populated by [`scripts/bootstrap.sh`](../scripts/bootstrap.sh)
   once you've run it — from the next machine over, you can then pyinfra

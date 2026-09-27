@@ -102,7 +102,7 @@ echo "$(rbw get -f username work/db)"        # a specific field (uri/username/pa
 ```
 
 Per-project secrets flow through `direnv` — see the
-[per-project secrets section in the README](../README.md#per-project-secrets-via-direnv--rbw-bitwarden).
+[per-project secrets section](how-it-works.md#per-project-secrets).
 The helpers (`use ctx`, `use_rbw`, `use_aws`) live in
 [`home/dot_config/direnv/direnvrc`](../home/dot_config/direnv/direnvrc).
 

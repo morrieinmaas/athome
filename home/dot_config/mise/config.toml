@@ -73,14 +73,26 @@ viddy      = "latest"        # modern watch(1)
 # machine without Rosetta. That failure is invisible until someone runs the
 # command, which for `dust` meant a broken `du` alias nobody noticed.
 #
-# ubi reads the release assets and matches the host triple itself, so it picks
-# aarch64-apple-darwin for dust/grex/hyperfine and the universal binary for
-# usage/marksman. Verified by installing both ways and running `file` on the
-# result.
+# ubi reads the release assets and matches the HOST TRIPLE at install time, so
+# these lines are not an arm64 choice: the same line installs the right thing
+# on every machine. Verified by installing from this exact spec on three:
+#
+#   macOS arm64    Mach-O arm64        runs
+#   Linux arm64    ELF ARM aarch64     runs
+#   Linux x86_64   ELF x86-64          runs
+#
+# All five tools publish assets for every platform in use here, including
+# x86_64 and arm64 Linux, so an x86 machine is covered by the same line.
+# dust/grex/hyperfine get aarch64-apple-darwin on Apple Silicon; usage and
+# marksman ship universal macOS binaries.
+#
+# Not an out-of-date mise, either: 2026.9.15, the current release, still picks
+# the x86_64 asset for a bare `dust` on macOS arm64. Upgrading will not fix it,
+# which is why these are pinned rather than left to catch up.
 #
 # Same class of problem as the difftastic pin below: the registry lags what
 # upstream actually ships. Retry the bare names once mise's registry catches
-# up, and check with: file $(mise which <tool>)
+# up, and check the result with: file $(mise which <tool>)
 
 # ── Git / VCS ────────────────────────────────────────────────────────────────
 lazygit    = "latest"

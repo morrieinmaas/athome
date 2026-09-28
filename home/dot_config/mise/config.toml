@@ -49,21 +49,38 @@ glow       = "latest"          # markdown viewer
 jq         = "latest"
 yq         = "latest"   # jq for YAML
 sd         = "latest"   # sed alternative
-grex       = "latest"   # regex generator
+"ubi:pemistahl/grex" = "latest"   # grex — regex generator (see the ubi note below)
 choose     = "latest"   # field selector (was choose / choose-rust)
 ast-grep   = "latest"   # structural search/rewrite
 lychee     = "latest"   # link/URL checker for docs+markdown. Was pinned to 0.24.2 only because that is what the live config happened to hold; nothing depends on that version.
 
 # ── Modern CLI: system / inspection ─────────────────────────────────────────
-dust       = "latest"        # du
+"ubi:bootandy/dust" = "latest"   # dust — du (see the ubi note below)
 duf        = "latest"        # df
 "cargo:procs" = "latest"   # ps (not in registry)
 bottom     = "latest"        # btm — top
 hexyl      = "latest"        # hex viewer
-hyperfine  = "latest"        # benchmarking
+"ubi:sharkdp/hyperfine" = "latest"   # hyperfine — benchmarking (see the ubi note below)
 tokei      = "latest"        # LoC counter
 watchexec  = "latest"        # file-watch runner
 viddy      = "latest"        # modern watch(1)
+
+# ── Pinned to the ubi backend, not the registry (2026-09-28) ─────────────────
+# mise's aqua registry entry for each of these resolves to the x86_64 macOS
+# asset on an arm64 Mac, even though upstream publishes an arm64 or universal
+# build. The result is a tool that installs cleanly, passes every check, and
+# then dies on first use with "Bad CPU type in executable" on any Apple Silicon
+# machine without Rosetta. That failure is invisible until someone runs the
+# command, which for `dust` meant a broken `du` alias nobody noticed.
+#
+# ubi reads the release assets and matches the host triple itself, so it picks
+# aarch64-apple-darwin for dust/grex/hyperfine and the universal binary for
+# usage/marksman. Verified by installing both ways and running `file` on the
+# result.
+#
+# Same class of problem as the difftastic pin below: the registry lags what
+# upstream actually ships. Retry the bare names once mise's registry catches
+# up, and check with: file $(mise which <tool>)
 
 # ── Git / VCS ────────────────────────────────────────────────────────────────
 lazygit    = "latest"
@@ -99,7 +116,7 @@ chezmoi    = "latest"          # dotfile manager (also self-bootstrapped by boot
 gum        = "latest"          # shell-script UI
 just       = "latest"          # command runner
 "cargo:just-lsp" = "latest"  # LSP for justfiles (not in registry)
-usage      = "latest"          # CLI-spec engine that powers mise's dynamic shell completion (e.g. `mise run <tab>` task names)
+"ubi:jdx/usage" = "latest"   # usage — CLI-spec engine powering mise's dynamic shell completion (e.g. `mise run <tab>` task names); ubi-pinned, see the note below
 task       = "latest"          # go-task (binary `task`)
 "github:ivaaaan/smug" = "latest"  # tmux session manager — drives the cockpit bootstrap (not in registry). github backend (ubi was deprecated in mise 2026.4.0 → github:owner/repo).
 
@@ -146,7 +163,7 @@ actionlint = "latest"   # GitHub Actions YAML linter
 # toolchain-tied servers (gopls, rust_analyzer) stay commented until needed —
 # the runtimes (go, rust) are already here. clangd needs LLVM → native if ever.
 lua-language-server                = "latest"  # lua_ls
-marksman                           = "latest"  # marksman (markdown)
+"ubi:artempyanykh/marksman"        = "latest"  # marksman (markdown); ubi-pinned, see the note below
 ty                                 = "latest"  # Astral ty — Python type checker + LSP (replaces pyright; pairs with ruff)
 "npm:typescript-language-server"   = "latest"  # ts_ls
 "npm:bash-language-server"         = "latest"  # bashls

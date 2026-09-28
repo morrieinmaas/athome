@@ -69,6 +69,11 @@ darwin:
     # here — it's tap-only (`netbirdio/tap/netbird`) and run_once_08 pairs the
     # install with daemon enable + `netbird up` guidance. nb supports taps.
     - protonvpn
+    # NordVPN GUI. There is NO NordVPN CLI on macOS — the Linux `nordvpn`
+    # command has no mac counterpart, Homebrew has no `nordvpn` formula (only
+    # this cask), and the shipped bundle contains no CLI binary. Don't go
+    # looking again. Scripted control on a Mac means the wg-quick path instead:
+    # `nord0` + `nord-wg-config` in dot_local/bin (opt-in, see run_onchange_19).
     - nordvpn
     - maccy                          # clipboard manager (mac equivalent of cliphist)
     - zed                            # Zed editor (GUI; configured via dot_config/zed/). Arch: `zed` in extra (pacman).
@@ -189,7 +194,8 @@ linux:
     - nirimod-git
     - matugen-bin                    # wallpaper-derived palettes for anything that wants them. NOTE: Noctalia v5 generates its own palette internally (theme.source = "wallpaper"), so this is no longer required BY Noctalia; kept as a general-purpose tool.
     - bibata-cursor-theme-bin        # the cursor niri's config names (Bibata-Modern-Classic); prebuilt, not in the official repos
-    - nordvpn-bin
+    - nordvpn-bin                    # NordVPN CLI + nordvpnd. Provides `nordvpn`; run_once_08 enables the daemon, the group and autoconnect.
+    - nordvpn-gui-bin                # NordVPN's own Linux GUI (upstream .deb repacked). Depends on `nordvpn`, so it MUST come after nordvpn-bin. x86_64 only upstream — install_one just logs a miss on aarch64.
     - bandwhich                      # needs root/caps; kept native (matches the brew formula on macOS)
     - gping                          # ICMP; kept native
     - trippy                         # ICMP; kept native
@@ -297,7 +303,10 @@ fedora:
     # ── netbird (COPR jsbillings/netbird) ──
     - netbird
     - netbird-ui
+    # ── nordvpn (upstream repo, enabled by run_onchange_02 before this list) ──
+    - nordvpn                      # CLI + nordvpnd; run_once_08 enables the daemon, the group and autoconnect
+    - nordvpn-gui                  # NordVPN's own GUI. x86_64 only upstream.
     # Pulled via MISE on Fedora (release binaries via ubi/github/cargo/go — SAME
     # as Arch + macOS, not duplicated here): matugen,
-    # bandwhich, gping, trippy, prettierd, wush, opencode. librewolf +
-    # nordvpn have their own upstream dnf repos if you want them.
+    # bandwhich, gping, trippy, prettierd, wush, opencode. librewolf has its
+    # own upstream dnf repo if you want it.

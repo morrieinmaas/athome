@@ -16,6 +16,11 @@ set -euo pipefail
 # `((x++))` when x is 0 returns nonzero and `set -e` would kill the script.
 INSTALL_OK=0
 INSTALL_FAIL=0
+# Names of what failed, not just how many. A per-package `!` line scrolls past
+# in a run that installs ~150 packages, and "(147 ok, 3 failed)" doesn't say
+# WHICH three — which is how a missing nordvpn-bin went unnoticed on a fresh
+# Arch box. The summary at the bottom lists them.
+INSTALL_FAILED_PKGS=""
 
 # Cached list of installed nb casks (filled once, lazily). `nb install --cask`
 # re-DOWNLOADS the app before it'll even refuse to overwrite an existing one, so
@@ -98,6 +103,7 @@ install_one() {
     printf '  ! %s: %s — install failed (continuing)\n' "$label" "$pkg" >&2
     printf '%s\n' "$out" | tail -8 | sed 's/^/      /' >&2
     INSTALL_FAIL=$((INSTALL_FAIL + 1))
+    INSTALL_FAILED_PKGS="${INSTALL_FAILED_PKGS} ${pkg}"
   fi
 }
 
@@ -145,6 +151,17 @@ if command -v dnf >/dev/null 2>&1 && ! command -v pacman >/dev/null 2>&1; then
   {{ range .fedora.copr -}}
   echo "==> dnf copr enable {{ . }}"; sudo dnf -y copr enable {{ . | quote }} || true
   {{ end -}}
+  # NordVPN is not a COPR — it ships its own yum repo, enabled by a release RPM
+  # (the same one https://downloads.nordcdn.com/apps/linux/install.sh installs).
+  # Hardcoded rather than added as a `fedora.repos` data key: it is the only
+  # third-party non-COPR repo we need, and one entry doesn't earn a mechanism.
+  # Must run BEFORE the dnf loop below, which installs nordvpn + nordvpn-gui.
+  if ! dnf repolist 2>/dev/null | grep -q '^nordvpn'; then
+    echo "==> dnf: enabling the NordVPN repo"
+    sudo dnf -y install \
+      https://repo.nordvpn.com/yum/nordvpn/centos/noarch/Packages/n/nordvpn-release-1.0.0-1.noarch.rpm \
+      || echo "  ! NordVPN repo setup failed — nordvpn/nordvpn-gui below will be skipped" >&2
+  fi
   echo "==> dnf: packages (fedora.dnf)"
   {{ range .fedora.dnf -}}
   install_one dnf {{ . | quote }}
@@ -187,6 +204,13 @@ fi
 {{- end }}
 
 echo "==> package install complete ($INSTALL_OK ok, $INSTALL_FAIL failed)"
+if (( INSTALL_FAIL > 0 )); then
+  msg="packages that did NOT install:${INSTALL_FAILED_PKGS} — retry with the package manager directly to see why, then re-run \`mise run apply\`."
+  echo "    ! $msg" >&2
+  # ATHOME_FOLLOWUP_LOG is only set when bootstrap is the caller; a standalone
+  # `mise run apply` has the stderr line above and the summary and nothing else.
+  [[ -n "${ATHOME_FOLLOWUP_LOG:-}" ]] && printf '  • %s\n' "$msg" >> "$ATHOME_FOLLOWUP_LOG"
+fi
 
 # Discoverability guard (AGENTIC-SYSTEMS: errors must be surfaceable). A few
 # failures are normal — a flaky AUR build, a renamed formula. But if EVERY

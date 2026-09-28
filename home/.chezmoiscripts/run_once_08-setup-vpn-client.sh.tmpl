@@ -106,6 +106,14 @@ if command -v nordvpn >/dev/null 2>&1; then
     echo "==> nordvpn meshnet: after \`nordvpn login\`, run: nordvpn set meshnet on"
   fi
 {{- end }}
+else
+  # Say so out loud. This whole block used to be a bare `if`, so when the
+  # package install had failed the script printed NOTHING about NordVPN and the
+  # machine just quietly had no VPN. run_onchange_02 names failed packages now;
+  # this is the second half of the same fix, on the consuming side.
+  msg="nordvpn CLI not installed — run_onchange_02 should have (Arch: nordvpn-bin + nordvpn-gui-bin via yay; Fedora: nordvpn + nordvpn-gui from the upstream repo). Re-run \`mise run apply\` and read the 'packages that did NOT install' line."
+  echo "!! $msg" >&2
+  [[ -n "${ATHOME_FOLLOWUP_LOG:-}" ]] && printf '  • %s\n' "$msg" >> "$ATHOME_FOLLOWUP_LOG"
 fi
 {{- end }}
 

@@ -49,18 +49,18 @@ glow       = "latest"          # markdown viewer
 jq         = "latest"
 yq         = "latest"   # jq for YAML
 sd         = "latest"   # sed alternative
-"ubi:pemistahl/grex" = "latest"   # grex — regex generator (see the ubi note below)
+"github:pemistahl/grex" = "latest"   # grex — regex generator (see the ubi note below)
 choose     = "latest"   # field selector (was choose / choose-rust)
 ast-grep   = "latest"   # structural search/rewrite
 lychee     = "latest"   # link/URL checker for docs+markdown. Was pinned to 0.24.2 only because that is what the live config happened to hold; nothing depends on that version.
 
 # ── Modern CLI: system / inspection ─────────────────────────────────────────
-"ubi:bootandy/dust" = "latest"   # dust — du (see the ubi note below)
+"github:bootandy/dust" = "latest"   # dust — du (see the ubi note below)
 duf        = "latest"        # df
 "cargo:procs" = "latest"   # ps (not in registry)
 bottom     = "latest"        # btm — top
 hexyl      = "latest"        # hex viewer
-"ubi:sharkdp/hyperfine" = "latest"   # hyperfine — benchmarking (see the ubi note below)
+"github:sharkdp/hyperfine" = "latest"   # hyperfine — benchmarking (see the ubi note below)
 tokei      = "latest"        # LoC counter
 watchexec  = "latest"        # file-watch runner
 viddy      = "latest"        # modern watch(1)
@@ -73,18 +73,28 @@ viddy      = "latest"        # modern watch(1)
 # machine without Rosetta. That failure is invisible until someone runs the
 # command, which for `dust` meant a broken `du` alias nobody noticed.
 #
-# ubi reads the release assets and matches the HOST TRIPLE at install time, so
-# these lines are not an arm64 choice: the same line installs the right thing
-# on every machine. Verified by installing from this exact spec on three:
+# The github backend reads the release assets and matches the HOST TRIPLE at
+# install time, so these lines are not an arm64 choice: the same line installs
+# the right thing on every machine. Verified by installing from this exact spec
+# on three hosts:
 #
 #   macOS arm64    Mach-O arm64        runs
 #   Linux arm64    ELF ARM aarch64     runs
 #   Linux x86_64   ELF x86-64          runs
 #
-# All five tools publish assets for every platform in use here, including
-# x86_64 and arm64 Linux, so an x86 machine is covered by the same line.
+# All five publish assets for every platform in use here, x86_64 and arm64
+# Linux included, so an x86 machine needs no separate handling.
 # dust/grex/hyperfine get aarch64-apple-darwin on Apple Silicon; usage and
 # marksman ship universal macOS binaries.
+#
+# github: rather than ubi:, which does the same job. mise deprecated the ubi
+# backend and removes it in 2027.1.0, pointing at github: as the replacement,
+# and the seven github: entries elsewhere in this file already use it.
+#
+# Scoped to macOS arm64, as far as anything here can tell. Installing all 55
+# binary-backend tools from this config inside Linux containers gave 54
+# matching binaries and zero mismatches on BOTH x86_64 and arm64, so the
+# registry only gets it wrong for Apple Silicon.
 #
 # Not an out-of-date mise, either: 2026.9.15, the current release, still picks
 # the x86_64 asset for a bare `dust` on macOS arm64. Upgrading will not fix it,
@@ -128,7 +138,7 @@ chezmoi    = "latest"          # dotfile manager (also self-bootstrapped by boot
 gum        = "latest"          # shell-script UI
 just       = "latest"          # command runner
 "cargo:just-lsp" = "latest"  # LSP for justfiles (not in registry)
-"ubi:jdx/usage" = "latest"   # usage — CLI-spec engine powering mise's dynamic shell completion (e.g. `mise run <tab>` task names); ubi-pinned, see the note below
+"github:jdx/usage" = "latest"   # usage — CLI-spec engine powering mise's dynamic shell completion (e.g. `mise run <tab>` task names); ubi-pinned, see the note below
 task       = "latest"          # go-task (binary `task`)
 "github:ivaaaan/smug" = "latest"  # tmux session manager — drives the cockpit bootstrap (not in registry). github backend (ubi was deprecated in mise 2026.4.0 → github:owner/repo).
 
@@ -175,7 +185,7 @@ actionlint = "latest"   # GitHub Actions YAML linter
 # toolchain-tied servers (gopls, rust_analyzer) stay commented until needed —
 # the runtimes (go, rust) are already here. clangd needs LLVM → native if ever.
 lua-language-server                = "latest"  # lua_ls
-"ubi:artempyanykh/marksman"        = "latest"  # marksman (markdown); ubi-pinned, see the note below
+"github:artempyanykh/marksman"        = "latest"  # marksman (markdown); ubi-pinned, see the note below
 ty                                 = "latest"  # Astral ty — Python type checker + LSP (replaces pyright; pairs with ruff)
 "npm:typescript-language-server"   = "latest"  # ts_ls
 "npm:bash-language-server"         = "latest"  # bashls

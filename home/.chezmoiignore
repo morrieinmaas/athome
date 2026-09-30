@@ -18,3 +18,10 @@ Library/**
 .config/qt5ct/**
 .config/qt6ct/**
 {{- end }}
+
+# grofe's config (the port of canopy's user.conf) is drafted here but not
+# shipped yet: no machine runs grofe before alias day, and one that has a
+# hand-made ~/.config/grofe would lose it. Removed at TA.1, the alias-day
+# container test, which drops these two lines to install it.
+.config/grofe
+.config/grofe/**

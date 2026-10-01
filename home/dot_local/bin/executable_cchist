@@ -1,0 +1,493 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.12"
+# dependencies = []
+# ///
+"""cchist: full-text search over Claude Code session transcripts.
+
+WHY THIS EXISTS, and what it deliberately does not do.
+
+In-session history is already prompt-cached at 0.1x the input price, so indexing it to
+"save tokens" saves nothing. The gap caching does not cover is CROSS-session recall:
+hundreds of sessions across dozens of projects where the only ways in are
+`claude --resume`, which replays an entire conversation, or grepping a 90MB JSONL by
+hand. This indexes them once and answers in milliseconds.
+
+Two design choices worth keeping:
+
+- ONE database, not one per project. Worktrunk gives every branch its own directory, so
+  a per-project index splits a single repo's history across dozens of files, which is
+  the known failure of the off-the-shelf indexers.
+- Keyed by the MAIN repo, not the working directory. A live worktree is resolved through
+  `git --git-common-dir`; a worktree that has since been deleted falls back to finding
+  the one real repo beside its `worktrees/` directory. Both paths land on the same key,
+  so history stays joined after `wt remove`.
+
+Tool results are capped hard. They are most of the bytes and the least of the signal:
+what you need to recall is what was said and decided, not the contents of a file that
+was read once.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import sqlite3
+import subprocess
+import sys
+import time
+from collections import Counter
+from functools import lru_cache
+from pathlib import Path
+
+PROJECTS = Path.home() / ".claude" / "projects"
+DB_PATH = Path(os.environ.get("CCHIST_DB", Path.home() / ".claude" / "history-index.db"))
+
+MAX_CHUNK = 4000          # a single indexed chunk
+TOOL_INPUT_CAP = 200      # enough to recall which command ran
+TOOL_RESULT_CAP = 500     # bulk of the bytes, least of the signal
+
+SCHEMA_VERSION = 3
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS files (
+  path        TEXT PRIMARY KEY,
+  size        INTEGER NOT NULL,
+  mtime       REAL    NOT NULL,
+  lines       INTEGER NOT NULL,
+  session_id  TEXT,
+  kind        TEXT,
+  chunks      INTEGER NOT NULL DEFAULT 0,
+  indexed_at  REAL    NOT NULL
+);
+CREATE TABLE IF NOT EXISTS sessions (
+  session_id  TEXT PRIMARY KEY,
+  repo        TEXT,
+  cwd         TEXT,
+  branch      TEXT,
+  slug        TEXT,
+  first_ts    TEXT,
+  last_ts     TEXT
+);
+CREATE INDEX IF NOT EXISTS sessions_repo ON sessions(repo);
+CREATE INDEX IF NOT EXISTS sessions_last ON sessions(last_ts);
+-- `path` is the delete key, NOT session_id: subagent transcripts inherit their parent's
+-- sessionId, so one session can span 187 files and deleting by session would wipe them all.
+CREATE VIRTUAL TABLE IF NOT EXISTS msgs USING fts5(
+  path       UNINDEXED,
+  session_id UNINDEXED,
+  repo,
+  role       UNINDEXED,
+  kind       UNINDEXED,
+  ts         UNINDEXED,
+  text,
+  tokenize = 'porter unicode61'
+);
+"""
+
+
+# --------------------------------------------------------------------------- repo keys
+
+def _git(cwd: str, *args: str) -> str | None:
+    try:
+        r = subprocess.run(["git", "-C", cwd, *args],
+                           capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return r.stdout.strip() if r.returncode == 0 and r.stdout.strip() else None
+
+
+@lru_cache(maxsize=None)
+def _repo_beside_worktrees(parent: str) -> str | None:
+    """`.../ErasmusAI` holds both `erasmusAI/` and `worktrees/`; find the real repo.
+
+    A real repo has `.git` as a DIRECTORY. A linked worktree has `.git` as a FILE, which
+    is what keeps this from picking a worktree as the canonical key.
+    """
+    try:
+        entries = sorted(os.scandir(parent), key=lambda e: e.name)
+    except OSError:
+        return None
+    for e in entries:
+        if e.name == "worktrees" or not e.is_dir(follow_symlinks=False):
+            continue
+        if os.path.isdir(os.path.join(e.path, ".git")):
+            return e.path
+    return None
+
+
+@lru_cache(maxsize=None)
+def repo_key(cwd: str) -> str:
+    """Collapse any working directory onto one stable key for its repository."""
+    if not cwd:
+        return "(unknown)"
+    if os.path.isdir(cwd):
+        common = _git(cwd, "rev-parse", "--path-format=absolute", "--git-common-dir")
+        if common:
+            p = common.rstrip("/")
+            return os.path.dirname(p) if os.path.basename(p) == ".git" else p
+    # Worktree already removed: key off the one real repo beside its worktrees/ dir.
+    if "/worktrees/" in cwd:
+        parent = cwd.split("/worktrees/", 1)[0]
+        return _repo_beside_worktrees(parent) or parent
+    return cwd
+
+
+# ------------------------------------------------------------------------- extraction
+
+def extract(rec: dict):
+    """Yield (role, text) chunks for one transcript record."""
+    msg = rec.get("message")
+    if not isinstance(msg, dict):
+        return
+    role = msg.get("role") or rec.get("type") or "?"
+    content = msg.get("content")
+
+    if isinstance(content, str):
+        if content.strip():
+            yield role, content[:MAX_CHUNK]
+        return
+    if not isinstance(content, list):
+        return
+
+    for b in content:
+        if not isinstance(b, dict):
+            continue
+        t = b.get("type")
+        if t == "text":
+            s = b.get("text") or ""
+            if s.strip():
+                yield role, s[:MAX_CHUNK]
+        elif t == "thinking":
+            s = b.get("thinking") or b.get("text") or ""
+            if s.strip():
+                yield "thinking", s[:MAX_CHUNK]
+        elif t == "tool_use":
+            try:
+                inp = json.dumps(b.get("input"), ensure_ascii=False)
+            except (TypeError, ValueError):
+                inp = str(b.get("input"))
+            yield "tool_use", f"{b.get('name') or '?'} {inp[:TOOL_INPUT_CAP]}"
+        elif t == "tool_result":
+            c = b.get("content")
+            if isinstance(c, str):
+                s = c
+            elif c is None:
+                s = ""
+            else:
+                try:
+                    s = json.dumps(c, ensure_ascii=False)
+                except (TypeError, ValueError):
+                    s = str(c)
+            s = s[:TOOL_RESULT_CAP]
+            if s.strip():
+                yield "tool_result", s
+
+
+# ---------------------------------------------------------------------------- indexing
+
+def _schema_ok(con: sqlite3.Connection) -> bool:
+    """Check the real column shape, not the version stamp.
+
+    A run that crashed after stamping `user_version` but before creating tables leaves a
+    matching version on a stale schema, and `CREATE TABLE IF NOT EXISTS` will not alter
+    it. Validating columns makes the migration self-healing from that state.
+    """
+    try:
+        fcols = {r[1] for r in con.execute("PRAGMA table_info(files)")}
+        mcols = {r[1] for r in con.execute("PRAGMA table_info(msgs)")}
+    except sqlite3.Error:
+        return False
+    return {"chunks", "kind"} <= fcols and {"path", "kind"} <= mcols
+
+
+def connect() -> sqlite3.Connection:
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    con = sqlite3.connect(DB_PATH)
+    con.execute("PRAGMA journal_mode=WAL")
+    con.execute("PRAGMA synchronous=NORMAL")
+    have = con.execute("PRAGMA user_version").fetchone()[0]
+    # An index built before versioning reports 0 while holding the old tables, so the
+    # trigger is "tables exist and the version does not match", not "version is set".
+    existing = con.execute(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type IN ('table','view') "
+        "AND name IN ('files','sessions','msgs')").fetchone()[0]
+    if existing and (have != SCHEMA_VERSION or not _schema_ok(con)):
+        for t in ("msgs", "sessions", "files"):
+            con.execute(f"DROP TABLE IF EXISTS {t}")
+        con.commit()
+        print(f"schema {have} -> {SCHEMA_VERSION}: rebuilding index", file=sys.stderr)
+    con.executescript(SCHEMA)
+    if not _schema_ok(con):
+        raise SystemExit("cchist: schema creation failed, refusing to stamp a version")
+    # Stamped only after the tables actually match, so a crash cannot fake a migration.
+    con.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
+    con.commit()
+    return con
+
+
+def file_kind(path: Path) -> str:
+    """Subagent transcripts are separable noise: they inherit the parent sessionId."""
+    return "subagent" if ("/subagents/" in str(path) or path.name.startswith("agent-")) else "main"
+
+
+def index_file(con: sqlite3.Connection, path: Path, force: bool = False) -> tuple[str, int]:
+    """Index one transcript. Returns (action, chunks_added).
+
+    Transcripts are append-only while a session runs, so a grown file is read from the
+    line it was last indexed at rather than re-parsed from the top. That is what keeps
+    re-indexing a live 90MB session cheap.
+    """
+    try:
+        st = path.stat()
+    except OSError:
+        return ("gone", 0)
+
+    row = con.execute("SELECT size, mtime, lines, session_id, chunks FROM files WHERE path=?",
+                      (str(path),)).fetchone()
+    start_line = 0
+    if row and not force:
+        old_size, old_mtime, old_lines = row[0], row[1], row[2]
+        if st.st_size == old_size and abs(st.st_mtime - old_mtime) < 1e-6:
+            return ("unchanged", 0)
+        if st.st_size >= old_size and old_lines > 0:
+            start_line = old_lines          # append-only growth
+        else:
+            start_line = 0                  # rewritten: start over
+
+    if start_line == 0 and row:
+        con.execute("DELETE FROM msgs WHERE path=?", (str(path),))
+
+    session_id = cwd = branch = slug = None
+    first_ts = last_ts = None
+    rows: list[tuple] = []
+    repo_tally: Counter[str] = Counter()
+    n_lines = 0
+
+    with path.open("r", encoding="utf-8", errors="replace") as fh:
+        for i, line in enumerate(fh):
+            n_lines = i + 1
+            if i < start_line:
+                continue
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rec = json.loads(line)
+            except ValueError:
+                continue
+            session_id = rec.get("sessionId") or session_id
+            cwd = rec.get("cwd") or cwd
+            branch = rec.get("gitBranch") or branch
+            slug = rec.get("slug") or slug
+            ts = rec.get("timestamp")
+            if ts:
+                first_ts = ts if first_ts is None else min(first_ts, ts)
+                last_ts = ts if last_ts is None else max(last_ts, ts)
+            rk = repo_key(cwd or "")
+            repo_tally[rk] += 1
+            for role, text in extract(rec):
+                rows.append((session_id, rk, role, ts, text))
+
+    if session_id is None:
+        session_id = path.stem
+    kind = file_kind(path)
+    # sessions.repo is display metadata only; the authoritative per-chunk repo is in msgs.
+    rkey = repo_tally.most_common(1)[0][0] if repo_tally else repo_key(cwd or "")
+
+    con.executemany(
+        "INSERT INTO msgs(path, session_id, repo, role, kind, ts, text) VALUES (?,?,?,?,?,?,?)",
+        [(str(path), sid, rk, role, kind, ts, text) for sid, rk, role, ts, text in rows],
+    )
+    # min/max so a session spanning many files keeps its true span.
+    con.execute(
+        "INSERT INTO sessions(session_id, repo, cwd, branch, slug, first_ts, last_ts) "
+        "VALUES (?,?,?,?,?,?,?) ON CONFLICT(session_id) DO UPDATE SET "
+        "repo=COALESCE(excluded.repo, sessions.repo), cwd=COALESCE(excluded.cwd, sessions.cwd), "
+        "branch=COALESCE(excluded.branch, sessions.branch), slug=COALESCE(excluded.slug, sessions.slug), "
+        "first_ts=MIN(COALESCE(sessions.first_ts, excluded.first_ts), COALESCE(excluded.first_ts, sessions.first_ts)), "
+        "last_ts=MAX(COALESCE(sessions.last_ts, excluded.last_ts), COALESCE(excluded.last_ts, sessions.last_ts))",
+        (session_id, rkey, cwd, branch, slug, first_ts, last_ts),
+    )
+    prev_chunks = (row[4] if row and start_line else 0) or 0
+    con.execute(
+        "INSERT INTO files(path, size, mtime, lines, session_id, kind, chunks, indexed_at) "
+        "VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(path) DO UPDATE SET size=excluded.size, "
+        "mtime=excluded.mtime, lines=excluded.lines, session_id=excluded.session_id, "
+        "kind=excluded.kind, chunks=excluded.chunks, indexed_at=excluded.indexed_at",
+        (str(path), st.st_size, st.st_mtime, n_lines, session_id, kind,
+         prev_chunks + len(rows), time.time()),
+    )
+    return ("appended" if start_line else "indexed", len(rows))
+
+
+def cmd_index(args) -> int:
+    con = connect()
+    files = sorted(PROJECTS.rglob("*.jsonl"))
+    if not files:
+        print(f"no transcripts under {PROJECTS}", file=sys.stderr)
+        return 1
+    t0 = time.time()
+    tally: dict[str, int] = {}
+    added = 0
+    for n, f in enumerate(files, 1):
+        action, k = index_file(con, f, force=args.full)
+        tally[action] = tally.get(action, 0) + 1
+        added += k
+        if args.verbose and action not in ("unchanged",):
+            print(f"  {action:9} {k:6} chunks  {f.name[:40]}")
+        if n % 50 == 0:
+            con.commit()
+    con.commit()
+    con.execute("INSERT INTO msgs(msgs) VALUES('optimize')")
+    con.commit()
+    dt = time.time() - t0
+    parts = ", ".join(f"{v} {k}" for k, v in sorted(tally.items()))
+    size_mb = DB_PATH.stat().st_size / 1e6 if DB_PATH.exists() else 0
+    print(f"{len(files)} transcripts ({parts}); +{added:,} chunks in {dt:.1f}s; "
+          f"db {size_mb:.1f}MB at {DB_PATH}")
+    return 0
+
+
+# ----------------------------------------------------------------------------- queries
+
+def resolve_repo(val: str | None) -> str | None:
+    if not val:
+        return None
+    if val in (".", "here"):
+        return repo_key(os.getcwd())
+    return val
+
+
+def cmd_search(args) -> int:
+    con = connect()
+    where, params = ["msgs MATCH ?"], [args.query]
+    repo = resolve_repo(args.repo)
+    if repo:
+        where.append("repo = ?")
+        params.append(repo)
+    if args.role:
+        where.append("role = ?")
+        params.append(args.role)
+    if args.since:
+        where.append("ts >= ?")
+        params.append(args.since)
+    if args.main_only:
+        where.append("kind = 'main'")
+    sql = (
+        "SELECT session_id, repo, role, ts, "
+        "snippet(msgs, 6, '\x1b[1;33m', '\x1b[0m', ' … ', 14) AS snip, bm25(msgs) AS score "
+        f"FROM msgs WHERE {' AND '.join(where)} ORDER BY score LIMIT ?"
+    )
+    params.append(args.limit)
+    try:
+        rows = con.execute(sql, params).fetchall()
+    except sqlite3.OperationalError as e:
+        print(f"query error: {e}\n(FTS5 syntax: bare words, \"quoted phrase\", AND/OR/NOT, prefix*)",
+              file=sys.stderr)
+        return 2
+    if not rows:
+        print("no matches")
+        return 1
+    for sid, rkey, role, ts, snip, score in rows:
+        day = (ts or "")[:10]
+        snip = re.sub(r"\s+", " ", snip).strip()
+        print(f"\x1b[36m{day}\x1b[0m \x1b[2m{(rkey or '?').replace(str(Path.home()), '~')}\x1b[0m "
+              f"[{role}] \x1b[2m{sid[:8]}\x1b[0m\n    {snip}")
+    print(f"\n\x1b[2m{len(rows)} hit(s). Replay one: claude --resume <session-id>, "
+          f"or cchist session <session-id>\x1b[0m")
+    return 0
+
+
+def cmd_session(args) -> int:
+    con = connect()
+    meta = con.execute(
+        "SELECT session_id, repo, cwd, branch, first_ts, last_ts FROM sessions "
+        "WHERE session_id LIKE ?", (args.session_id + "%",)).fetchone()
+    if not meta:
+        print("no such session", file=sys.stderr)
+        return 1
+    sid, repo, cwd, branch, f_ts, l_ts = meta
+    agg = con.execute("SELECT COUNT(*), COALESCE(SUM(chunks),0), "
+                      "SUM(kind='subagent') FROM files WHERE session_id=?", (sid,)).fetchone()
+    print(f"session {sid}\nrepo    {repo}\ncwd     {cwd}\nbranch  {branch}"
+          f"\nspan    {f_ts} .. {l_ts}"
+          f"\nfiles   {agg[0]} ({agg[2] or 0} subagent)\nchunks  {agg[1]}\n")
+    where, params = ["session_id LIKE ?"], [args.session_id + "%"]
+    if args.grep:
+        where.append("msgs MATCH ?")
+        params.append(args.grep)
+    rows = con.execute(
+        f"SELECT role, ts, text FROM msgs WHERE {' AND '.join(where)} LIMIT ?",
+        params + [args.limit]).fetchall()
+    for role, ts, text in rows:
+        print(f"\x1b[36m[{(ts or '')[:19]}] {role}\x1b[0m\n{text}\n")
+    return 0
+
+
+def cmd_repos(args) -> int:
+    con = connect()
+    rows = con.execute("""
+        SELECT repo, COUNT(DISTINCT session_id) AS sessions, COUNT(DISTINCT path) AS files,
+               COUNT(*) AS chunks, MAX(ts) AS last
+        FROM msgs GROUP BY repo ORDER BY chunks DESC""").fetchall()
+    print(f"{'sessions':>8} {'files':>6} {'chunks':>9}  {'last activity':<21} repo")
+    for repo, n, files, c, last in rows:
+        print(f"{n:>8} {files:>6} {c:>9}  {(last or '')[:19]:<21} "
+              f"{(repo or '?').replace(str(Path.home()), '~')}")
+    return 0
+
+
+def cmd_stats(args) -> int:
+    con = connect()
+    s = con.execute("SELECT COUNT(*) FROM sessions").fetchone()
+    f = con.execute("SELECT COUNT(*), SUM(size), SUM(kind='subagent') FROM files").fetchone()
+    m = con.execute("SELECT COUNT(*) FROM msgs").fetchone()[0]
+    r = con.execute("SELECT COUNT(DISTINCT repo) FROM sessions").fetchone()[0]
+    db = DB_PATH.stat().st_size if DB_PATH.exists() else 0
+    src = f[1] or 0
+    print(f"db          {DB_PATH} ({db/1e6:.1f}MB)")
+    print(f"source      {f[0]} transcripts ({f[2] or 0} subagent), {src/1e6:.0f}MB raw")
+    print(f"indexed     {s[0]} sessions, {r} repos, {m:,} chunks")
+    if src:
+        print(f"ratio       {db/src*100:.1f}% of raw bytes")
+    return 0
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(
+        prog="cchist", description="Full-text search over Claude Code session history.")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+
+    p = sub.add_parser("index", help="index new and grown transcripts (incremental)")
+    p.add_argument("--full", action="store_true", help="re-read every transcript from scratch")
+    p.add_argument("-v", "--verbose", action="store_true")
+    p.set_defaults(fn=cmd_index)
+
+    p = sub.add_parser("search", help="full-text search (FTS5: words, \"phrases\", AND/OR/NOT, pre*)")
+    p.add_argument("query")
+    p.add_argument("--repo", help="filter to a repo key, or '.' for the current one")
+    p.add_argument("--role", help="user | assistant | thinking | tool_use | tool_result")
+    p.add_argument("--since", help="ISO date lower bound, e.g. 2026-09-01")
+    p.add_argument("--main-only", action="store_true",
+                   help="exclude subagent transcripts, which inherit the parent session id")
+    p.add_argument("-n", "--limit", type=int, default=15)
+    p.set_defaults(fn=cmd_search)
+
+    p = sub.add_parser("session", help="dump one session, optionally filtered")
+    p.add_argument("session_id", help="full or short session id prefix")
+    p.add_argument("--grep", help="only chunks matching this FTS query")
+    p.add_argument("-n", "--limit", type=int, default=60)
+    p.set_defaults(fn=cmd_session)
+
+    sub.add_parser("repos", help="sessions per repo").set_defaults(fn=cmd_repos)
+    sub.add_parser("stats", help="index size and coverage").set_defaults(fn=cmd_stats)
+
+    args = ap.parse_args()
+    return args.fn(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

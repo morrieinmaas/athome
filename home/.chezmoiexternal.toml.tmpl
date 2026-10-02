@@ -9,13 +9,8 @@
     url           = "https://github.com/zdharma-continuum/zinit.git"
     refreshPeriod = "168h"   # weekly
 
-# ── TPM (tmux plugin manager) ───────────────────────────────────────────────
-# tmux.conf also bootstraps TPM defensively. Plugins themselves are installed
-# by .chezmoiscripts/run_onchange_after_14-install-tmux-plugins.sh on first apply.
-[".config/tmux/plugins/tpm"]
-    type          = "git-repo"
-    url           = "https://github.com/tmux-plugins/tpm.git"
-    refreshPeriod = "168h"
+# No TPM: canopy vendors the tmux plugins and loads them itself, on tmux and
+# on grofe alike (run_onchange_18 pins it).
 
 # bat's gruvbox-light / gruvbox-dark themes are built in (no external needed).
 # bottom also ships gruvbox built-in. Nothing to fetch here.

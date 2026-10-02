@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Post-TPM patches to tmux-which-key's menus (prefix Space):
+# Post-load patches to tmux-which-key's menus (prefix Space):
 #
 #   1. Centre them (-x C -y C). which-key anchors at the pane (-x R -y P), so the
 #      menu grows up from the pane's bottom edge and its top ran off-screen in any

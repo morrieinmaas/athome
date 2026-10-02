@@ -16,7 +16,7 @@
 # run_onchange, keyed on the pinned ref below: change the ref, and the next
 # `chezmoi apply` moves the checkout. Nothing else re-runs it.
 #
-# canopy ref: {{ "v0.1.0" }}
+# canopy ref: {{ "f54cd1cf4084556d43b9696b97004fda6b824486" }}
 set -euo pipefail
 
 store="${HOME}/.local/share/canopy"
@@ -33,7 +33,9 @@ repo_https="https://github.com/morrieinmaas/canopy.git"
 # than on whatever canopy's main happened to be that morning. Bumping it is
 # two edits in one place: this line, and the `canopy ref:` comment above,
 # which is what makes chezmoi re-run this script at all.
-ref="v0.1.0"
+# A full commit id also works, for a ref that is not tagged yet (the
+# alias-day pin is one).
+ref="f54cd1cf4084556d43b9696b97004fda6b824486"
 
 if ! command -v git >/dev/null 2>&1; then
   printf 'canopy: git not found, skipping install\n' >&2
@@ -53,8 +55,11 @@ if [ -d "${store}/.git" ]; then
   # committing to.
   if git -C "${store}" rev-parse --quiet --verify "refs/tags/${ref}" >/dev/null 2>&1; then
     target="refs/tags/${ref}"
-  else
+  elif git -C "${store}" rev-parse --quiet --verify "origin/${ref}" >/dev/null 2>&1; then
     target="origin/${ref}"
+  else
+    # A commit id: fetched with everything above when a ref reaches it.
+    target="${ref}"
   fi
   git -C "${store}" checkout --quiet --detach "${target}" || {
     printf 'canopy: could not move %s to %s; leaving it as it is\n' "${store}" "${ref}" >&2
@@ -62,12 +67,30 @@ if [ -d "${store}/.git" ]; then
 else
   printf 'canopy: cloning into %s\n' "${store}"
   mkdir -p "$(dirname "${store}")"
-  if ! git clone --quiet --branch "${ref}" "${repo_ssh}" "${store}" 2>/dev/null; then
-    if ! git clone --quiet --branch "${ref}" "${repo_https}" "${store}" 2>/dev/null; then
+  # --branch takes a tag or a branch; a commit id is cloned whole and then
+  # checked out.
+  clone_args=(--quiet --branch "${ref}")
+  [[ "${ref}" =~ ^[0-9a-f]{40}$ ]] && clone_args=(--quiet)
+  if ! git clone "${clone_args[@]}" "${repo_ssh}" "${store}" 2>/dev/null; then
+    if ! git clone "${clone_args[@]}" "${repo_https}" "${store}" 2>/dev/null; then
       printf 'canopy: could not clone over ssh or https, skipping\n' >&2
       printf '  clone it by hand into %s, then re-run: chezmoi apply\n' "${store}" >&2
       exit 0
     fi
+  fi
+  [[ "${ref}" =~ ^[0-9a-f]{40}$ ]] && git -C "${store}" checkout --quiet --detach "${ref}"
+fi
+
+# The release binaries some plugins run (plugins/ARTIFACTS), each checked
+# against its recorded sha256, so that no plugin fetches anything itself when
+# it loads. This is the one part of `canopy install` this script does run. A
+# failure is not fatal: those plugins lack a binary, and `canopy doctor` says
+# which.
+if [ -r "${store}/lib/plugins.sh" ]; then
+  # shellcheck disable=SC1091
+  if ! (export CANOPY_STORE="${store}" && . "${store}/lib/env.sh" && . "${store}/lib/plugins.sh" &&
+    canopy_provision_artifacts); then
+    printf 'canopy: some plugin binaries are missing; canopy doctor lists them\n' >&2
   fi
 fi
 
@@ -90,6 +113,15 @@ command -v bash >/dev/null 2>&1 ||
   printf 'canopy: bash not found, so the vendored plugins will not run: no autosave, no restore\n' >&2
 ps -o ppid= -p $$ >/dev/null 2>&1 ||
   printf 'canopy: this ps cannot report a process parent, so no pane will be recognised as an agent\n' >&2
+
+# canopy's fragments for grofe, in ~/.config/grofe/conf.d, where grofe is
+# installed (run_onchange_17). `canopy grofe generate` has grofe check them
+# first and leaves conf.d as it was if grofe refuses one.
+grofe_bin="${HOME}/.local/lib/grofe/bin"
+if [ -x "${grofe_bin}/grofe" ] && [ -x "${store}/bin/canopy-grofe" ]; then
+  PATH="${grofe_bin}:${PATH}" "${store}/bin/canopy-grofe" generate ||
+    printf 'canopy: canopy grofe generate failed\n' >&2
+fi
 
 printf 'canopy: ready. `canopy doctor` reports what this machine can do.\n'
 

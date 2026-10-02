@@ -21,11 +21,14 @@ After=graphical-session.target
 
 [Service]
 Type=forking
+# grofe answers to tmux from ~/.local/lib/grofe/bin (run_onchange_17), so that
+# directory comes first; without it, the real tmux further on is found.
+Environment=PATH=%h/.local/lib/grofe/bin:/usr/local/bin:/usr/bin:/bin
 # One detached default session gives continuum a fresh server to restore into;
 # tmux-resurrect replaces it with the saved sessions.
-ExecStart={{ lookPath "tmux" | default "/usr/bin/tmux" }} new-session -d
+ExecStart=/usr/bin/env tmux new-session -d
 ExecStop=-{{ .chezmoi.homeDir }}/.local/share/canopy/plugins/tmux-resurrect/scripts/save.sh quiet
-ExecStop={{ lookPath "tmux" | default "/usr/bin/tmux" }} kill-server
+ExecStop=/usr/bin/env tmux kill-server
 KillMode=control-group
 
 [Install]

@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# Put grofe on this machine, answering to the name tmux.
+#
+# grofe is a terminal multiplexer that answers tmux's command line, so
+# canopy, the plugins and every script that calls `tmux` run on it unchanged.
+# It goes into ~/.local/lib/grofe:
+#
+#   grofe        the binary
+#   bin/grofe    a symlink to it
+#   bin/tmux     a symlink to it; grofe run under the name tmux speaks tmux
+#
+# ~/.zsh/path.zsh puts bin/ first on PATH, and tmux.service puts it first on
+# the unit's PATH, so `tmux` is grofe in a shell and at login. The real tmux
+# stays where the package manager put it; taking bin/ off PATH goes back to it.
+#
+# Where the binary comes from, first match wins:
+#
+#   ATHOME_GROFE_BIN=<path>   a binary already built, copied as it is. Nothing
+#                             is downloaded or built (the alias-day container
+#                             test sets it to the grofe it built)
+#   cargo                     `cargo install` at the pinned ref below
+#
+# run_onchange, keyed on the pinned ref: change it, and the next `chezmoi
+# apply` installs that grofe. Bumping it is two edits, this comment and ref=.
+#
+# grofe ref: {{ "203ec153ac5dfb3506bddc9b9d1b355afb507134" }}
+set -euo pipefail
+
+ref="203ec153ac5dfb3506bddc9b9d1b355afb507134"
+repo="https://github.com/morrieinmaas/grofe.git"
+dest="${HOME}/.local/lib/grofe"
+
+mkdir -p "${dest}/bin"
+if [ -n "${ATHOME_GROFE_BIN:-}" ]; then
+  if [ ! -x "${ATHOME_GROFE_BIN}" ]; then
+    printf 'grofe: ATHOME_GROFE_BIN=%s is not an executable file\n' "${ATHOME_GROFE_BIN}" >&2
+    exit 1
+  fi
+  printf 'grofe: installing %s\n' "${ATHOME_GROFE_BIN}"
+  install -m 755 "${ATHOME_GROFE_BIN}" "${dest}/grofe.new"
+elif command -v cargo >/dev/null 2>&1; then
+  printf 'grofe: building %s at %s\n' "${repo}" "${ref}"
+  cargo install --quiet --locked --git "${repo}" --rev "${ref}" --root "${dest}/build" grofe
+  install -m 755 "${dest}/build/bin/grofe" "${dest}/grofe.new"
+else
+  printf 'grofe: no ATHOME_GROFE_BIN and no cargo, so grofe is not installed; tmux stays tmux\n' >&2
+  exit 0
+fi
+# Moved into place, so a running server's next exec never sees half a file.
+mv -f "${dest}/grofe.new" "${dest}/grofe"
+ln -sfn ../grofe "${dest}/bin/grofe"
+ln -sfn ../grofe "${dest}/bin/tmux"
+
+printf 'grofe: %s, answering to tmux as: %s\n' "$("${dest}/grofe" -V)" "$("${dest}/bin/tmux" -V)"

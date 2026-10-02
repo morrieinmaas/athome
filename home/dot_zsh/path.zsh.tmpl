@@ -84,6 +84,11 @@ done
 unset pglibdir
 {{- end }}
 
+# ─── grofe as tmux (run_onchange_17-install-grofe) ───────────────────────────
+# Last, so it lands first: its bin/tmux is grofe, and it has to win over every
+# real tmux above. A machine without grofe simply skips it.
+[[ -d "$HOME/.local/lib/grofe/bin" ]] && path=("$HOME/.local/lib/grofe/bin" $path)
+
 # de-dupe and export
 typeset -U path
 export PATH

@@ -67,7 +67,19 @@ _zcache chezmoi   chezmoi completion zsh
 # etc. complete (task-name completion also needs the `usage` CLI, via mise config).
 _zcache mise-comp mise completion zsh
 _zcache gh        gh completion -s zsh
-_zcache just      just --completions zsh
+# just: deliberately NOT cached. Since 1.58, `just --completions zsh` emits a clap DYNAMIC stub
+# whose body is `source <(JUST_COMPLETE=zsh just)`. _zcache SOURCES its cache at startup, so that
+# runs `just` right there, and any repo pinning an older just gets the wrong binary: 1.46 ignores
+# JUST_COMPLETE and RUNS THE DEFAULT RECIPE. In ~/work/ErasmusAI/erasmusAI (mise.toml pins
+# just 1.46.0) `zfresh` therefore executed `bash scripts/bootstrap-setup.sh`, printed its output
+# through a process substitution, and died with `/dev/fd/16:1: =^[[0m not found` (zsh EQUALS
+# expansion hitting an ANSI escape) plus SIGPIPE.
+#
+# Homebrew already ships the STATIC completion at
+# /opt/homebrew/share/zsh/site-functions/_just (7550 bytes, no top-level source/eval), and that
+# directory is on fpath, so dropping this line leaves `just <TAB>` working via normal autoload
+# with nothing executed at startup. Re-add only if that file goes away AND just emits a static
+# script again.
 _zcache task      task --completion zsh
 _zcache scw       scw autocomplete script shell=zsh   # Scaleway CLI
 _zcache leaf      leaf --auto-complete zsh:dump       # markdown previewer (dump = stdout, no install side effect)

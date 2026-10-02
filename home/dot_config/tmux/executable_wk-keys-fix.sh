@@ -14,9 +14,10 @@
 # Done here rather than in the plugin's generated files, which live in the
 # untracked, git-cloned plugin dir, so it survives plugin updates.
 #
-# POLL: on `source-file`, TPM re-sources which-key AFTER this runs (run-shell
-# ordering) and which-key rebuilds all of the above. So poll until it has built
-# them, which is why tmux.conf calls us backgrounded (`run-shell -b`).
+# POLL: on `source-file`, canopy's plugin loader re-sources which-key AFTER
+# this starts (user.conf runs before the loader) and which-key rebuilds all of
+# the above. So poll until it has built them fresh, which is why user.conf
+# calls us backgrounded (`run-shell -b`).
 set -uo pipefail
 
 popup="run-shell $HOME/.config/tmux/keys-popup.sh"
@@ -26,11 +27,15 @@ patch() {
 }
 
 aliases() { tmux show -gv command-alias 2>/dev/null; }
+# Wait for which-key's own build: its root alias still at -x R -y P. On a
+# reload the alias patched last time is already there, and which-key
+# replaces it only when the plugin loader reaches it, after this started.
+fresh() { aliases | grep '^show-wk-menu-root=' | grep -q -e "-x 'R' -y 'P'" -e '-x R -y P'; }
 for _ in $(seq 1 50); do   # ~10s max (which-key usually builds within ~1s)
-  aliases | grep -q '^show-wk-menu-root=' && break
+  fresh && break
   sleep 0.2
 done
-aliases | grep -q '^show-wk-menu-root=' || exit 0
+fresh || exit 0
 
 # Pair each command-alias index with its raw value, patch the which-key ones.
 mapfile -t idx < <(tmux show -g command-alias | sed -E 's/^command-alias\[([0-9]+)\].*/\1/')

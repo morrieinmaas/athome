@@ -1,0 +1,23 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+
+  "model": "openrouter/z-ai/glm-5.3",
+  "small_model": "openrouter/z-ai/glm-5.3-flash",
+
+  "provider": {
+    "openrouter": {
+      "options": {
+        "apiKey": "{env:OPENROUTER_API_KEY}"
+      }
+    }
+  },
+
+  "instructions": [
+    "~/.claude/CLAUDE.md",
+    "~/.claude/RTK.md",
+    "~/.claude/AGENTIC-SYSTEMS.md",
+    "~/.claude/rules/context7.md"
+  ],
+
+  "plugin": ["opencode-beads"]
+}

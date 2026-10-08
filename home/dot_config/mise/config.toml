@@ -112,6 +112,15 @@ viddy      = "latest"        # modern watch(1)
 # made for it was therefore inert. The mise copy verifies clean and runs.
 opencode   = "latest"
 
+# Markdown to PDF, used by ~/.local/bin/md2pdf and nvim's :ToPdf. pandoc parses
+# the markdown, typst sets the page. Chosen over a LaTeX or headless-browser
+# pipeline because both of those are enormous: texlive is gigabytes and stamps a
+# LaTeX accent on everything, a headless Chromium is ~200 MB to render a page of
+# text. These two are a few MB each and start instantly. Styling lives in
+# dot_config/md2pdf/github.typ.
+pandoc     = "latest"
+typst      = "latest"
+
 # ── Git / VCS ────────────────────────────────────────────────────────────────
 lazygit    = "latest"
 # PINNED DELIBERATELY (2026-09-23). 0.71.0 exists but mise cannot install it:

@@ -1,0 +1,71 @@
+#!/bin/sh
+# md2pdf — one markdown file to a PDF that looks like the VS Code preview.
+#
+# Usage: md2pdf <file.md> [--open]
+#        md2pdf README.md          ->  README(20261008-143005).pdf, beside the source
+#
+# Two dependencies, both single binaries from mise: pandoc to parse the
+# markdown, typst to set the page. Deliberately NOT a LaTeX or headless-browser
+# pipeline: texlive is gigabytes and gives documents a LaTeX accent nobody asked
+# for, and a headless Chromium is a 200 MB dependency to render a page of text.
+# typst is a few MB, starts instantly, and the styling lives in one readable
+# file you can edit.
+#
+# The look comes from ~/.config/md2pdf/github.typ, which is pandoc's own typst
+# template with a GitHub-flavoured `conf` inlined: heading underlines, filled
+# code panels, left-aligned tables, GitHub-blue links. Override the path with
+# $MD2PDF_TEMPLATE.
+set -eu
+
+open_after=0
+src=""
+for arg in "$@"; do
+  case "$arg" in
+    --open | -o) open_after=1 ;;
+    -h | --help)
+      /usr/bin/sed -n '2,20p' "$0" | /usr/bin/sed 's/^# \{0,1\}//'
+      exit 0
+      ;;
+    -*) printf 'md2pdf: unknown option: %s\n' "$arg" >&2; exit 1 ;;
+    *)
+      [ -z "$src" ] || { printf 'md2pdf: one file at a time\n' >&2; exit 1; }
+      src="$arg"
+      ;;
+  esac
+done
+
+[ -n "$src" ] || { printf 'usage: md2pdf <file.md> [--open]\n' >&2; exit 1; }
+[ -f "$src" ] || { printf 'md2pdf: no such file: %s\n' "$src" >&2; exit 1; }
+
+for tool in pandoc typst; do
+  command -v "$tool" >/dev/null 2>&1 || {
+    printf 'md2pdf: %s not found. Both are declared in mise; run: mise install\n' "$tool" >&2
+    exit 1
+  }
+done
+
+template="${MD2PDF_TEMPLATE:-$HOME/.config/md2pdf/github.typ}"
+[ -f "$template" ] || { printf 'md2pdf: no template at %s\n' "$template" >&2; exit 1; }
+
+dir=$(dirname "$src")
+stem=$(basename "$src")
+stem=${stem%.*}
+out="$dir/$stem($(date +%Y%m%d-%H%M%S)).pdf"
+
+# gfm rather than pandoc's own markdown dialect: these files are written for
+# GitHub and for the in-editor preview, so task lists, strikethrough, pipe
+# tables and bare autolinks should mean what they mean there.
+pandoc "$src" \
+  --from=gfm \
+  --to=pdf \
+  --pdf-engine=typst \
+  --template="$template" \
+  --output="$out"
+
+printf '%s\n' "$out"
+
+if [ "$open_after" -eq 1 ]; then
+  if command -v open >/dev/null 2>&1; then open "$out"
+  elif command -v xdg-open >/dev/null 2>&1; then xdg-open "$out"
+  fi
+fi

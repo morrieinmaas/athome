@@ -16,7 +16,7 @@
 # run_onchange, keyed on the pinned ref below: change the ref, and the next
 # `chezmoi apply` moves the checkout. Nothing else re-runs it.
 #
-# canopy ref: {{ "f54cd1cf4084556d43b9696b97004fda6b824486" }}
+# canopy ref: {{ "4faa58fff9d83b23b8e90faedb1d67ab3f6a9536" }}
 set -euo pipefail
 
 store="${HOME}/.local/share/canopy"
@@ -35,7 +35,7 @@ repo_https="https://github.com/morrieinmaas/canopy.git"
 # which is what makes chezmoi re-run this script at all.
 # A full commit id also works, for a ref that is not tagged yet (the
 # alias-day pin is one).
-ref="f54cd1cf4084556d43b9696b97004fda6b824486"
+ref="4faa58fff9d83b23b8e90faedb1d67ab3f6a9536"
 
 if ! command -v git >/dev/null 2>&1; then
   printf 'canopy: git not found, skipping install\n' >&2

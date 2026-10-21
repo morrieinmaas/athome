@@ -70,7 +70,6 @@ done
 # Each guarded by -d, so a machine that never installed one simply skips it.
 # These are here rather than in ~/.zsh/local.zsh because they are the same on
 # every machine: local.zsh is for what is true of ONE machine.
-[[ -d "$HOME/.opencode/bin" ]] && path=("$HOME/.opencode/bin" $path)  # opencode
 [[ -d "$HOME/.aspire/bin" ]]   && path=("$HOME/.aspire/bin" $path)    # .NET Aspire
 [[ -d "$HOME/.pixi/bin" ]]     && path=("$HOME/.pixi/bin" $path)      # pixi
 

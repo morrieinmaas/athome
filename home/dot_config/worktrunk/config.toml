@@ -15,3 +15,19 @@ worktree-path = "{{ repo_path }}/../worktrees/{{ branch | sanitize }}"
 [merge]
 squash = true    # collapse the worktree branch into one commit on merge
 remove = true    # delete the worktree after a successful merge
+
+# --- new branches start from the REMOTE head, not the stale local one ---
+# `wt switch --create` bases a new branch on the LOCAL default branch, and that goes stale
+# silently. Measured 2026-09-30: local `main` in infocolab was 156 commits behind origin/main,
+# so a fresh worktree started from a tree two releases old and the first file read out of it
+# was wrong. A plain `git fetch` does NOT fix this on its own, because it updates origin/* and
+# leaves local `main` exactly where it was.
+#
+# `wt sc <branch>` fetches, then bases the branch on origin/HEAD. HEAD rather than a hardcoded
+# `main` so this stays correct in repos whose default branch is something else.
+# Plain `wt switch --create` is untouched and still bases on the local branch.
+[[aliases.sc]]
+fetch = "git fetch origin --quiet --prune"
+
+[[aliases.sc]]
+create = "wt switch --create {{ args }} --base origin/HEAD"

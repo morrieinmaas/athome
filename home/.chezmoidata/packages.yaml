@@ -26,6 +26,12 @@ common:
   - luarocks         # for :checkhealth lua + native deps if a plugin needs them
   - tree-sitter-cli  # `tree-sitter` binary — nvim-treesitter compiles parsers via it; coupled to nvim
   - tmux             # multiplexer — native: TPM plugins build against it
+  # fzf + zoxide are ALSO in mise, but tmux-sessionx (prefix s) runs them from
+  # the tmux SERVER's PATH, and on Linux that server is tmux.service with
+  # systemd's PATH (no mise shims). It also calls `fzf-tmux`, which mise's fzf
+  # (the release binary) doesn't ship. Without these, prefix s silently does nothing.
+  - fzf              # native: provides fzf + fzf-tmux in /usr/bin for tmux-sessionx
+  - zoxide           # native: tmux-sessionx's zoxide mode, same PATH reason
   - uv               # Astral's Python tool/env manager — owns all Python concerns (mise's `python` is intentionally absent)
   - pre-commit       # python pre-commit framework (drives this repo's own hooks)
   - gitleaks         # secret-leak guard — native (NOT mise): the GLOBAL git pre-commit hook shells out to it and runs where mise isn't activated. Must always be on PATH.
@@ -242,6 +248,8 @@ fedora:
     - lua
     - luarocks
     - tmux
+    - fzf                          # fzf + fzf-tmux on the tmux server's PATH for tmux-sessionx (see `common`)
+    - zoxide                       # tmux-sessionx zoxide mode (see `common`)
     - xonsh
     - podman
     - podman-docker                # `docker` → podman shim (matches the Arch docker→podman shim)

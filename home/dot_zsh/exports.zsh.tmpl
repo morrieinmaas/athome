@@ -26,6 +26,22 @@ export MANPAGER='nvim +Man!'
 # MANPAGER export and the fallback silently did half its job.
 [[ -n "$SSH_CONNECTION" ]] && { export EDITOR=vim VISUAL=vim; unset MANPAGER; }
 
+# ─── OpenRouter ──────────────────────────────────────────────────────────────
+# Read from ~/.secrets so nothing lands in this repo, and guarded so a machine
+# without the key is simply a machine without OpenRouter rather than a broken
+# shell. Create it with:
+#
+#   mkdir -p ~/.secrets/openrouter
+#   printf '%s' 'sk-or-v1-...' > ~/.secrets/openrouter/api-key
+#   chmod 600 ~/.secrets/openrouter/api-key
+#
+# An env var rather than opencode's own {file:...} reference on purpose: a
+# {file:...} pointing at an absent path makes opencode reject the ENTIRE config
+# ("Configuration is invalid ... does not exist"), taking every other provider
+# down with it. The env route degrades to one unavailable provider.
+[[ -r "$HOME/.secrets/openrouter/api-key" ]] &&
+  export OPENROUTER_API_KEY="$(<"$HOME/.secrets/openrouter/api-key")"
+
 # ─── Locale ──────────────────────────────────────────────────────────────────
 export LANG="${LANG:-en_US.UTF-8}"
 export LC_ALL="${LC_ALL:-en_US.UTF-8}"

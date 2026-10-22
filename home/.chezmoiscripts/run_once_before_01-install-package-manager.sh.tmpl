@@ -35,6 +35,14 @@ if command -v nb >/dev/null 2>&1; then
     echo "==> normalizing /opt/nanobrew ownership to $(whoami)"
     sudo chown -R "$(whoami)" /opt/nanobrew
   fi
+  # nb >= 0.1.2xx relocates Mach-O binaries to the short /opt/nb prefix and
+  # refuses to install (e.g. uv) without it ("incomplete relocation"). This is
+  # the only part of `sudo nb init` we need; a bare symlink leaves the prefix
+  # user-owned.
+  if [[ ! -e /opt/nb ]]; then
+    echo "==> linking /opt/nb -> /opt/nanobrew/prefix (needs sudo)"
+    sudo ln -s /opt/nanobrew/prefix /opt/nb
+  fi
   echo "==> nanobrew present ($(nb help 2>/dev/null | head -1 | sed 's/\x1b\[[0-9;]*m//g'))"
 else
   echo "!! nanobrew install failed — re-run bootstrap. If it keeps failing,"

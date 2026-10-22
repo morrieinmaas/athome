@@ -125,7 +125,14 @@ if ! command -v nb >/dev/null 2>&1; then
 fi
 
 echo "==> nb self-update"
-nb update >/dev/null 2>&1 || true
+# Don't swallow a failure: nb 0.1.076's updater failed on every release
+# ("could not download SHA256 checksum"), which silently pinned the machine to
+# it. Warn and carry on; the fix is a manual install from the GitHub release.
+if ! out="$(nb update 2>&1)"; then
+  msg="nb update failed: $(printf '%s' "$out" | tail -1). Install the latest nb from github.com/justrach/nanobrew/releases by hand."
+  echo "!! $msg" >&2
+  [[ -n "${ATHOME_FOLLOWUP_LOG:-}" ]] && printf '  • %s\n' "$msg" >> "$ATHOME_FOLLOWUP_LOG"
+fi
 
 echo "==> nb formulae (common + darwin)"
 {{ range .common -}}

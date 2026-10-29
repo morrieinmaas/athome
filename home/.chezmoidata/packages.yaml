@@ -27,7 +27,7 @@ common:
   - tree-sitter-cli  # `tree-sitter` binary — nvim-treesitter compiles parsers via it; coupled to nvim
   - tmux             # multiplexer — native: TPM plugins build against it
   # fzf + zoxide are ALSO in mise, but tmux-sessionx (prefix s) runs them from
-  # the tmux SERVER's PATH, and on Linux that server is tmux.service with
+  # the tmux SERVER's PATH, and on Linux that server is canopy-tmux.service with
   # systemd's PATH (no mise shims). It also calls `fzf-tmux`, which mise's fzf
   # (the release binary) doesn't ship. Without these, prefix s silently does nothing.
   - fzf              # native: provides fzf + fzf-tmux in /usr/bin for tmux-sessionx

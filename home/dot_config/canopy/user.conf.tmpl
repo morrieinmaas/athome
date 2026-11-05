@@ -169,6 +169,7 @@ set -g @net 'on'
 # unconditional (see above); everything before it is optional.
 set -g status-right "#{?#{e|<:#{client_width},110},,#{?@pet,#[bg=default] #(~/.config/tmux/pet.sh)  ,}}#{?#{e|<:#{client_width},150},,#{?@net,#[bg=default]#[range=user|net]#(~/.config/tmux/net.sh)#[norange]  ,}}#{?#{e|<:#{client_width},110},,#{?@batt,#[bg=default]#(~/.config/tmux/battery.sh)  ,}}#{?#{e|<:#{client_width},110},,#{E:@seg_date}}#{E:@seg_time}#({{ .chezmoi.homeDir }}/.local/share/canopy/plugins/tmux-continuum/scripts/continuum_save.sh)"
 
-# Honour a theme picked in an earlier session, overriding the defaults
-# canopy's 20-status sets.
-if-shell '[ -r ~/.config/themes/active ]' 'run-shell "~/.config/themes/apply-tmux.sh"'
+# Apply the theme (the one picked with `theme`, else gruvbox) on every start:
+# the pill colours, and tmux 3.8's popup, menu and copy-mode colours, which are
+# grey and goldenrod otherwise. Overrides the defaults canopy's 20-status sets.
+run-shell "~/.config/themes/apply-tmux.sh"

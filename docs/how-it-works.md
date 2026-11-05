@@ -136,11 +136,18 @@ The `theme` command recolours Ghostty, tmux, Neovim and niri together; see
 
 ## Shared AI-agent config
 
-If you set `agentsRepo`, athome clones it into `~/.config/agents`: shared
-instructions (`CLAUDE.md`/`AGENTS.md`), skills and agent prompts, kept
-tool-neutral. OpenCode reads it directly; for Claude Code the shared parts are
-symlinked into `~/.claude`, leaving Claude's own settings and history alone.
-Skip it with `--no-agents`.
+Set `agentsRepo` to your agent skills repo (`owner/repo`) and athome clones it
+into `~/.claude` itself: global instructions, rules, agent prompts and a
+vendored tree of skills under `agent-skills/skills/`. The repo's `.gitignore`
+keeps Claude Code's own state (sessions, projects, settings) out of git.
+
+Not every vendored skill is switched on. The ones listed in
+`agent-skills/.skill-lock.json` (maintained by the `skills` CLI, which finds
+the tree through `~/.agents`) are linked into `~/.config/agents/skills/`, next
+to your own skills, which live there as real folders. Both `~/.claude/skills`
+and opencode's skills folder point at that one set. Every `chezmoi apply`
+brings the links in line with the lock; pulling the repo
+(`git -C ~/.claude pull`) is up to you. `--no-agents` skips all of it.
 
 ## Repo layout
 

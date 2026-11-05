@@ -1,0 +1,100 @@
+#!/usr/bin/env bash
+# Agent skills: clone the agentsRepo into ~/.claude and switch on the skills it
+# lists. Runs on every apply; each step is a no-op once done.
+#
+# Layout (the same on every machine):
+#   ~/.claude                    a clone of agentsRepo (CLAUDE.md, rules, agents,
+#                                agent-skills/); its .gitignore keeps Claude's
+#                                own runtime state (sessions, projects…) out
+#   ~/.claude/agent-skills/skills/<name>   every vendored skill
+#   ~/.agents                 -> ~/.claude/agent-skills (where the `skills` CLI
+#                                that maintains that tree looks)
+#   ~/.config/agents/skills/     the skills actually switched on: a symlink per
+#                                entry in agent-skills/.skill-lock.json, plus
+#                                your own skills as real directories
+#   ~/.claude/skills, ~/.config/opencode/skills -> ~/.config/agents/skills
+#                                (declared as symlinks in the chezmoi source)
+#
+# run_before_, because the two declared symlinks can't be applied over the real
+# ~/.claude/skills directory an older setup (or Claude Code itself) left there.
+set -euo pipefail
+
+{{ $repo := dig "agents_repo" "" . -}}
+{{ if and .include_agents $repo -}}
+repo={{ $repo | quote }}
+if [ -n "${ATHOME_CI:-}" ]; then echo "ATHOME_CI: skipping agent skills ($(basename "$0"))"; exit 0; fi
+
+claude="$HOME/.claude"
+active="$HOME/.config/agents/skills"
+
+# ── 1. Clone into ~/.claude, in place ────────────────────────────────────────
+# ~/.claude usually already exists (Claude Code's own state), so this is an
+# in-place init + checkout. It refuses if a tracked path is already there,
+# rather than overwrite anything.
+if [ ! -d "$claude/.git" ]; then
+  mkdir -p "$claude"
+  url="git@github.com:${repo}.git"
+  # gh's token reaches a private repo before any SSH key is on GitHub.
+  if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+    url="https://github.com/${repo}.git"
+    git config --global --get-all credential.https://github.com.helper >/dev/null 2>&1 \
+      || gh auth setup-git >/dev/null 2>&1 || true
+  fi
+  git -C "$claude" init -q -b main
+  git -C "$claude" remote add origin "$url"
+  if ! git -C "$claude" fetch -q origin; then
+    echo "!! agent skills: couldn't fetch $repo (log in with \`gh auth login\`, then apply again)"
+    rm -rf "$claude/.git"; exit 0
+  fi
+  branch="$(git -C "$claude" remote show origin 2>/dev/null | awk '/HEAD branch/ {print $NF}')"
+  branch="${branch:-main}"
+  clash="$(git -C "$claude" ls-tree --name-only "origin/$branch" | while read -r p; do [ -e "$claude/$p" ] && [ "$p" != skills ] && echo "$p"; done || true)"
+  if [ -n "$clash" ]; then
+    echo "!! agent skills: not checking $repo out into ~/.claude, these already exist:"
+    printf '     %s\n' $clash
+    rm -rf "$claude/.git"; exit 0
+  fi
+  git -C "$claude" checkout -q -B "$branch" "origin/$branch"
+  echo "==> agent skills: cloned $repo into ~/.claude"
+fi
+
+# ── 2. ~/.agents for the `skills` CLI ────────────────────────────────────────
+if [ -d "$claude/agent-skills" ] && [ ! -e "$HOME/.agents" ] && [ ! -L "$HOME/.agents" ]; then
+  ln -s "$claude/agent-skills" "$HOME/.agents"
+fi
+
+# ── 3. Move a real ~/.claude/skills out of the way ───────────────────────────
+# Its contents are skills too (Claude Code syncs cloud skills into `synced/`),
+# so they move into the active set instead of being deleted.
+mkdir -p "$active"
+if [ -d "$claude/skills" ] && [ ! -L "$claude/skills" ]; then
+  for d in "$claude/skills"/* "$claude/skills"/.[!.]*; do
+    [ -e "$d" ] || continue
+    [ -e "$active/$(basename "$d")" ] || mv "$d" "$active/"
+  done
+  rm -rf "$claude/skills"
+  echo "==> agent skills: moved ~/.claude/skills into ~/.config/agents/skills"
+fi
+
+# ── 4. Switch on what the lock lists ─────────────────────────────────────────
+# Real directories in the active set are your own skills and are never touched.
+# Symlinks into the vendored tree follow the lock: added when listed, removed
+# when not.
+lock="$claude/agent-skills/.skill-lock.json"
+vendored="$claude/agent-skills/skills"
+if [ -f "$lock" ] && command -v python3 >/dev/null 2>&1; then
+  wanted="$(python3 -I -c 'import json,sys; print("\n".join(json.load(open(sys.argv[1]))["skills"]))' "$lock")"
+  n=0
+  while read -r name; do
+    [ -n "$name" ] && [ -d "$vendored/$name" ] || continue
+    [ -e "$active/$name" ] && [ ! -L "$active/$name" ] && continue
+    ln -sfn "$vendored/$name" "$active/$name"; n=$((n + 1))
+  done <<< "$wanted"
+  for l in "$active"/*; do
+    [ -L "$l" ] || continue
+    case "$(readlink "$l")" in "$vendored"/*) ;; *) continue ;; esac
+    grep -qxF "$(basename "$l")" <<< "$wanted" || rm -f "$l"
+  done
+  echo "==> agent skills: $n switched on from the lock"
+fi
+{{ end -}}

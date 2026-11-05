@@ -154,7 +154,7 @@ from `gh`), and finally a question. Answers end up in your private
 | `netbirdManagementUrl` | NetBird Cloud | Set when self-hosting ([docs](netbird-cloud.md)). |
 | `nordvpnCountry` | NordVPN's choice | e.g. `Netherlands`. |
 | `includeAgents` | `true` | Same as `--no-agents` when false. |
-| `agentsRepo` | empty | `owner/repo` to sync into `~/.config/agents`. |
+| `agentsRepo` | empty | `owner/repo` of your agent skills repo, cloned into `~/.claude` ([details](how-it-works.md#shared-ai-agent-config)). |
 | `extraPackages` | empty | Extra packages on top of the curated list ([details](customizing.md#extra-packages-without-editing-packagesyaml-overlay--byo)). |
 | `sshKeyAction` | `use` | When a key exists: `use`, `generate` (fresh one) or `reupload`. |
 

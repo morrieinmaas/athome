@@ -47,10 +47,11 @@ workName = ""
 sidebizEmail = ""
 sidebizName = ""
 
-# Sync ~/.config/agents skills + instructions (agent-agnostic). true | false.
+# Set up agent skills from agentsRepo (see below). true | false.
 includeAgents = "true"
 
-# Skills/agents repo to sync into ~/.config/agents as owner/repo. Empty = none.
+# Agent skills repo (owner/repo), cloned into ~/.claude; the skills its lock
+# lists are switched on. Empty = none.
 agentsRepo = ""
 
 # slk (Slack TUI) default workspace to open on launch: the slug + its Slack team

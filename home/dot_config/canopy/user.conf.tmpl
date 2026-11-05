@@ -143,16 +143,31 @@ set -g status-style "bg=default,fg=#{@theme_fg}"
 set -g status-left-length  100
 set -g status-right-length 200
 
-set -g status-left "#[fg=#{@theme_grey},bg=default]#{@pill_l}#[fg=#{@theme_bg},bg=#{@theme_grey},bold] #h #[fg=#{@theme_grey},bg=default,nobold]#{@pill_r} #[fg=#{?client_prefix,#{@theme_red},#{@theme_blue}},bg=default]#{@pill_l}#[fg=#{@theme_bg},bg=#{?client_prefix,#{@theme_red},#{@theme_blue}},bold] #S #[fg=#{?client_prefix,#{@theme_red},#{@theme_blue}},bg=default,nobold]#{@pill_r}  "
+# The bar drops segments as the terminal narrows, so left and right never
+# collide: below 150 columns the network pills go (they alone are ~50 wide),
+# below 110 the pet, battery, date and hostname, leaving session, windows and
+# the clock. Segments with commas in their styles live in @seg_* options and
+# are expanded with #{E:}, because a comma inside a #{?…} branch splits it.
+set -g @seg_host '#[fg=#{@theme_grey},bg=default]#{@pill_l}#[fg=#{@theme_bg},bg=#{@theme_grey},bold] #h #[fg=#{@theme_grey},bg=default,nobold]#{@pill_r} '
+set -g @seg_sess '#[fg=#{?client_prefix,#{@theme_red},#{@theme_blue}},bg=default]#{@pill_l}#[fg=#{@theme_bg},bg=#{?client_prefix,#{@theme_red},#{@theme_blue}},bold] #S #[fg=#{?client_prefix,#{@theme_red},#{@theme_blue}},bg=default,nobold]#{@pill_r}  '
+set -g @seg_date '#[fg=#{@theme_grey},bg=default]#{@pill_l}#[fg=#{@theme_fg},bg=#{@theme_grey}] %a %d %b #[fg=#{@theme_grey},bg=default]#{@pill_r}  '
+set -g @seg_time '#[fg=#{@theme_green},bg=default]#{@pill_l}#[fg=#{@theme_bg},bg=#{@theme_green},bold] %H:%M #[fg=#{@theme_green},bg=default,nobold]#{@pill_r} '
+set -g status-left "#{?#{e|<:#{client_width},110},,#{E:@seg_host}}#{E:@seg_sess}"
 
 set -g window-status-separator " "
 set -g window-status-format "#[fg=#{@theme_muted},bg=default] #I#{?#W, #W,} "
+# tmux 3.8 changed the default window-status-current-style from `default` to
+# `underscore`, which underlined the current-window pill. Its look comes
+# entirely from the format below, so pin the style plain.
+set -g window-status-current-style default
 set -g window-status-current-format "#[fg=#{@theme_yellow},bg=default]#{@pill_l}#[fg=#{@theme_fg},bg=#{@theme_yellow},bold] #I#{?#W, #W,}#{?window_zoomed_flag, #{@pill_zoom},} #[fg=#{@theme_yellow},bg=default,nobold]#{@pill_r}"
 
 set -g @pet 'on'
 set -g @batt 'on'
 set -g @net 'on'
-set -g status-right "#{?@pet,#[bg=default] #(~/.config/tmux/pet.sh)  ,}#{?@net,#[bg=default]#[range=user|net]#(~/.config/tmux/net.sh)#[norange]  ,}#{?@batt,#[bg=default]#(~/.config/tmux/battery.sh)  ,}#[fg=#{@theme_grey},bg=default]#{@pill_l}#[fg=#{@theme_fg},bg=#{@theme_grey}] %a %d %b #[fg=#{@theme_grey},bg=default]#{@pill_r}  #[fg=#{@theme_green},bg=default]#{@pill_l}#[fg=#{@theme_bg},bg=#{@theme_green},bold] %H:%M #[fg=#{@theme_green},bg=default,nobold]#{@pill_r} #({{ .chezmoi.homeDir }}/.local/share/canopy/plugins/tmux-continuum/scripts/continuum_save.sh)"
+# The continuum_save.sh call at the end is the autosave and must stay
+# unconditional (see above); everything before it is optional.
+set -g status-right "#{?#{e|<:#{client_width},110},,#{?@pet,#[bg=default] #(~/.config/tmux/pet.sh)  ,}}#{?#{e|<:#{client_width},150},,#{?@net,#[bg=default]#[range=user|net]#(~/.config/tmux/net.sh)#[norange]  ,}}#{?#{e|<:#{client_width},110},,#{?@batt,#[bg=default]#(~/.config/tmux/battery.sh)  ,}}#{?#{e|<:#{client_width},110},,#{E:@seg_date}}#{E:@seg_time}#({{ .chezmoi.homeDir }}/.local/share/canopy/plugins/tmux-continuum/scripts/continuum_save.sh)"
 
 # Honour a theme picked in an earlier session, overriding the defaults
 # canopy's 20-status sets.

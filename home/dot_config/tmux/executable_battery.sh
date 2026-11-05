@@ -19,7 +19,10 @@
 emoji() { printf -v h '%08X' "0x$1"; printf "\\U$h\\U0000FE0F"; }
 
 # Theme colours from tmux user options, falling back to gruvbox if unset.
-opt() { tmux show -gv "$1" 2>/dev/null; }
+# One tmux round-trip for all four, parsed here (as net.sh does): this runs on
+# every status redraw, per client, and each `tmux` call costs a process start.
+opts=$(tmux show -g 2>/dev/null)
+opt() { printf '%s\n' "$opts" | awk -v k="$1" '$1 == k { $1 = ""; sub(/^ /, ""); gsub(/^"|"$/, ""); print; exit }'; }
 blue=$(opt @theme_blue); blue=${blue:-#458588}
 bg=$(opt @theme_bg);     bg=${bg:-#fbf1c7}
 pl=$(opt @pill_l); pr=$(opt @pill_r)

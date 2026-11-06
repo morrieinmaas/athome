@@ -94,3 +94,8 @@ border_width       = 0.0
 start  = ["launcher", "workspaces"]
 center = ["clock"]
 end    = ["media", "tray", "notifications", "volume", "battery"]
+
+# The clock opens the control center on Home; the calendar moves to right-click.
+[widget.clock.actions]
+left  = "panel-toggle control-center"
+right = "panel-toggle control-center calendar"

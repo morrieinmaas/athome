@@ -36,6 +36,38 @@ pure_black_dark = false
 [shell]
 font_family = "Inter"
 
+# The six defaults plus Dark Mode (the macOS-style system-wide light/dark
+# switch) and Wallpaper, so the grid stays even. Night Light is only the
+# warm-colour filter; Dark Mode is what flips GTK/Qt, ghostty and nvim.
+[[control_center.shortcuts]]
+type = "wifi"
+
+[[control_center.shortcuts]]
+type = "bluetooth"
+
+[[control_center.shortcuts]]
+type = "caffeine"
+
+[[control_center.shortcuts]]
+type = "dark_mode"
+
+[[control_center.shortcuts]]
+type = "notification"
+
+[[control_center.shortcuts]]
+type = "power_profile"
+
+[[control_center.shortcuts]]
+type = "nightlight"
+
+[[control_center.shortcuts]]
+type = "wallpaper"
+
+# One wallpaper per mode: theme-wallpaper remembers what was showing in the
+# mode you leave and restores what you last had in the mode you enter.
+[hooks]
+theme_mode_changed = "$HOME/.local/bin/theme-wallpaper"
+
 [bar.default]
 position      = "top"
 thickness     = 34

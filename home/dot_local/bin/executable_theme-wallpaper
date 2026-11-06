@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# theme-wallpaper: keep one wallpaper per light/dark mode, per monitor.
+#
+# Noctalia runs this from its theme_mode_changed hook (see
+# ~/.config/noctalia/athome.toml) with NOCTALIA_THEME_MODE and
+# NOCTALIA_THEME_MODE_PREVIOUS set. On each switch it remembers the wallpapers
+# that were showing in the old mode, then puts back the ones last seen in the
+# new mode. To choose the dark wallpaper: switch to dark, pick one in
+# Noctalia's wallpaper panel, done. It comes back on every later switch.
+#
+# Memory lives in ~/.local/state/athome/wallpaper/<mode>, one
+# `<connector> <path>` per line (`default` for the all-outputs wallpaper).
+set -euo pipefail
+
+new="${NOCTALIA_THEME_MODE:-${1:-}}"
+old="${NOCTALIA_THEME_MODE_PREVIOUS:-}"
+[ -z "$new" ] && { echo "usage: theme-wallpaper <dark|light>" >&2; exit 1; }
+[ "$new" = "$old" ] && exit 0
+
+dir="${XDG_STATE_HOME:-$HOME/.local/state}/athome/wallpaper"
+mkdir -p "$dir"
+
+connectors() { niri msg outputs 2>/dev/null | awk -F'[()]' '/^Output/ {print $(NF-1)}'; }
+
+if [ -n "$old" ]; then
+  {
+    printf 'default %s\n' "$(noctalia msg wallpaper-get)"
+    for c in $(connectors); do
+      printf '%s %s\n' "$c" "$(noctalia msg wallpaper-get "$c")"
+    done
+  } > "$dir/$old.now"
+  # Keep entries for monitors that are unplugged right now.
+  touch "$dir/$old"
+  awk 'NR==FNR {seen[$1]=1; print; next} !($1 in seen)' "$dir/$old.now" "$dir/$old" > "$dir/$old.tmp"
+  mv "$dir/$old.tmp" "$dir/$old"
+  rm -f "$dir/$old.now"
+fi
+
+# Nothing remembered for this mode yet: leave the current wallpaper alone.
+[ -f "$dir/$new" ] || exit 0
+
+default="$(awk '$1 == "default" {sub(/^[^ ]+ /, ""); print}' "$dir/$new")"
+[ -f "$default" ] && noctalia msg wallpaper-set "$default" >/dev/null
+while read -r c path; do
+  [ "$c" = default ] && continue
+  [ -f "$path" ] && noctalia msg wallpaper-set "$c" "$path" >/dev/null
+done < "$dir/$new"

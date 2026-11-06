@@ -160,6 +160,9 @@ set -g window-status-format "#[fg=#{@theme_muted},bg=default] #I#{?#W, #W,} "
 # `underscore`, which underlined the current-window pill. Its look comes
 # entirely from the format below, so pin the style plain.
 set -g window-status-current-style default
+# The zoom magnifier (nerd-font U+F002). canopy ships a plain "+" inline and no
+# @pill_zoom, so define it here or the zoomed pill shows nothing.
+run-shell 'tmux set -g @pill_zoom "$(printf "\xef\x80\x82")"'
 set -g window-status-current-format "#[fg=#{@theme_yellow},bg=default]#{@pill_l}#[fg=#{@theme_fg},bg=#{@theme_yellow},bold] #I#{?#W, #W,}#{?window_zoomed_flag, #{@pill_zoom},} #[fg=#{@theme_yellow},bg=default,nobold]#{@pill_r}"
 
 set -g @pet 'on'

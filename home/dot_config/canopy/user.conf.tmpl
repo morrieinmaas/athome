@@ -106,6 +106,10 @@ set -g @claude_list_key   'A'
 set -g @sessionx-bind         's'
 set -g @sessionx-zoxide-mode  'on'
 set -g @sessionx-window-mode  'on'
+# alt-bspace sat one modifier away from plain backspace, so fixing a typo in
+# the query could kill a session. The action behind it is replaced too, see
+# sessionx.sh below.
+set -g @sessionx-bind-kill-session 'alt-x'
 
 if "test ! -d ~/.config/tmux/plugins/tpm" \
    "run 'git clone --depth 1 https://github.com/tmux-plugins/tpm ~/.config/tmux/plugins/tpm \
@@ -117,6 +121,18 @@ run '~/.config/tmux/plugins/tpm/tpm'
 # to sidebar-focus, which takes the send-prefix binding canopy's key table
 # declares; prefix o s still reaches the sidebar.
 bind C-s send-prefix
+
+# prefix s through our wrapper: kill asks first and kills the WINDOW on a
+# window line, rename and kill reload the window list, the header is words.
+# The plugin binds s itself while TPM loads, which is why this comes after.
+bind s run-shell '$HOME/.config/tmux/sessionx.sh'
+
+# Killing the session you are in moves you to the previous one instead of
+# exiting tmux (the default, `on`, detaches the client).
+set -g detach-on-destroy previous
+
+# Unnamed sessions are named after their repo or directory (session-name.sh).
+set-hook -g session-created "run-shell \"$HOME/.config/tmux/session-name.sh '#{hook_session_name}'\""
 
 # which-key rebuilds its menu after TPM re-sources it, so this has to wait
 # for that rather than run inline.

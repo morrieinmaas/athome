@@ -3,7 +3,7 @@
 #
 #   list          the picker's window list, one "session:index name" per line
 #   kill TARGET   kill a window ("work:2") or a whole session ("work")
-#   rename TARGET rename the session TARGET belongs to
+#   rename TARGET rename the session TARGET belongs to, in tmux's prompt
 #
 # Killing the session you are in is safe because detach-on-destroy is
 # `previous` (user.conf): the client moves to the session you were in before
@@ -28,12 +28,17 @@ kill_target() {
   fi
 }
 
+# Runs after the picker closes (the key binding aborts fzf) and opens tmux's
+# own prompt in the status line, prefilled with the current name: Esc cancels,
+# Enter renames and reopens the picker.
 rename_target() {
-  local session="${1%%:*}" name
+  local session="${1%%:*}" client
   tmux has-session -t "=$session" 2>/dev/null || return 0
-  printf 'Rename session "%s" to: ' "$session" >/dev/tty
-  read -r name </dev/tty
-  [[ -n "$name" ]] && tmux rename-session -t "=$session" "$name"
+  client="$(tmux show -gqv @sessionx-client)"
+  # -b: without it command-prompt blocks until answered, so fzf (whose popup
+  # covers the status line) would never get to close.
+  tmux command-prompt -b ${client:+-t "$client"} -I "$session" -p "rename session:" \
+    "rename-session -t '=$session' -- '%%' ; run-shell '$HOME/.config/tmux/sessionx.sh'"
 }
 
 case "${1:-}" in

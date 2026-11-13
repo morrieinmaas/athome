@@ -119,12 +119,15 @@ bind C-s send-prefix
 # window line, rename and kill reload the window list, the header is words.
 # sessionx binds @sessionx-bind (s) to its own script as it loads, so this
 # one canopy does not know about is re-asserted on attach: the plugins are
-# long loaded by then, the same key bound to the same command is idempotent,
-# and -ga appends rather than replacing whatever else wants the hook. The
-# plain binding stays as well, so `prefix s` works on a server whose plugins
-# never loaded.
+# long loaded by then, and the same key bound to the same command is
+# idempotent. The plain binding stays as well, so `prefix s` works on a
+# server whose plugins never loaded.
+#
+# -g, not -ga: an appending set adds another copy every time this file is
+# read, and `prefix r` reads it again, so the hook list grew without bound
+# across a session. Nothing else here wants client-attached.
 bind s run-shell '$HOME/.config/tmux/sessionx.sh'
-set-hook -ga client-attached "bind-key s run-shell '$HOME/.config/tmux/sessionx.sh'"
+set-hook -g client-attached "bind-key s run-shell '$HOME/.config/tmux/sessionx.sh'"
 
 # Killing the session you are in moves you to the previous one instead of
 # exiting tmux (the default, `on`, detaches the client).

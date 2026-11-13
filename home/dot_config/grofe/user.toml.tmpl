@@ -42,6 +42,13 @@ default-shell = "{{ . }}"
 # Run once the whole config is applied, at server start and on every reload,
 # after canopy's own load commands.
 load-commands = [
+  # prefix s through our wrapper: kill asks first and kills the WINDOW on a
+  # window line, rename and kill reload the window list, the header is words.
+  # sessionx binds @sessionx-bind (s) to its own script as the plugin layer
+  # loads it, which is before this runs, so this takes the key back. On tmux
+  # the same thing needs a client-attached hook (canopy/user.conf), because
+  # there user.conf is read before the loader rather than after it.
+  "bind-key s run-shell '$HOME/.config/tmux/sessionx.sh'",
   # which-key rebuilds its menu after the plugin layer sources it, so this
   # waits for that rather than running inline.
   "run-shell -b '$HOME/.config/tmux/wk-keys-fix.sh'",

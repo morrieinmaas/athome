@@ -11,11 +11,15 @@
 #   theme --current    # print the active theme
 #   theme --list       # list available themes
 #   theme --swatch <n> # print a colour preview (used by the picker's fzf preview)
+#   theme --preview <n> # recolour the live tmux + ghostty to <n>, leaving the
+#                      #   active theme alone (the picker runs it as the cursor moves)
 set -euo pipefail
 
 # display-popup / run-shell give a bare non-login shell — make sure fzf, tmux and
-# this script's deps resolve regardless of how we were launched.
-export PATH="$HOME/.local/share/mise/shims:/opt/homebrew/bin:/opt/nanobrew/prefix/bin:$HOME/.local/bin:/usr/bin:/bin:$PATH"
+# this script's deps resolve regardless of how we were launched. Appended, not
+# prepended: under grofe the `tmux` first on the inherited PATH is grofe, and the
+# real tmux in /opt/nanobrew cannot talk to grofe's server.
+export PATH="$PATH:$HOME/.local/share/mise/shims:/opt/homebrew/bin:/opt/nanobrew/prefix/bin:$HOME/.local/bin:/usr/bin:/bin"
 
 dir="${HOME}/.config/themes"
 # shellcheck source=/dev/null
@@ -42,20 +46,38 @@ swatch() {
   printf '\n\n  ghostty : %s\n  nvim    : %s\n' "$g" "$(theme_nvim "$name")"
 }
 
+# Recolour the live ghostty and tmux to $1. ghostty gets the unmanaged override
+# its config loads last (`config-file = ?theme`), then hot-reloads on SIGUSR2;
+# never touch the chezmoi-managed config itself, that made every later apply
+# fight the pick. tmux gets its pill palette via apply-tmux.sh.
+paint() {
+  if [ -d "${HOME}/.config/ghostty" ]; then
+    printf 'theme = %s\n' "$(theme_ghostty "$1")" > "${HOME}/.config/ghostty/theme"
+    pkill -USR2 -x ghostty 2>/dev/null || true
+  fi
+  if command -v tmux >/dev/null 2>&1 && tmux info >/dev/null 2>&1; then
+    "$dir/apply-tmux.sh" "$1" || true
+  fi
+}
+
 case "${1:-}" in
   --current) current; exit 0 ;;
   --list)    printf '%s\n' $THEME_LIST; exit 0 ;;
   --swatch)  swatch "${2:-$(current)}"; exit 0 ;;
+  --preview) case " $THEME_LIST " in *" ${2:-} "*) paint "$2" ;; esac; exit 0 ;;
 esac
 
 name="${1:-}"
 if [ -z "$name" ]; then
   command -v fzf >/dev/null || { echo "fzf not found — usage: theme <name>" >&2; exit 1; }
   height=40%; [ -n "${THEME_POPUP:-}" ] && height=100%   # fill the tmux popup
+  was="$(current)"
+  # Moving the cursor previews the theme live; Esc puts the active one back.
   name="$(printf '%s\n' $THEME_LIST | fzf \
             --prompt='theme> ' --height="$height" --reverse --no-multi \
-            --header="current: $(current)  ·  enter = ghostty + tmux + nvim" \
-            --preview "$self --swatch {}" --preview-window='down,9,wrap')" || exit 0
+            --header="current: $was  ·  move = preview  ·  enter = keep  ·  esc = back" \
+            --bind "focus:execute-silent($self --preview {})" \
+            --preview "$self --swatch {}" --preview-window='down,9,wrap')" || { paint "$was"; exit 0; }
 fi
 [ -z "$name" ] && exit 0
 
@@ -67,18 +89,8 @@ esac
 mkdir -p "$dir"
 printf '%s\n' "$name" > "$dir/active"   # nvim fs-watches this dir; tmux.conf reads it on start
 
-# ── ghostty: write the unmanaged override its config loads last (`config-file =
-#    ?theme`), then hot-reload via SIGUSR2. Never touch the chezmoi-managed
-#    config itself — that made every later apply fight the pick. ──
-if [ -d "${HOME}/.config/ghostty" ]; then
-  printf 'theme = %s\n' "$(theme_ghostty "$name")" > "${HOME}/.config/ghostty/theme"
-  pkill -USR2 -x ghostty 2>/dev/null || true   # Ghostty reloads its config on SIGUSR2
-fi
-
-# ── tmux: recolour the running server's pills live ──
-if command -v tmux >/dev/null 2>&1 && tmux info >/dev/null 2>&1; then
-  "$dir/apply-tmux.sh" || true
-fi
+# ── ghostty + tmux: live ──
+paint "$name"
 
 # ── slk (Slack TUI): rewrite its [appearance] theme to the matching variant.
 #    slk reads config fresh per launch, so this lands on the next `prefix M`. ──

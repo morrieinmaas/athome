@@ -4,10 +4,12 @@
 # so the bar recolours immediately. Called two ways:
 #   • by tmux.conf on server start  (honours a theme picked in a previous session)
 #   • by the `theme` picker          (live switch in the current session)
+# With a name argument it applies that theme instead of the active one: the
+# picker's live preview, which leaves `active` alone.
 set -euo pipefail
 
 dir="${HOME}/.config/themes"
-name="$(cat "$dir/active" 2>/dev/null || echo gruvbox)"
+name="${1:-$(cat "$dir/active" 2>/dev/null || echo gruvbox)}"
 
 # shellcheck source=/dev/null
 . "$dir/registry.sh"

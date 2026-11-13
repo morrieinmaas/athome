@@ -18,7 +18,18 @@
 # exit makes it idempotent AND self-healing: it no-ops fast once every tool is
 # present, and a later `czu` (after `gh auth login` clears a rate limit) finishes
 # the install on its own.
+#
+# ATHOME_SKIP_MISE=1 skips the whole step, for a disposable container that
+# brings its own tools and has no GitHub token: without one, the anonymous API
+# limit (60 requests an hour) fails the install part way. A container that
+# does want the tools can pass a no-scope GITHUB_TOKEN instead, which mise
+# reads from the environment as it does anywhere else.
 set -euo pipefail
+
+if [ -n "${ATHOME_SKIP_MISE:-}" ]; then
+  echo "ATHOME_SKIP_MISE: skipping mise and its tools ($(basename "$0"))"
+  exit 0
+fi
 
 if ! command -v mise >/dev/null 2>&1; then
   echo "==> installing mise via mise.run"

@@ -184,3 +184,22 @@ claude-org() {
 
 cmo()  { command claude --continue "$@"; }
 corg() { CLAUDE_CONFIG_DIR="$HOME/.claude-org" command claude --continue "$@"; }
+
+# A bare `grofe` or `tmux` attaches to the most recently used session, and
+# with no server lets grofe start one, which restores the snapshot and attaches
+# to the restored session used last. A fresh numbered session per call
+# hid the restored ones behind an empty window, and those piled up and came
+# back on every restore. Inside a pane a bare `grofe` switches to `home`
+# instead, since attaching would draw one grofe inside another. Any arguments
+# pass straight through.
+grofe() {
+  if (( $# )); then command grofe "$@"
+  elif [[ -n $TMUX || -n $GROFE_PANE ]]; then
+    command grofe has-session -t '=home' 2>/dev/null || command grofe new-session -d -s home
+    command grofe switch-client -t '=home'
+  else command grofe attach-session 2>/dev/null || command grofe; fi
+}
+tmux() {
+  if (( $# )) || [[ -n $TMUX || -n $GROFE_PANE ]]; then command tmux "$@"
+  else command tmux attach-session 2>/dev/null || command tmux; fi
+}

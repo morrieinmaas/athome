@@ -48,6 +48,16 @@ theme = dark:Gruvbox Dark,light:Gruvbox Light
 window-padding-x = 8
 window-padding-y = 4
 
+# ── Transparency ───────────────────────────────────────────────────────────
+# 15% through to whatever is behind the window. It reaches all the way down
+# because nothing above it paints an opaque layer: the status bars in
+# canopy/user.conf and grofe/user.toml set `bg=default`, no window-style is
+# set, and grofe reads `default` (and `terminal`) as no colour at all, so the
+# cells neither multiplexer owns are drawn by Ghostty and stay see-through
+# under tmux and grofe alike. A program that paints its own background inside
+# a pane is opaque by its own choice, not this file's.
+background-opacity = 0.85
+
 scrollback-limit = 25000000
 
 copy-on-select = false

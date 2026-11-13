@@ -53,7 +53,10 @@ swatch() {
 paint() {
   if [ -d "${HOME}/.config/ghostty" ]; then
     printf 'theme = %s\n' "$(theme_ghostty "$1")" > "${HOME}/.config/ghostty/theme"
-    pkill -USR2 -x ghostty 2>/dev/null || true
+    # By PID from ps: macOS pgrep/pkill do not see Ghostty's process, so
+    # `pkill -x ghostty` signalled nothing and only tmux recoloured.
+    ps -axo pid=,comm= | awk '$2 ~ /\/ghostty$/ || $2 == "ghostty" {print $1}' \
+      | xargs kill -USR2 2>/dev/null || true
   fi
   if command -v tmux >/dev/null 2>&1 && tmux info >/dev/null 2>&1; then
     "$dir/apply-tmux.sh" "$1" || true

@@ -42,8 +42,23 @@ set -g default-shell "{{ . }}"
 # none of them could ship in a distribution.
 #
 # The mise shims are called by ABSOLUTE path on purpose: display-popup runs
-# its command in the tmux SERVER's environment, which never sourced a shell
-# rc, so the shims dir is not on PATH there.
+# its command in the tmux SERVER's environment, and that environment is a
+# snapshot of whichever shell first started the server, never refreshed.
+#
+# This comment used to say the shims dir "is not on PATH there", and that
+# was simply wrong: it IS, because the shell that started the server had it.
+# The error was expensive. It is the reason nobody looked at the server's
+# PATH when `prefix r` started taking 32 seconds, which turned out to be a
+# stale mise `tmux` shim (left behind by canopy's own mise.toml, which
+# installs tmux for its test suite) answering every one of the hundreds of
+# bare `tmux` calls a plugin load makes, at 134ms each instead of 5.8ms.
+# canopy fixes that itself now, in conf.d/00-core.conf, by putting a symlink
+# to the running server's own binary first on the server's PATH; `canopy
+# doctor` reports it as "bare tmux in a server job".
+#
+# Absolute paths here are still right, and now for the stated reason rather
+# than a wrong one: what the server's PATH holds depends on how the server
+# happened to start, so naming the file removes the question.
 
 bind B run-shell '$HOME/.local/bin/cockpit'
 bind g display-popup -E -w 95% -h 90% '$HOME/.config/themes/apply-ghdash.sh 2>/dev/null; exec $HOME/.local/share/mise/shims/gh-dash'

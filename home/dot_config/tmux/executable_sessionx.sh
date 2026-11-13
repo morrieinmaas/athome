@@ -20,7 +20,13 @@
 # The plugin's git checkout itself is never touched.
 set -uo pipefail
 
-plugin="$HOME/.config/tmux/plugins/tmux-sessionx/scripts/sessionx.sh"
+# canopy vendors the plugins and loads them itself, so the plugin lives in
+# canopy's store rather than in TPM's ~/.config/tmux/plugins, which is gone.
+plugin="$HOME/.local/share/canopy/plugins/tmux-sessionx/scripts/sessionx.sh"
+if [[ ! -x "$plugin" ]]; then
+  tmux display-message "sessionx: not in canopy's store ($plugin)"
+  exit 0
+fi
 act="$HOME/.config/tmux/sessionx-actions.sh"
 kill_key="$(tmux show -gqv @sessionx-bind-kill-session)"
 rename_key="$(tmux show -gqv @sessionx-bind-rename-session)"

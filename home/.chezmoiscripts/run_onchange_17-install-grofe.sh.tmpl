@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+# Put grofe on this machine, answering to the name tmux.
+#
+# grofe is a terminal multiplexer that answers tmux's command line, so
+# canopy, the plugins and every script that calls `tmux` run on it unchanged.
+# It goes into ~/.local/lib/grofe:
+#
+#   grofe        the binary
+#   bin/grofe    a symlink to it
+#   bin/tmux     a symlink to it; grofe run under the name tmux speaks tmux
+#
+# ~/.zsh/path.zsh puts bin/ first on PATH, and canopy-tmux.service puts it first on
+# the unit's PATH, so `tmux` is grofe in a shell and at login. The real tmux
+# stays where the package manager put it.
+#
+# Going back to it is the bin/tmux symlink and nothing else: without it that
+# directory holds only `grofe`, and the real tmux further along PATH answers
+# every `tmux` again, in a shell and in the unit alike. `mux tmux` removes it
+# and `mux grofe` puts it back (~/.local/bin/mux).
+#
+# ~/.config/athome/no-grofe is how that choice survives this script: present,
+# the symlink is not made, so a `chezmoi apply` on a machine switched back to
+# tmux leaves it switched back. It is per-machine and gitignored, the same
+# place as extra-packages. grofe itself is still installed and still runs as
+# `grofe`; only the tmux identity is withheld.
+#
+# Where the binary comes from, first match wins:
+#
+#   ATHOME_GROFE_BIN=<path>   a binary already built, copied as it is. Nothing
+#                             is downloaded or built (the alias-day container
+#                             test sets it to the grofe it built)
+#   cargo                     `cargo install` at the pinned ref below
+#
+# run_onchange, keyed on the pinned ref: change it, and the next `chezmoi
+# apply` installs that grofe. Bumping it is two edits, this comment and ref=.
+#
+# grofe ref: {{ "8ec90b33356ed11e98b3b3934c4171f37f8e73e5" }}
+set -euo pipefail
+
+ref="8ec90b33356ed11e98b3b3934c4171f37f8e73e5"
+repo="https://github.com/morrieinmaas/grofe.git"
+dest="${HOME}/.local/lib/grofe"
+
+mkdir -p "${dest}/bin"
+if [ -n "${ATHOME_GROFE_BIN:-}" ]; then
+  if [ ! -x "${ATHOME_GROFE_BIN}" ]; then
+    printf 'grofe: ATHOME_GROFE_BIN=%s is not an executable file\n' "${ATHOME_GROFE_BIN}" >&2
+    exit 1
+  fi
+  printf 'grofe: installing %s\n' "${ATHOME_GROFE_BIN}"
+  install -m 755 "${ATHOME_GROFE_BIN}" "${dest}/grofe.new"
+elif ! command -v cargo >/dev/null 2>&1; then
+  printf 'grofe: no ATHOME_GROFE_BIN and no cargo, so grofe is not installed; tmux stays tmux\n' >&2
+  exit 0
+elif ! GIT_TERMINAL_PROMPT=0 git ls-remote --exit-code "${repo}" HEAD >/dev/null 2>&1; then
+  # grofe's repository is private for now: a machine (or CI) that cannot
+  # read it keeps tmux instead of failing the whole apply.
+  printf 'grofe: cannot reach %s, so grofe is not installed; tmux stays tmux\n' "${repo}" >&2
+  exit 0
+else
+  printf 'grofe: building %s at %s\n' "${repo}" "${ref}"
+  cargo install --quiet --locked --git "${repo}" --rev "${ref}" --root "${dest}/build" grofe
+  install -m 755 "${dest}/build/bin/grofe" "${dest}/grofe.new"
+fi
+# Moved into place, so a running server's next exec never sees half a file.
+mv -f "${dest}/grofe.new" "${dest}/grofe"
+ln -sfn ../grofe "${dest}/bin/grofe"
+
+if [ -e "${HOME}/.config/athome/no-grofe" ]; then
+  rm -f "${dest}/bin/tmux"
+  printf 'grofe: %s, installed but not answering to tmux (~/.config/athome/no-grofe; `mux grofe` undoes that)\n' \
+    "$("${dest}/grofe" -V)"
+else
+  ln -sfn ../grofe "${dest}/bin/tmux"
+  printf 'grofe: %s, answering to tmux as: %s\n' "$("${dest}/grofe" -V)" "$("${dest}/bin/tmux" -V)"
+fi

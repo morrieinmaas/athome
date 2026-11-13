@@ -14,6 +14,13 @@
 # before any conf.d fragment loads, so canopy's status source and scripts
 # find them. $HOME is expanded from the server's own environment, so the
 # paths need no template.
+# Always grofe's own defaults and keys (pane gaps, rounded frames, grofe's
+# prefix table). Without this the name that starts the server decides, and a
+# server first started as `tmux` switches to tmux's stock look and keys for its
+# whole life, even for a `grofe` client. Scripts still find it through $TMUX
+# and the `tmux` link grofe puts on every pane's PATH under both identities.
+compat-identity = "grofe"
+
 [environment]
 CANOPY_STORE = "$HOME/.local/share/canopy"
 CANOPY_STATE = "$HOME/.local/state/canopy"

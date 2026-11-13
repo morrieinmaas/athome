@@ -28,7 +28,11 @@
 # while NetBird is connected, which is worse than no pill at all. It only looks
 # fine on a server that happened to inherit a login shell's PATH; one started by
 # launchd at boot will not have.
-export PATH="/opt/nanobrew/prefix/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+# Under grofe, the tmux this was started with (its own, which reaches grofe)
+# goes first; a tmux in a directory listed here is left where it is.
+tmux_dir=$(command -v tmux); tmux_dir=${tmux_dir%/*}
+case ":/opt/nanobrew/prefix/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin:" in *":$tmux_dir:"*) tmux_dir= ;; esac
+export PATH="${tmux_dir:+$tmux_dir:}/opt/nanobrew/prefix/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
 # Arch (and Fedora minimal) don't ship net-tools, so there is no `ifconfig` and
 # the address lookups below came back empty: the bar said "offline" on a live

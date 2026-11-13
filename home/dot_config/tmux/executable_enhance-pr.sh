@@ -11,7 +11,11 @@
 # PATH is set explicitly: display-popup runs in the tmux *server* environment,
 # which never sources ~/.zshenv, so the mise shims dir isn't on PATH there.
 set -uo pipefail
-export PATH="$HOME/.local/share/mise/shims:/opt/homebrew/bin:/opt/nanobrew/prefix/bin:$HOME/.local/bin:/usr/bin:/bin:$PATH"
+# Under grofe, the tmux this was started with (its own, which reaches grofe)
+# goes first; a tmux in a directory listed here is left where it is.
+tmux_dir=$(command -v tmux); tmux_dir=${tmux_dir%/*}
+case ":$HOME/.local/share/mise/shims:/opt/homebrew/bin:/opt/nanobrew/prefix/bin:$HOME/.local/bin:/usr/bin:/bin:" in *":$tmux_dir:"*) tmux_dir= ;; esac
+export PATH="${tmux_dir:+$tmux_dir:}$HOME/.local/share/mise/shims:/opt/homebrew/bin:/opt/nanobrew/prefix/bin:$HOME/.local/bin:/usr/bin:/bin:$PATH"
 
 num="$(gh pr view --json number -q .number 2>/dev/null || true)"
 if [ -n "$num" ]; then

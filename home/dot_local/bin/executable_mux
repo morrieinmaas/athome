@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+# mux — which multiplexer `tmux` means: grofe, or the real tmux.
+#
+# grofe lives in ~/.local/lib/grofe (run_onchange_17-install-grofe), and the
+# symlink bin/tmux beside the binary is the whole switch. ~/.zsh/path.zsh puts
+# that bin/ first on PATH whenever the directory exists, and on Linux
+# canopy-tmux.service puts it first on the unit's PATH, so with the symlink
+# there every `tmux` is grofe, and without it that directory offers only
+# `grofe` and the real tmux further along PATH answers again.
+#
+# ~/.config/athome/no-grofe is how the choice survives `chezmoi apply`, which
+# would otherwise put the symlink back. Same per-machine, gitignored place as
+# extra-packages.
+#
+# A server that is already running is not switched by any of this: it keeps
+# the binary it was started with, and its panes keep running. So this says
+# what is left to do rather than doing it, because killing a server takes
+# every session's layout with it.
+set -euo pipefail
+
+lib="$HOME/.local/lib/grofe"
+flag="$HOME/.config/athome/no-grofe"
+
+running() {
+  # Asked of the server rather than of PATH: inside a pane this is the server
+  # that owns it, whichever binary is on PATH now.
+  tmux display-message -p '#{?grofe_version,grofe,tmux}' 2>/dev/null || true
+}
+
+status() {
+  if [ -e "$lib/bin/tmux" ]; then
+    printf 'a new shell gets: grofe (as tmux)\n'
+  elif [ -x "$lib/grofe" ]; then
+    printf 'a new shell gets: tmux%s\n' \
+      "$([ -e "$flag" ] && printf ' (switched back, ~/.config/athome/no-grofe)' || true)"
+  else
+    printf 'a new shell gets: tmux (no grofe installed)\n'
+  fi
+  printf 'this shell: %s\n' "$(command -v tmux || printf 'no tmux on PATH')"
+  server="$(running)"
+  [ -n "$server" ] && printf 'the server this pane is in: %s\n' "$server"
+  return 0
+}
+
+case "${1:-status}" in
+grofe)
+  if [ ! -x "$lib/grofe" ]; then
+    printf 'mux: no grofe at %s. Run chezmoi apply to install it.\n' "$lib/grofe" >&2
+    exit 1
+  fi
+  rm -f "$flag"
+  ln -sfn ../grofe "$lib/bin/tmux"
+  printf 'mux: grofe. Open a new shell for it.\n'
+  if [ "$(running)" = tmux ]; then
+    printf '  This pane is in a tmux server, which stays tmux until you kill it: tmux kill-server.\n'
+  fi
+  ;;
+tmux)
+  mkdir -p "$(dirname "$flag")"
+  : >"$flag"
+  rm -f "$lib/bin/tmux"
+  printf 'mux: tmux. Open a new shell for it.\n'
+  if [ "$(running)" = grofe ]; then
+    printf '  This pane is in a grofe server, which stays grofe until you kill it: tmux kill-server.\n'
+  fi
+  ;;
+status) status ;;
+*)
+  printf 'usage: mux [grofe|tmux|status]\n' >&2
+  exit 2
+  ;;
+esac

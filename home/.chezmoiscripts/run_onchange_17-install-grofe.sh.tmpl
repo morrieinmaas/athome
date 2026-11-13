@@ -11,7 +11,18 @@
 #
 # ~/.zsh/path.zsh puts bin/ first on PATH, and canopy-tmux.service puts it first on
 # the unit's PATH, so `tmux` is grofe in a shell and at login. The real tmux
-# stays where the package manager put it; taking bin/ off PATH goes back to it.
+# stays where the package manager put it.
+#
+# Going back to it is the bin/tmux symlink and nothing else: without it that
+# directory holds only `grofe`, and the real tmux further along PATH answers
+# every `tmux` again, in a shell and in the unit alike. `mux tmux` removes it
+# and `mux grofe` puts it back (~/.local/bin/mux).
+#
+# ~/.config/athome/no-grofe is how that choice survives this script: present,
+# the symlink is not made, so a `chezmoi apply` on a machine switched back to
+# tmux leaves it switched back. It is per-machine and gitignored, the same
+# place as extra-packages. grofe itself is still installed and still runs as
+# `grofe`; only the tmux identity is withheld.
 #
 # Where the binary comes from, first match wins:
 #
@@ -23,10 +34,10 @@
 # run_onchange, keyed on the pinned ref: change it, and the next `chezmoi
 # apply` installs that grofe. Bumping it is two edits, this comment and ref=.
 #
-# grofe ref: {{ "203ec153ac5dfb3506bddc9b9d1b355afb507134" }}
+# grofe ref: {{ "8ec90b33356ed11e98b3b3934c4171f37f8e73e5" }}
 set -euo pipefail
 
-ref="203ec153ac5dfb3506bddc9b9d1b355afb507134"
+ref="8ec90b33356ed11e98b3b3934c4171f37f8e73e5"
 repo="https://github.com/morrieinmaas/grofe.git"
 dest="${HOME}/.local/lib/grofe"
 
@@ -54,6 +65,12 @@ fi
 # Moved into place, so a running server's next exec never sees half a file.
 mv -f "${dest}/grofe.new" "${dest}/grofe"
 ln -sfn ../grofe "${dest}/bin/grofe"
-ln -sfn ../grofe "${dest}/bin/tmux"
 
-printf 'grofe: %s, answering to tmux as: %s\n' "$("${dest}/grofe" -V)" "$("${dest}/bin/tmux" -V)"
+if [ -e "${HOME}/.config/athome/no-grofe" ]; then
+  rm -f "${dest}/bin/tmux"
+  printf 'grofe: %s, installed but not answering to tmux (~/.config/athome/no-grofe; `mux grofe` undoes that)\n' \
+    "$("${dest}/grofe" -V)"
+else
+  ln -sfn ../grofe "${dest}/bin/tmux"
+  printf 'grofe: %s, answering to tmux as: %s\n' "$("${dest}/grofe" -V)" "$("${dest}/bin/tmux" -V)"
+fi

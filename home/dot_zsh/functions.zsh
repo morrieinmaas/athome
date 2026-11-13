@@ -152,3 +152,35 @@ claude() {
     command claude --session-id "$(uuidgen | tr 'A-Z' 'a-z')"
   fi
 }
+
+# ─── Second Claude Code account ────────────────────────────────────────────
+# Claude Code has no account switcher. Accounts are kept apart by
+# CLAUDE_CONFIG_DIR, which isolates the login as well as the settings: on macOS
+# each config dir gets its own Keychain entry, so the two logins do not
+# overwrite each other. Verified 2026-10-02: `claude auth status` reported
+# loggedIn=true for ~/.claude and loggedIn=false for a second dir, same shell.
+#
+#   claude      default account   (~/.claude)
+#   claude-org  second account    (~/.claude-org)
+#   cmo / corg  resume the last conversation under either account
+#
+# Everything except credentials is shared by symlink, projects/ included, so
+# `corg` picks up the very conversation `cmo` left off. See
+# ~/.claude-org/README.md for what is shared and how to undo it.
+#
+# NEVER use the in-session /login to switch. It overwrites the saved login for
+# that window's config dir. Quit the window and start the other command:
+# CLAUDE_CONFIG_DIR is read once, at process start.
+#
+# Each mirrors the session-id pinning in `claude` above; without it the pane
+# comes back from tmux-resurrect as a new conversation instead of this one.
+claude-org() {
+  if (( $# )); then
+    CLAUDE_CONFIG_DIR="$HOME/.claude-org" command claude "$@"
+  else
+    CLAUDE_CONFIG_DIR="$HOME/.claude-org" command claude --session-id "$(uuidgen | tr 'A-Z' 'a-z')"
+  fi
+}
+
+cmo()  { command claude --continue "$@"; }
+corg() { CLAUDE_CONFIG_DIR="$HOME/.claude-org" command claude --continue "$@"; }

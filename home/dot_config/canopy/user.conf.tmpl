@@ -87,15 +87,29 @@ set -g @sessionx-window-mode  'on'
 # sessionx.sh below.
 set -g @sessionx-bind-kill-session 'alt-x'
 
-# Re-assert what plugins clobber at load. opensessions hard-binds prefix C-s
-# to sidebar-focus, which takes the send-prefix binding canopy's key table
-# declares; prefix o s still reaches the sidebar.
+# Re-assert what plugins clobber at load.
+#
+# Both bindings below used to sit after `run .../tpm` in this very file, so
+# they already came after the plugins. canopy's loader runs them AFTER the
+# whole of user.conf instead, so a plain binding here is set first and then
+# taken by the plugin, which is the opposite of what these two lines are for.
+#
+# opensessions hard-binds prefix C-s to sidebar-focus, taking the send-prefix
+# binding canopy's key table declares. canopy puts that one back itself, after
+# its loader (tmux/tmux.conf), so this line is belt and braces for a server
+# where the loader did not run at all; prefix o s still reaches the sidebar.
 bind C-s send-prefix
 
 # prefix s through our wrapper: kill asks first and kills the WINDOW on a
 # window line, rename and kill reload the window list, the header is words.
-# The plugin binds s itself while TPM loads, which is why this comes after.
+# sessionx binds @sessionx-bind (s) to its own script as it loads, so this
+# one canopy does not know about is re-asserted on attach: the plugins are
+# long loaded by then, the same key bound to the same command is idempotent,
+# and -ga appends rather than replacing whatever else wants the hook. The
+# plain binding stays as well, so `prefix s` works on a server whose plugins
+# never loaded.
 bind s run-shell '$HOME/.config/tmux/sessionx.sh'
+set-hook -ga client-attached "bind-key s run-shell '$HOME/.config/tmux/sessionx.sh'"
 
 # Killing the session you are in moves you to the previous one instead of
 # exiting tmux (the default, `on`, detaches the client).

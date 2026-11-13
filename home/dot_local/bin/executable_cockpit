@@ -10,7 +10,9 @@
 # So cockpit auto-tracks that set instead of blindly trying all four and printing
 # a scary "✗ work (failed)" for a context this machine doesn't have.
 set -uo pipefail
-export PATH="/opt/nanobrew/prefix/bin:$HOME/.local/share/mise/shims:$PATH"
+# Appended, not prepended: run-shell PATH already has grofe's tmux first, and
+# real tmux in /opt/nanobrew cannot talk to grofe's server.
+export PATH="$PATH:$HOME/.local/share/mise/shims:/opt/nanobrew/prefix/bin"
 
 # Read a session's root dir straight from its smug config (single source of
 # truth), expanding a leading ~ / $HOME. Empty if the config is missing.

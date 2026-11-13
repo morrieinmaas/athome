@@ -7,7 +7,9 @@
 # Selecting attaches/switches if it exists, else creates (named after the dir).
 # Preview: live pane content for a session/window, dir listing for a dir.
 # run-shell has no ~/.zshenv — harden PATH for fd/fzf/eza/zoxide.
-export PATH="/opt/nanobrew/prefix/bin:$HOME/.local/share/mise/shims:$PATH"
+# Appended, not prepended: run-shell PATH already has grofe's tmux first, and
+# real tmux in /opt/nanobrew cannot talk to grofe's server.
+export PATH="$PATH:$HOME/.local/share/mise/shims:/opt/nanobrew/prefix/bin"
 
 list_sessions(){ tmux list-sessions -F '#S' 2>/dev/null; }
 list_windows(){

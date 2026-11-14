@@ -6,6 +6,10 @@
 #      short pane (e.g. a Claude session split).
 #   2. "+Keys ?" opens our searchable fzf popup (keys-popup.sh) instead of the
 #      non-searchable `list-keys -N` pager, so `prefix Space ?` matches `prefix ?`.
+#   3. On grofe, the root menu opens with grofe's scratchpads (S show or hide,
+#      a new, A choose), the same keys as prefix S, a and A. Each name is a
+#      #{?grofe_version,...} format, so on real tmux it expands empty and
+#      display-menu drops the item.
 #
 # which-key bakes the menu into the show-wk-menu / show-wk-menu-root command
 # aliases plus an inline copy in the `prefix Space` binding — NOT into
@@ -26,6 +30,12 @@ patch() {
       -e "s|list-keys -N|$popup|g"
 }
 
+scratch='"#{?grofe_version,Scratchpad: show or hide,}" S toggle-scratchpad'
+scratch+=' "#{?grofe_version,Scratchpad: new,}" a new-scratchpad'
+scratch+=' "#{?grofe_version,Scratchpads: choose,}" A choose-scratchpad'
+# The root menu's items start right after its quoted title.
+patch_root() { sed -E "s/(-T '[^']*') /\1 $scratch /"; }
+
 aliases() { tmux show -gv command-alias 2>/dev/null; }
 # Wait for which-key's own build: its root alias still at -x R -y P. On a
 # reload the alias patched last time is already there, and which-key
@@ -44,6 +54,7 @@ for i in "${!idx[@]}"; do
   v="${val[$i]}"
   [[ "$v" == show-wk-menu* ]] || continue
   new="$(printf '%s' "$v" | patch)"
+  [[ "$v" == show-wk-menu-root=* ]] && new="$(printf '%s' "$new" | patch_root)"
   [[ "$new" != "$v" ]] && tmux set -g "command-alias[${idx[$i]}]" "$new"
 done
 

@@ -1,0 +1,21 @@
+#!/bin/sh
+# Claude Code SessionStart hook: tells grofe how to bring this conversation
+# back, so a grofe restart resumes it in its pane instead of leaving a shell.
+# It runs on startup, resume and clear alike, so the pane always names the
+# current session. Outside a grofe pane it does nothing.
+#
+# Registered in ~/.claude/settings.json (and ~/.claude-org/settings.json) as
+# a SessionStart command hook. It never fails the session: every path exits 0.
+[ -n "${GROFE_PANE:-}" ] || exit 0
+id="$(jq -r '.session_id // empty' 2>/dev/null)"
+case "$id" in
+  "" | *[!0-9a-f-]*) exit 0 ;;
+esac
+grofe="$(command -v grofe || echo "$HOME/.local/lib/grofe/grofe")"
+# The org account keeps its conversations under its own config dir.
+if [ -n "${CLAUDE_CONFIG_DIR:-}" ]; then
+  "$grofe" pane-set-resume -- env "CLAUDE_CONFIG_DIR=$CLAUDE_CONFIG_DIR" claude --resume "$id" >/dev/null 2>&1
+else
+  "$grofe" pane-set-resume -- claude --resume "$id" >/dev/null 2>&1
+fi
+exit 0

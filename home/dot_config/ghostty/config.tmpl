@@ -108,10 +108,11 @@ cursor-text = cell-background
 # Readability across every theme, light ones above all. Light themes keep
 # the dark-background palette's greys for dim and secondary text, so they
 # come out pale grey on cream. Ghostty corrects nothing by default
-# (minimum-contrast 1); 3 is its own threshold for readable text, and only
-# colours below it move towards black or white. Faint text (Claude Code's
-# secondary lines) is drawn at half opacity by default, on top of that grey.
-minimum-contrast = 3
+# (minimum-contrast 1). 1.5 rescues text close to invisible and leaves the
+# accents alone; 3 pulled most light-theme accents towards black and the
+# text went monochrome. Faint text (Claude Code's secondary lines) is drawn
+# at half opacity by default, on top of that grey.
+minimum-contrast = 1.5
 faint-opacity = 0.75
 
 # Runtime theme override written by `theme` (~/.local/bin/theme). Kept in its

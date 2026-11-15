@@ -49,9 +49,6 @@ load-commands = [
   # the same thing needs a client-attached hook (canopy/user.conf), because
   # there user.conf is read before the loader rather than after it.
   "bind-key s run-shell '$HOME/.config/tmux/sessionx.sh'",
-  # which-key rebuilds its menu after the plugin layer sources it, so this
-  # waits for that rather than running inline.
-  "run-shell -b '$HOME/.config/tmux/wk-keys-fix.sh'",
   # Honour a theme picked in an earlier session, over canopy's defaults.
   """if-shell '[ -r ~/.config/themes/active ]' 'run-shell "~/.config/themes/apply-tmux.sh"'""",
 ]
@@ -59,8 +56,6 @@ load-commands = [
 # --- the plugins' settings -----------------------------------------------------
 [user-options]
 fzf-url-history-limit = "2000"
-claude_launch_key = "a"
-claude_list_key = "A"
 sessionx-bind = "s"
 sessionx-zoxide-mode = "on"
 sessionx-window-mode = "on"

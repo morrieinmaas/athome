@@ -120,15 +120,27 @@ func TestImportFromMissingDir(t *testing.T) {
 	}
 }
 
-func TestKeyNoPubDeriveFailureWarns(t *testing.T) {
+// V7: a passphrase key whose .pub cannot be derived logs once, is no warning,
+// and the step counts as done, so a second run applies nothing (B parity).
+func TestKeyNoPubDeriveFailureOnlyLogs(t *testing.T) {
 	fx := newFixture(t)
 	fx.PutKey("PRIV", "")
 	fx.Fake.On("ssh-keygen", "-y", "-f", keyPath(fx)).Return(run.Result{Code: 1, Stderr: "incorrect passphrase"})
 	if _, err := fx.Exec(steps.SSHKey()); err != nil {
 		t.Fatalf("a passphrase key whose .pub cannot be derived must not fail the run: %v", err)
 	}
-	if fx.Env.Warnings != 1 {
-		t.Errorf("Warnings = %d, want 1", fx.Env.Warnings)
+	if fx.Env.Warnings != 0 {
+		t.Errorf("Warnings = %d, an underivable .pub only logs", fx.Env.Warnings)
+	}
+	if n := strings.Count(fx.Log.String(), "could not derive the public key"); n != 1 {
+		t.Errorf("the failure is logged %d times, want once:\n%s", n, fx.Log)
+	}
+	rep, err := fx.Exec(steps.SSHKey())
+	if err != nil {
+		t.Fatalf("second run: %v", err)
+	}
+	if len(rep.Applied) != 0 {
+		t.Errorf("second run applied %v, want nothing", rep.Applied)
 	}
 }
 

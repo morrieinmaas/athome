@@ -227,17 +227,28 @@ func skKeygenApply(ctx context.Context, env *Env) error {
 	return nil
 }
 
-// skPubCheck: a private key without .pub gets its .pub back.
+// skPubCheck: a private key without .pub gets its .pub back. A key whose .pub
+// cannot be derived (a passphrase key without a tty) is logged once and counts
+// as done, as in bash, so a rerun does not apply the step again.
 func skPubCheck(ctx context.Context, env *Env) (bool, error) {
 	key := skKeyPath(ctx, env)
-	return !fileExists(key) || fileExists(key+".pub"), nil
+	if !fileExists(key) || fileExists(key+".pub") {
+		return true, nil
+	}
+	res, err := env.Run.Run(ctx, run.Cmd{Name: "ssh-keygen", Args: []string{"-y", "-f", key}})
+	if err == nil && res.Code == 0 {
+		return false, nil
+	}
+	if err == nil {
+		err = fmt.Errorf("ssh-keygen -y -f %s failed: %s", key, strings.TrimSpace(res.Stderr))
+	}
+	envLogln(env, "could not derive the public key: %v", err)
+	return true, nil
 }
 
-// skPubApply carries on when the .pub cannot be derived (a passphrase key
-// without a tty), as bash does.
+// skPubApply writes the .pub the check just saw derive. A failure only logs.
 func skPubApply(ctx context.Context, env *Env) error {
 	if err := skDerivePub(ctx, env, skKeyPath(ctx, env)); err != nil {
-		env.Warnings++
 		envLogln(env, "could not derive the public key: %v", err)
 	}
 	return nil

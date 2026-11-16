@@ -223,6 +223,21 @@ func TestChezmoiInstall(t *testing.T) {
 	})
 }
 
+// S8: a chezmoi that an earlier run left in ~/.local/bin is installed.
+func TestChezmoiInstalledInLocalBin(t *testing.T) {
+	t.Setenv("PATH", "/usr/bin")
+	fx := newFixture(t)
+	bin := fx.Path(".local", "bin")
+	writeFile(t, filepath.Join(bin, "chezmoi"), "#!/bin/sh\n", 0o755)
+	fx.MustExec(steps.Prepare())
+	if fx.mentions("get.chezmoi.io") {
+		t.Errorf("~/.local/bin/chezmoi exists, installer must not run:\n%s", fx.dump())
+	}
+	if got := os.Getenv("PATH"); !strings.HasPrefix(got, bin+":") {
+		t.Errorf("PATH = %q, want ~/.local/bin first", got)
+	}
+}
+
 // The sudo keep-alive is not a step (B:326-338): the CLI starts it before the run.
 func TestSudoIsNotAStep(t *testing.T) {
 	for _, s := range steps.All() {
@@ -276,13 +291,13 @@ func TestStartSudo(t *testing.T) {
 			t.Errorf("no keep-warm after a refusal:\n%s", fx.dump())
 		}
 	})
-	t.Run("darwin with nanobrew needs no sudo", func(t *testing.T) {
+	t.Run("darwin with nanobrew still asks, as bash does", func(t *testing.T) {
 		fx := newFixture(t)
 		fx.Env.OS = "darwin"
 		fx.Fake.Have("nb")
 		steps.StartSudo(context.Background(), fx.Env)()
-		if fx.called("sudo") {
-			t.Errorf("nb installs without sudo:\n%s", fx.dump())
+		if !fx.called("sudo", "-v") {
+			t.Errorf("bash runs sudo -v on every OS (B:333):\n%s", fx.dump())
 		}
 	})
 	t.Run("darwin without nanobrew needs sudo", func(t *testing.T) {

@@ -412,3 +412,21 @@ func TestGeneratedKeyIsNotForceUploaded(t *testing.T) {
 		t.Errorf("want the note %q, got:\n%s", want, fx.Log)
 	}
 }
+
+// S11: B:629-632, the IdentitiesOnly note when SSH does not use the registered key.
+func TestLocalKeyOnGitHubNote(t *testing.T) {
+	fx := ghFixture(t)
+	other := "AAAAC3NzaC1lZDI1NTE5AAAAIotherkeyblob"
+	writeFile(t, fx.Path(".ssh", "elsewhere_ed25519.pub"), "ssh-ed25519 "+other+" me\n", 0o644)
+	fx.Fake.On("gh", apiUserKeys...).Return(run.Result{Stdout: "ssh-ed25519 " + other + "\n"})
+	fx.MustExec(steps.GitHub())
+	log := fx.Log.String()
+	for _, want := range []string{
+		"note: SSH to github.com uses " + testHost + "_ed25519 per ~/.ssh/config; if `git push` over",
+		"SSH fails, point github.com at elsewhere_ed25519 or upload " + testHost + "_ed25519.",
+	} {
+		if !strings.Contains(log, want) {
+			t.Errorf("log lacks %q:\n%s", want, log)
+		}
+	}
+}

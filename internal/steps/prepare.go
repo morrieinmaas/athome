@@ -143,13 +143,10 @@ func prepWorktreeApply(ctx context.Context, env *Env) error {
 var sudoInterval = 60 * time.Second
 
 // StartSudo ports B:326-338: one `sudo -v`, then a loop that keeps the
-// credentials warm until the returned stop func is called. It does nothing on a
-// darwin machine that installs with nanobrew, which needs no sudo. This is not a
-// step: it has no state to check, and a refused sudo is a note, not a warning.
+// credentials warm until the returned stop func is called, on every OS like
+// bash. This is not a step: it has no state to check, and a refused sudo is a
+// note, not a warning.
 func StartSudo(ctx context.Context, env *Env) (stop func()) {
-	if env.OS == "darwin" && nanobrewInstalled(env) {
-		return func() {}
-	}
 	envLogln(env, "==> caching sudo credentials (one prompt, kept warm for the whole run)")
 	res, err := env.Run.Run(ctx, run.Cmd{Name: "sudo", Args: []string{"-v"}})
 	if err != nil || res.Code != 0 {
@@ -176,6 +173,12 @@ func StartSudo(ctx context.Context, env *Env) (stop func()) {
 }
 
 func prepChezmoiCheck(_ context.Context, env *Env) (bool, error) {
+	// A chezmoi a previous run put in ~/.local/bin counts, and must be findable.
+	local := filepath.Join(env.Home, ".local", "bin")
+	if fileExists(filepath.Join(local, "chezmoi")) {
+		prependPath(local)
+		return true, nil
+	}
 	_, err := env.Run.LookPath("chezmoi")
 	return err == nil, nil
 }
@@ -194,6 +197,14 @@ func prepInstallChezmoi(ctx context.Context, env *Env) error {
 	if res.Code != 0 {
 		return fmt.Errorf("chezmoi installer failed: %s", strings.TrimSpace(res.Stderr))
 	}
-	os.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	prependPath(bin)
 	return nil
+}
+
+func prependPath(dir string) {
+	path := os.Getenv("PATH")
+	if path == dir || strings.HasPrefix(path, dir+string(os.PathListSeparator)) {
+		return
+	}
+	os.Setenv("PATH", dir+string(os.PathListSeparator)+path)
 }

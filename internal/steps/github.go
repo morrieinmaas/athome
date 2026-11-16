@@ -105,6 +105,11 @@ func ghDecide(ctx context.Context, env *Env) ghPlan {
 		p.mode = ghRegistered
 	} else if existing := ghLocalKeyOnGitHub(ctx, env); existing != "" {
 		envLogf(env, "A local SSH key is already on GitHub (%s), skipping upload.\n", filepath.Base(existing))
+		// B:625-632: the github.com block pins this host's key with IdentitiesOnly,
+		// and the probe above just showed ssh does not authenticate with it.
+		hostKey := filepath.Base(strings.TrimSuffix(p.pub, ".pub"))
+		envLogf(env, "    note: SSH to github.com uses %s per ~/.ssh/config; if `git push` over\n", hostKey)
+		envLogf(env, "          SSH fails, point github.com at %s or upload %s.\n", strings.TrimSuffix(filepath.Base(existing), ".pub"), hostKey)
 		p.mode = ghRegistered
 	} else {
 		p.mode = ghUpload

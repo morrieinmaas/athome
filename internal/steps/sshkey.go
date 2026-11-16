@@ -139,7 +139,12 @@ func skImportBWCheck(ctx context.Context, env *Env) (bool, error) {
 		return true, nil
 	}
 	// An existing key is never overwritten.
-	return fileExists(skKeyPath(ctx, env)), nil
+	key := skKeyPath(ctx, env)
+	if fileExists(key) {
+		envLogln(env, "existing key kept at %s; move it away and rerun to restore from Bitwarden", key)
+		return true, nil
+	}
+	return false, nil
 }
 
 func skImportBWApply(ctx context.Context, env *Env) error {

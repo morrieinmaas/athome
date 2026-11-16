@@ -167,6 +167,20 @@ func TestImportBW(t *testing.T) {
 			t.Errorf("rbw is not installed, must not be called:\n%s", fx.dump())
 		}
 	})
+	t.Run("an existing key is kept and the log says how to restore", func(t *testing.T) {
+		fx := newFixture(t)
+		fx.Fake.Have("rbw")
+		fx.PutKey("OLD", localPub)
+		fx.Env.Opts.ImportSSHBW = item
+		fx.MustExec(steps.SSHKey())
+		if fx.called("rbw", "get") || readFile(t, keyPath(fx)) != "OLD" {
+			t.Errorf("an existing key must never be overwritten:\n%s", fx.dump())
+		}
+		want := "existing key kept at " + keyPath(fx) + "; move it away and rerun to restore from Bitwarden"
+		if !strings.Contains(fx.Log.String(), want) {
+			t.Errorf("log lacks %q:\n%s", want, fx.Log)
+		}
+	})
 	t.Run("empty note leaves no key behind", func(t *testing.T) {
 		fx := newFixture(t)
 		fx.Fake.Have("rbw")

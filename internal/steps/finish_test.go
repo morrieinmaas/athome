@@ -99,7 +99,7 @@ func bwSetupFixture(t *testing.T) (*fixture, string) {
 }
 
 func TestBitwardenNonInteractive(t *testing.T) {
-	t.Run("rbw not set up: no bw-setup", func(t *testing.T) {
+	t.Run("rbw not set up: setup script not run", func(t *testing.T) {
 		fx, bw := bwSetupFixture(t)
 		fx.Fake.Have("rbw")
 		fx.Fake.On("rbw", "unlocked").Return(run.Result{Code: 1})

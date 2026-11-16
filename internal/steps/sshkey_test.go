@@ -298,3 +298,16 @@ func TestBWCopyOnlyFresh(t *testing.T) {
 		}
 	})
 }
+
+// The key host falls back to the same short hostname the GitHub step uses
+// (B:93-101), so both steps agree on the key name.
+func TestKeyHostFallbackMatchesShortHostname(t *testing.T) {
+	t.Setenv("HOSTNAME", "fallbackbox.example.org")
+	fx := newFixture(t)
+	fx.Fake.On("chezmoi", "execute-template", "{{ .chezmoi.hostname }}").Return(run.Result{Code: 1})
+	fx.MustExec(steps.SSHKey())
+	want := fx.Path(".ssh", "fallbackbox_ed25519")
+	if calls := fx.callsTo("ssh-keygen", "-t", "ed25519", "-f", want); len(calls) != 1 {
+		t.Errorf("want ssh-keygen -f %s:\n%s", want, fx.dump())
+	}
+}

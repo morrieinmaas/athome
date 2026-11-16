@@ -13,34 +13,8 @@ import (
 	"github.com/morrieinmaas/athome/internal/run"
 )
 
-func skLog(env *Env, format string, args ...any) {
-	if env.Log != nil {
-		fmt.Fprintf(env.Log, format+"\n", args...)
-	}
-}
-
-// skKeyHost ports B:352-354: chezmoi's hostname, else the short hostname.
-func skKeyHost(ctx context.Context, env *Env) string {
-	res, err := env.Run.Run(ctx, run.Cmd{Name: "chezmoi", Args: []string{"execute-template", "{{ .chezmoi.hostname }}"}})
-	if err == nil && res.Code == 0 {
-		if h := strings.TrimSpace(res.Stdout); h != "" {
-			return h
-		}
-	}
-	h, _ := os.Hostname()
-	if i := strings.IndexByte(h, '.'); i >= 0 {
-		h = h[:i]
-	}
-	return h
-}
-
 func skKeyPath(ctx context.Context, env *Env) string {
-	return filepath.Join(env.Home, ".ssh", skKeyHost(ctx, env)+"_ed25519")
-}
-
-func skFileExists(p string) bool {
-	fi, err := os.Stat(p)
-	return err == nil && fi.Mode().IsRegular()
+	return filepath.Join(env.Home, ".ssh", dataHostname(ctx, env)+"_ed25519")
 }
 
 func skEnsureDir(env *Env) error {
@@ -124,15 +98,15 @@ func skImportDirCheck(ctx context.Context, env *Env) (bool, error) {
 		return false, fmt.Errorf("--import-from: directory not found: %s", from)
 	}
 	if !env.Opts.ImportSSH {
-		skLog(env, "--import-from given without --import-ssh: nothing to import, a fresh SSH key is generated")
+		envLogln(env, "--import-from given without --import-ssh: nothing to import, a fresh SSH key is generated")
 		return true, nil
 	}
 	src := skBackupKey(from)
 	if src == "" {
-		skLog(env, "--import-from has no ssh/*_ed25519 key: nothing to import")
+		envLogln(env, "--import-from has no ssh/*_ed25519 key: nothing to import")
 		return true, nil
 	}
-	return skFileExists(skKeyPath(ctx, env)), nil
+	return fileExists(skKeyPath(ctx, env)), nil
 }
 
 func skImportDirApply(ctx context.Context, env *Env) error {
@@ -144,14 +118,14 @@ func skImportDirApply(ctx context.Context, env *Env) error {
 	if err := skCopy(src, key, 0o600); err != nil {
 		return err
 	}
-	if skFileExists(src + ".pub") {
+	if fileExists(src + ".pub") {
 		if err := skCopy(src+".pub", key+".pub", 0o644); err != nil {
 			return err
 		}
 	} else if err := skDerivePub(ctx, env, key); err != nil {
 		return err
 	}
-	skLog(env, "ssh key restored as %s", filepath.Base(key))
+	envLogln(env, "ssh key restored as %s", filepath.Base(key))
 	return nil
 }
 
@@ -161,11 +135,11 @@ func skImportBWCheck(ctx context.Context, env *Env) (bool, error) {
 		return true, nil
 	}
 	if _, err := env.Run.LookPath("rbw"); err != nil {
-		skLog(env, "--import-ssh-bw: rbw not installed yet; install it, then re-run with --import-ssh-bw %s", item)
+		envLogln(env, "--import-ssh-bw: rbw not installed yet; install it, then re-run with --import-ssh-bw %s", item)
 		return true, nil
 	}
 	// An existing key is never overwritten.
-	return skFileExists(skKeyPath(ctx, env)), nil
+	return fileExists(skKeyPath(ctx, env)), nil
 }
 
 func skImportBWApply(ctx context.Context, env *Env) error {
@@ -174,11 +148,11 @@ func skImportBWApply(ctx context.Context, env *Env) error {
 	if err := skEnsureDir(env); err != nil {
 		return err
 	}
-	skLog(env, "restoring SSH key from Bitwarden '%s' -> %s", item, filepath.Base(key))
+	envLogln(env, "restoring SSH key from Bitwarden '%s' -> %s", item, filepath.Base(key))
 	env.Run.Run(ctx, run.Cmd{Name: "rbw", Args: []string{"unlock"}}) // best effort, as bash
 	res, err := env.Run.Run(ctx, run.Cmd{Name: "rbw", Args: []string{"get", "--field", "notes", item}})
 	if err != nil || res.Code != 0 || res.Stdout == "" {
-		skLog(env, "couldn't read '%s' (run `rbw unlock`, check the item name)", item)
+		envLogln(env, "couldn't read '%s' (run `rbw unlock`, check the item name)", item)
 		env.Warnings++
 		return nil
 	}
@@ -192,7 +166,7 @@ func skImportBWApply(ctx context.Context, env *Env) error {
 }
 
 func skKeygenCheck(ctx context.Context, env *Env) (bool, error) {
-	if skFileExists(skKeyPath(ctx, env)) {
+	if fileExists(skKeyPath(ctx, env)) {
 		if env.Cfg.Data["sshKeyAction"] == "reupload" {
 			env.FreshKey = true
 		}
@@ -200,25 +174,25 @@ func skKeygenCheck(ctx context.Context, env *Env) (bool, error) {
 		return env.Cfg.Data["sshKeyAction"] != "generate", nil
 	}
 	if env.Cfg.Data["generateSshKey"] == "false" {
-		skLog(env, "no ssh key generated: bring your own / use the agent")
+		envLogln(env, "no ssh key generated: bring your own / use the agent")
 		return true, nil
 	}
 	return false, nil
 }
 
 func skKeygenApply(ctx context.Context, env *Env) error {
-	host := skKeyHost(ctx, env)
+	host := dataHostname(ctx, env)
 	key := skKeyPath(ctx, env)
 	if err := skEnsureDir(env); err != nil {
 		return err
 	}
-	if skFileExists(key) {
+	if fileExists(key) {
 		ts := time.Now().Format("20060102150405")
-		skLog(env, "backing up existing key (-> *.%s.bak) and generating a fresh one", ts)
+		envLogln(env, "backing up existing key (-> *.%s.bak) and generating a fresh one", ts)
 		if err := os.Rename(key, key+"."+ts+".bak"); err != nil {
 			return err
 		}
-		if skFileExists(key + ".pub") {
+		if fileExists(key + ".pub") {
 			if err := os.Rename(key+".pub", key+".pub."+ts+".old"); err != nil {
 				return err
 			}
@@ -230,7 +204,7 @@ func skKeygenApply(ctx context.Context, env *Env) error {
 			handle = u.Username
 		}
 	}
-	skLog(env, "generating ssh key: %s", key)
+	envLogln(env, "generating ssh key: %s", key)
 	res, err := env.Run.Run(ctx, run.Cmd{Name: "ssh-keygen", Args: []string{"-t", "ed25519", "-f", key, "-N", "", "-C", handle + "@" + host}})
 	if err != nil {
 		return err
@@ -244,7 +218,7 @@ func skKeygenApply(ctx context.Context, env *Env) error {
 // skPubCheck: a private key without .pub gets its .pub back.
 func skPubCheck(ctx context.Context, env *Env) (bool, error) {
 	key := skKeyPath(ctx, env)
-	return !skFileExists(key) || skFileExists(key+".pub"), nil
+	return !fileExists(key) || fileExists(key+".pub"), nil
 }
 
 func skPubApply(ctx context.Context, env *Env) error {
@@ -263,12 +237,12 @@ func skBWBackup(ctx context.Context, env *Env) error {
 	if _, err := env.Run.LookPath("rbw"); err == nil {
 		if res, err := env.Run.Run(ctx, run.Cmd{Name: "rbw", Args: []string{"unlocked"}}); err == nil && res.Code == 0 {
 			if skStoreInRBW(ctx, env, key, item) {
-				skLog(env, "stored in Bitwarden: %s", item)
+				envLogln(env, "stored in Bitwarden: %s", item)
 				return nil
 			}
 		}
 	}
-	skLog(env, "back up this machine's SSH key to Bitwarden (recommended): once rbw is unlocked run\n    rbw add '%s'   # line 1: ssh-key-backup, line 2+: paste %s\nRestore it elsewhere with: --import-ssh-bw %s", item, filepath.Base(key), item)
+	envLogln(env, "back up this machine's SSH key to Bitwarden (recommended): once rbw is unlocked run\n    rbw add '%s'   # line 1: ssh-key-backup, line 2+: paste %s\nRestore it elsewhere with: --import-ssh-bw %s", item, filepath.Base(key), item)
 	return nil
 }
 

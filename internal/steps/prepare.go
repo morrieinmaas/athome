@@ -11,13 +11,6 @@ import (
 	"github.com/morrieinmaas/athome/internal/run"
 )
 
-// logf writes a progress line; a nil Log is tolerated.
-func prepLog(env *Env, format string, args ...any) {
-	if env.Log != nil {
-		fmt.Fprintf(env.Log, format+"\n", args...)
-	}
-}
-
 // Prepare returns the steps that ready the checkout and the tools:
 // repo check (B:155-167), chezmoi source link, --ref worktree (B:267-324),
 // sudo cache (B:326-338) and chezmoi install (B:340-347).
@@ -129,7 +122,7 @@ func prepWorktreeApply(ctx context.Context, env *Env) error {
 	if err := os.Remove(wt); err != nil { // git worktree add needs the dir absent
 		return err
 	}
-	prepLog(env, "==> materializing %s in worktree: %s", env.Opts.Ref, wt)
+	envLogln(env, "==> materializing %s in worktree: %s", env.Opts.Ref, wt)
 	res, err := env.Run.Run(ctx, run.Cmd{Name: "git", Args: []string{"-C", env.RepoRoot, "worktree", "add", "--detach", wt, env.Opts.Ref}})
 	if err != nil {
 		return err
@@ -151,7 +144,7 @@ func prepWorktreeApply(ctx context.Context, env *Env) error {
 func prepSudoApply(ctx context.Context, env *Env) error {
 	res, err := env.Run.Run(ctx, run.Cmd{Name: "sudo", Args: []string{"-v"}})
 	if err != nil || res.Code != 0 {
-		prepLog(env, "sudo refused: package install and systemd-enable steps may prompt repeatedly")
+		envLogln(env, "sudo refused: package install and systemd-enable steps may prompt repeatedly")
 		env.Warnings++
 		return nil
 	}
@@ -179,7 +172,7 @@ func prepInstallChezmoi(ctx context.Context, env *Env) error {
 	if err := os.MkdirAll(bin, 0o755); err != nil {
 		return err
 	}
-	prepLog(env, "==> installing chezmoi")
+	envLogln(env, "==> installing chezmoi")
 	res, err := env.Run.Run(ctx, run.Cmd{Name: "sh", Args: []string{"-c", `curl -fsLS https://get.chezmoi.io | sh -s -- -b "$1"`, "sh", bin}})
 	if err != nil {
 		return err

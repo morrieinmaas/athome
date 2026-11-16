@@ -82,3 +82,8 @@ func (e *Env) RunCleanup() {
 	}
 	e.Cleanup = nil
 }
+
+// envLogln is envLogf with a trailing newline.
+func envLogln(env *Env, format string, a ...any) {
+	envLogf(env, format+"\n", a...)
+}

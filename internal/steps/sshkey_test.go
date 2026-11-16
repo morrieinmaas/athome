@@ -192,6 +192,9 @@ func TestImportBW(t *testing.T) {
 				t.Errorf("an empty key file was left behind")
 			}
 		}
+		if fx.Env.Warnings != 0 {
+			t.Errorf("Warnings = %d, a failed --import-ssh-bw read only logs (B:409)", fx.Env.Warnings)
+		}
 	})
 }
 

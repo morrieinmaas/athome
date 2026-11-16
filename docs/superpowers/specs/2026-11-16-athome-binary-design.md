@@ -204,6 +204,8 @@ Decisions:
   `ATHOME_E2E_RUNNER` (`bash`, the default, or `binary`).
 - sudo is requested only when a step first runs a sudo command, then kept warm for the rest
   of the run.
+- `--import-ssh-bw` never overwrites an existing host key (bash did); it logs that the key
+  was kept and how to restore over it.
 
 Acceptance criteria:
 

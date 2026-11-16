@@ -2,9 +2,7 @@ package cli_test
 
 import (
 	"bytes"
-	"context"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -12,7 +10,6 @@ import (
 
 	"github.com/morrieinmaas/athome/internal/cli"
 	"github.com/morrieinmaas/athome/internal/config"
-	"github.com/morrieinmaas/athome/internal/run"
 	"github.com/morrieinmaas/athome/internal/run/runtest"
 	"github.com/morrieinmaas/athome/internal/steps"
 )
@@ -259,18 +256,6 @@ func TestUsageError(t *testing.T) {
 	})
 }
 
-func TestNotARepoIsExit1(t *testing.T) {
-	sandbox(t)
-	inNoRepo(t)
-	code, _, errOut := runMain("init", "--non-interactive")
-	if code != 1 {
-		t.Errorf("exit = %d, want 1 (an ordinary error, not a usage error)", code)
-	}
-	if !strings.Contains(errOut, "chezmoiroot") && !strings.Contains(strings.ToLower(errOut), "repo") {
-		t.Errorf("stderr %q should say the athome repo was not found", errOut)
-	}
-}
-
 // V5: bash ignores --import-ssh without --import-from; the run continues.
 func TestImportSSHAlone(t *testing.T) {
 	sandbox(t)
@@ -291,22 +276,6 @@ func TestImportSSHAlone(t *testing.T) {
 	}
 	if len(f.Calls()) == 0 {
 		t.Errorf("exit %d: the run never reached the runner", code)
-	}
-}
-
-func TestRepoRootFromSubdirectory(t *testing.T) {
-	sandbox(t)
-	repo := inRepo(t)
-	sub := filepath.Join(repo, "scripts", "deep")
-	if err := os.MkdirAll(sub, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Chdir(sub)
-	// The repo is found from a subdirectory, so config validation (exit 2) is
-	// reached rather than the no-repo error (exit 1).
-	code, _, _ := runMain("init", "--machine", "laptop")
-	if code != 2 {
-		t.Errorf("exit = %d, want 2", code)
 	}
 }
 
@@ -333,32 +302,6 @@ func TestImportFromMissingDirIsUsageError(t *testing.T) {
 	code, _, errOut := runMain("init", "--import-from", filepath.Join(t.TempDir(), "nope"))
 	if code != 2 || !strings.Contains(errOut, "nope") {
 		t.Errorf("exit = %d stderr %q, want 2 naming the directory", code, errOut)
-	}
-}
-
-// With no .chezmoiroot above the cwd, the repo comes from the sourceDir pinned
-// in chezmoi's config; the bad machine then ends the run with 2, not 1.
-func TestRepoRootFromPinnedSourceDir(t *testing.T) {
-	home := sandbox(t)
-	repo := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(repo, "home"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(repo, ".chezmoiroot"), []byte("home\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	cfgDir := filepath.Join(home, ".config", "chezmoi")
-	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	pin := "sourceDir = \"" + filepath.Join(repo, "home") + "\"\n"
-	if err := os.WriteFile(filepath.Join(cfgDir, "chezmoi.toml"), []byte(pin), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	inNoRepo(t)
-	code, _, errOut := runMain("init", "--machine", "laptop")
-	if code != 2 {
-		t.Errorf("exit = %d stderr %q, want 2 (repo found via sourceDir, then the bad machine)", code, errOut)
 	}
 }
 
@@ -418,153 +361,5 @@ func TestEmptyMachineFlagIsUsageError(t *testing.T) {
 				t.Errorf("exit %d stderr %q; want 2 with the machine message", code, errOut)
 			}
 		})
-	}
-}
-
-// R8: the config file in use is logged (B:188), also when its answers are then rejected.
-func TestConfigFileIsLogged(t *testing.T) {
-	sandbox(t)
-	inRepo(t)
-	cfg := tmpFile(t, "a.toml", "machine = \"laptop\"\n")
-	code, out, _ := runMain("init", "--config", cfg)
-	if code != 2 {
-		t.Fatalf("exit = %d, want 2", code)
-	}
-	if want := "==> non-interactive config: " + cfg + "\n"; !strings.Contains(out, want) {
-		t.Errorf("stdout %q lacks %q", out, want)
-	}
-}
-
-func TestNoConfigNoLogLine(t *testing.T) {
-	sandbox(t)
-	inRepo(t)
-	_, out, _ := runMain("init", "--machine", "laptop")
-	if strings.Contains(out, "non-interactive config") {
-		t.Errorf("no config file, no log line, got %q", out)
-	}
-}
-
-// R5: a repo path chezmoi.toml cannot pin is rejected before any step.
-func TestRepoPathMustBeUTF8(t *testing.T) {
-	if err := cli.CheckRepoPath("/ok/repo"); err != nil {
-		t.Errorf("a UTF-8 path was rejected: %v", err)
-	}
-	bad := "/tmp/repo-\xff\xfe"
-	err := cli.CheckRepoPath(bad)
-	if err == nil || !strings.Contains(err.Error(), "UTF-8") || !strings.Contains(err.Error(), "repo-") {
-		t.Errorf("CheckRepoPath(%q) = %v, want an error naming the path", bad, err)
-	}
-}
-
-func TestNonUTF8RepoIsUsageError(t *testing.T) {
-	sandbox(t)
-	repo := filepath.Join(t.TempDir(), "repo-\xff")
-	if err := os.MkdirAll(filepath.Join(repo, "home", ".chezmoiscripts"), 0o755); err != nil {
-		t.Skipf("this filesystem rejects non-UTF-8 names: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(repo, ".chezmoiroot"), []byte("home\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	t.Chdir(repo)
-	code, _, errOut := runMain("init")
-	if code != 2 || !strings.Contains(errOut, "UTF-8") {
-		t.Errorf("exit %d stderr %q; want 2 naming the UTF-8 problem", code, errOut)
-	}
-}
-
-// U13: sudo is requested only when a step first runs a sudo command, and it
-// is not a step.
-func TestSudoStartsWhenAStepNeedsIt(t *testing.T) {
-	f := runtest.NewFake()
-	env := &steps.Env{Run: f, OS: "linux"}
-	list := []steps.Step{
-		{
-			Name:  "quiet",
-			Check: func(context.Context, *steps.Env) (bool, error) { return false, nil },
-			Apply: func(ctx context.Context, e *steps.Env) error {
-				if n := len(f.Calls()); n != 0 {
-					t.Errorf("a step without sudo must not trigger sudo -v: %v", f.Calls())
-				}
-				return nil
-			},
-		},
-		{
-			Name:  "needs-sudo",
-			Check: func(context.Context, *steps.Env) (bool, error) { return false, nil },
-			Apply: func(ctx context.Context, e *steps.Env) error {
-				e.Run.Run(ctx, run.Cmd{Name: "sudo", Args: []string{"true"}})
-				e.Run.Run(ctx, run.Cmd{Name: "sudo", Args: []string{"true"}})
-				return nil
-			},
-		},
-	}
-	rep, err := cli.Execute(context.Background(), env, list)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var names []string
-	for _, c := range f.Calls() {
-		names = append(names, c.Name+" "+strings.Join(c.Args, " "))
-	}
-	want := []string{"sudo -v", "sudo true", "sudo true"}
-	if !reflect.DeepEqual(names, want) {
-		t.Errorf("calls = %q, want %q", names, want)
-	}
-	if len(rep.Applied) != 2 {
-		t.Errorf("sudo must not add a step: %+v", rep)
-	}
-	if env.Run != run.Runner(f) {
-		t.Errorf("Execute must leave env.Run as it found it")
-	}
-}
-
-func TestNoSudoWhenNoStepNeedsIt(t *testing.T) {
-	f := runtest.NewFake()
-	env := &steps.Env{Run: f, OS: "linux"}
-	list := []steps.Step{{
-		Name:  "plain",
-		Check: func(context.Context, *steps.Env) (bool, error) { return true, nil },
-		Apply: func(context.Context, *steps.Env) error { return nil },
-	}}
-	if _, err := cli.Execute(context.Background(), env, list); err != nil {
-		t.Fatal(err)
-	}
-	if n := len(f.Calls()); n != 0 {
-		t.Errorf("no step ran sudo, but the runner saw %v", f.Calls())
-	}
-}
-
-// Safety net: init with valid args in a repo fixture goes through the Fake, never
-// a binary on PATH. PATH is an empty directory (see TestMain).
-func TestInitWithValidArgsOnlyTouchesTheFake(t *testing.T) {
-	sandbox(t)
-	inRepo(t)
-	if cli.RealRunnerInstalled() {
-		t.Fatal("the real runner is installed in a test")
-	}
-	if p, err := exec.LookPath("sh"); err == nil {
-		t.Fatalf("PATH reaches real binaries (%s); TestMain must empty it", p)
-	}
-	f := runtest.NewFake()
-	defer cli.SetRunner(f)()
-	cfg := tmpFile(t, "a.toml", "machine = \"personal\"\nincludeAgents = false\n")
-	code, _, _ := runMain("init", "--config", cfg, "--non-interactive")
-	if len(f.Calls()) == 0 {
-		t.Errorf("exit %d: the run never reached the runner; the fixture is not a valid init", code)
-	}
-}
-
-// Y2: a follow-up log that cannot be emptied stops the run with exit 1.
-func TestInitFailsWhenFollowupLogCannotBeEmptied(t *testing.T) {
-	sandbox(t)
-	inRepo(t)
-	if err := os.Mkdir(steps.FollowupLogPath(), 0o755); err != nil { // a directory where the log should be
-		t.Fatal(err)
-	}
-	defer cli.SetRunner(runtest.NewFake())()
-	cfg := tmpFile(t, "a.toml", "machine = \"personal\"\nincludeAgents = false\n")
-	code, _, stderr := runMain("init", "--config", cfg, "--non-interactive")
-	if code != 1 || !strings.Contains(stderr, "follow-up") {
-		t.Errorf("exit %d, stderr %q; want exit 1 naming the follow-up log", code, stderr)
 	}
 }

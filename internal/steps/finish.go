@@ -74,8 +74,7 @@ func hooksDone(_ context.Context, env *Env) (bool, error) {
 	if fi, err := os.Stat(filepath.Join(env.RepoRoot, ".git")); err != nil || !fi.IsDir() {
 		return true, nil
 	}
-	_, err := os.Lstat(hookPath(env))
-	return err == nil, nil
+	return fileExists(hookPath(env)), nil
 }
 
 func installHooks(_ context.Context, env *Env) error {

@@ -113,6 +113,20 @@ func TestHooksSkipExisting(t *testing.T) {
 	}
 }
 
+func TestHooksBrokenSymlinkNotInstalled(t *testing.T) {
+	fx := newFixture(t)
+	if err := os.MkdirAll(hooksDir(fx), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(fx.Repo, "nowhere"), filepath.Join(hooksDir(fx), "pre-commit")); err != nil {
+		t.Fatal(err)
+	}
+	fx.MustExec(steps.Finish())
+	if !exists(filepath.Join(hooksDir(fx), "commit-msg")) {
+		t.Errorf("broken pre-commit symlink must not count as installed")
+	}
+}
+
 func TestHooksNoGitDir(t *testing.T) {
 	fx := newFixture(t)
 	if err := os.RemoveAll(filepath.Join(fx.Repo, ".git")); err != nil {

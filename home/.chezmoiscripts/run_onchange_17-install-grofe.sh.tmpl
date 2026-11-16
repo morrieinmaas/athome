@@ -59,7 +59,11 @@ elif ! GIT_TERMINAL_PROMPT=0 git ls-remote --exit-code "${repo}" HEAD >/dev/null
   exit 0
 else
   printf 'grofe: building %s at %s\n' "${repo}" "${ref}"
-  cargo install --quiet --locked --git "${repo}" --rev "${ref}" --root "${dest}/build" grofe
+  # The git command, not cargo's own git: this machine's gitconfig rewrites
+  # https://github.com/ to SSH, which cargo's built-in client cannot
+  # authenticate ("no authentication methods succeeded").
+  CARGO_NET_GIT_FETCH_WITH_CLI=true \
+    cargo install --quiet --locked --git "${repo}" --rev "${ref}" --root "${dest}/build" grofe
   install -m 755 "${dest}/build/bin/grofe" "${dest}/grofe.new"
 fi
 # Moved into place, so a running server's next exec never sees half a file.

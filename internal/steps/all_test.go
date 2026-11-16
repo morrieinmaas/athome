@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/morrieinmaas/athome/internal/run"
@@ -107,7 +108,7 @@ func TestChecksArePure(t *testing.T) {
 	writeFile(t, steps.FollowupLogPath(), "  • earlier note\n", 0o644)
 
 	for _, s := range steps.All() {
-		envBefore, pathBefore := *fx.Env, os.Getenv("PATH")
+		envBefore, pathBefore, callsBefore := *fx.Env, os.Getenv("PATH"), len(fx.Fake.Calls())
 		logBefore := readFile(t, steps.FollowupLogPath())
 		s.Check(context.Background(), fx.Env)
 		if !reflect.DeepEqual(*fx.Env, envBefore) {
@@ -119,6 +120,69 @@ func TestChecksArePure(t *testing.T) {
 		if got := readFile(t, steps.FollowupLogPath()); got != logBefore {
 			t.Errorf("%s: Check changed the follow-up log: %q -> %q", s.Name, logBefore, got)
 		}
+		for _, c := range fx.Fake.Calls()[callsBefore:] {
+			if mutatingCall(c) {
+				t.Errorf("%s: Check ran a mutating command: %s %q", s.Name, c.Name, c.Args)
+			}
+		}
+	}
+}
+
+// mutatingCall reports a command that changes state, which no Check may run.
+func mutatingCall(c run.Cmd) bool {
+	switch c.Name {
+	case "git":
+		return containsSeq(c.Args, "worktree", "prune") || containsSeq(c.Args, "worktree", "add") ||
+			containsSeq(c.Args, "worktree", "remove") || containsSeq(c.Args, "remote", "set-url")
+	case "gh":
+		return containsSeq(c.Args, "ssh-key", "add") || containsSeq(c.Args, "auth", "refresh") || containsSeq(c.Args, "config", "set")
+	case "chezmoi":
+		return len(c.Args) > 0 && (c.Args[0] == "init" || c.Args[0] == "apply")
+	case "sh", "bash", "sudo":
+		return true
+	}
+	return false
+}
+
+// B:240: worktrees leaked by a hard-killed earlier run are pruned once, by Setup.
+func TestSetupPrunesWorktreesOnce(t *testing.T) {
+	fx := newFixture(t)
+	if err := steps.Setup(context.Background(), fx.Env); err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	for _, c := range fx.Fake.Calls() {
+		if c.Name == "git" && containsSeq(c.Args, "-C", fx.Repo, "worktree", "prune") {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Errorf("git worktree prune ran %d times in Setup, want 1", n)
+	}
+}
+
+// Y2: a follow-up log that cannot be emptied must not pass silently.
+func TestSetupReturnsTruncationError(t *testing.T) {
+	fx := newFixture(t)
+	mustMkdir(t, steps.FollowupLogPath()) // a directory where the log should be
+	if err := steps.Setup(context.Background(), fx.Env); err == nil {
+		t.Error("Setup must return the error from emptying the follow-up log")
+	}
+}
+
+// Y2: appendFollowup says so when it cannot open the log.
+func TestAppendFollowupLogsWhenLogUnwritable(t *testing.T) {
+	fx := newFixture(t)
+	mustMkdir(t, steps.FollowupLogPath())
+	for _, s := range steps.All() {
+		if s.Name == "secrets-restore-hint" {
+			if err := s.Apply(context.Background(), fx.Env); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if !strings.Contains(fx.Log.String(), "follow-up") {
+		t.Errorf("want a log line about the unwritable follow-up log, got %q", fx.Log.String())
 	}
 }
 
@@ -126,8 +190,8 @@ func TestSetupEmptiesFollowupLogAndExtendsPath(t *testing.T) {
 	fx := newFixture(t)
 	t.Setenv("PATH", "/usr/bin")
 	writeFile(t, steps.FollowupLogPath(), "  • earlier note\n", 0o644)
-	steps.Setup(fx.Env)
-	steps.Setup(fx.Env) // idempotent
+	steps.Setup(context.Background(), fx.Env)
+	steps.Setup(context.Background(), fx.Env) // idempotent
 	if got := readFile(t, steps.FollowupLogPath()); got != "" {
 		t.Errorf("follow-up log = %q, want empty", got)
 	}

@@ -108,7 +108,9 @@ func (s installSim) Run(ctx context.Context, c run.Cmd) (run.Result, error) {
 // Exec runs a step list against the fixture.
 func (fx *fixture) Exec(list []steps.Step) (steps.Report, error) {
 	fx.T.Helper()
-	steps.Setup(fx.Env)
+	if err := steps.Setup(context.Background(), fx.Env); err != nil {
+		return steps.Report{}, err
+	}
 	return steps.Execute(context.Background(), fx.Env, list)
 }
 

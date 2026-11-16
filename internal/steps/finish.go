@@ -162,8 +162,8 @@ func secretsHintDone(ctx context.Context, env *Env) (bool, error) {
 	return secretsStateOf(ctx, env) != secretsNoScript || followupHas(secretsFollowup), nil
 }
 
-func secretsHint(context.Context, *Env) error {
-	appendFollowup(secretsFollowup)
+func secretsHint(_ context.Context, env *Env) error {
+	appendFollowup(env, secretsFollowup)
 	return nil
 }
 

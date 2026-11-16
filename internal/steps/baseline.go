@@ -53,12 +53,13 @@ func followupHas(line string) bool {
 }
 
 // appendFollowup adds a bullet to the follow-up log unless it is already there.
-func appendFollowup(line string) {
+func appendFollowup(env *Env, line string) {
 	if followupHas(line) {
 		return
 	}
 	f, err := os.OpenFile(FollowupLogPath(), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
+		envLogf(env, "could not write the follow-up log %s: %v\n", FollowupLogPath(), err)
 		return
 	}
 	defer f.Close()
@@ -68,7 +69,7 @@ func appendFollowup(line string) {
 // baselineDepWarn is baselineWarn plus B:950's follow-up line, written once.
 func baselineDepWarn(env *Env, format string, a ...any) {
 	baselineWarn(env, format, a...)
-	appendFollowup("a baseline dep (package manager / gh / rbw / project dirs / mise) failed; re-run `mise run bootstrap`.")
+	appendFollowup(env, "a baseline dep (package manager / gh / rbw / project dirs / mise) failed; re-run `mise run bootstrap`.")
 }
 
 // chezmoiApply is B:769-922: a failed init is a warning, never an error.
@@ -95,10 +96,10 @@ func chezmoiApply(ctx context.Context, env *Env) error {
 	})
 	if err != nil {
 		baselineWarn(env, "chezmoi init could not run: %v; re-run `mise run apply` to finish", err)
-		appendFollowup("chezmoi init could not run during bootstrap; re-run `mise run apply` (idempotent) to finish.")
+		appendFollowup(env, "chezmoi init could not run during bootstrap; re-run `mise run apply` (idempotent) to finish.")
 	} else if res.Code != 0 {
 		baselineWarn(env, "chezmoi init exited %d; bootstrap continues, re-run `mise run apply` to finish", res.Code)
-		appendFollowup(fmt.Sprintf("chezmoi init exited %d during bootstrap; re-run `mise run apply` (idempotent) to finish.", res.Code))
+		appendFollowup(env, fmt.Sprintf("chezmoi init exited %d during bootstrap; re-run `mise run apply` (idempotent) to finish.", res.Code))
 	}
 	return nil
 }

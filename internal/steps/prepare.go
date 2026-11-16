@@ -104,8 +104,6 @@ func prepGitBranch(ctx context.Context, env *Env) (string, error) {
 
 // prepWorktreeCheck: no worktree is needed without --ref or when it equals HEAD.
 func prepWorktreeCheck(ctx context.Context, env *Env) (bool, error) {
-	// B:240: drop worktrees leaked by hard-killed earlier runs; a no-op otherwise.
-	env.Run.Run(ctx, run.Cmd{Name: "git", Args: []string{"-C", env.RepoRoot, "worktree", "prune"}})
 	if env.Opts.Ref == "" {
 		return true, nil
 	}

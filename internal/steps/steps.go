@@ -48,11 +48,16 @@ type Report struct {
 
 // Setup does the run-wide writes the checks depend on, once, before Execute:
 // it empties the follow-up log, so notes from an earlier run do not bleed into
-// this one even when the apply is skipped (B:770), and puts the dirs a
-// just-installed chezmoi, mise and nb land in first on PATH (B:935).
-func Setup(env *Env) {
-	os.WriteFile(FollowupLogPath(), nil, 0o644)
+// this one even when the apply is skipped (B:770), puts the dirs a
+// just-installed chezmoi, mise and nb land in first on PATH (B:935), and drops
+// worktrees leaked by hard-killed earlier runs (B:240; a no-op otherwise).
+func Setup(ctx context.Context, env *Env) error {
+	if err := os.WriteFile(FollowupLogPath(), nil, 0o644); err != nil {
+		return fmt.Errorf("empty the follow-up log: %w", err)
+	}
 	prependPath(nanobrewBinDir + string(os.PathListSeparator) + filepath.Join(env.Home, ".local", "bin"))
+	env.Run.Run(ctx, run.Cmd{Name: "git", Args: []string{"-C", env.RepoRoot, "worktree", "prune"}})
+	return nil
 }
 
 // Execute runs list in order. A step whose Check reports done is skipped;

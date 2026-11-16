@@ -553,3 +553,18 @@ func TestInitWithValidArgsOnlyTouchesTheFake(t *testing.T) {
 		t.Errorf("exit %d: the run never reached the runner; the fixture is not a valid init", code)
 	}
 }
+
+// Y2: a follow-up log that cannot be emptied stops the run with exit 1.
+func TestInitFailsWhenFollowupLogCannotBeEmptied(t *testing.T) {
+	sandbox(t)
+	inRepo(t)
+	if err := os.Mkdir(steps.FollowupLogPath(), 0o755); err != nil { // a directory where the log should be
+		t.Fatal(err)
+	}
+	defer cli.SetRunner(runtest.NewFake())()
+	cfg := tmpFile(t, "a.toml", "machine = \"personal\"\nincludeAgents = false\n")
+	code, _, stderr := runMain("init", "--config", cfg, "--non-interactive")
+	if code != 1 || !strings.Contains(stderr, "follow-up") {
+		t.Errorf("exit %d, stderr %q; want exit 1 naming the follow-up log", code, stderr)
+	}
+}

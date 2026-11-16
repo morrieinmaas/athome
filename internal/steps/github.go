@@ -87,7 +87,9 @@ func ghDecide(ctx context.Context, env *Env) ghPlan {
 	if def := filepath.Join(env.Home, ".ssh", "id_ed25519.pub"); fileExists(def) {
 		p.signPub = def
 	}
-	if ghSSHAuthenticates(ctx, env) {
+	if env.FreshKey { // B:424-438 ssh_force_upload: skip both "already set up" branches
+		p.mode = ghUpload
+	} else if ghSSHAuthenticates(ctx, env) {
 		ghLog(env, "SSH already authenticates to GitHub, skipping key upload (already set up)\n")
 		p.mode = ghRegistered
 	} else if existing := ghLocalKeyOnGitHub(ctx, env); existing != "" {

@@ -306,3 +306,29 @@ func TestRemoteToSSH(t *testing.T) {
 		})
 	}
 }
+
+// A freshly generated or re-upload key is uploaded even when SSH already
+// authenticates or another local key is registered (B:424-438, ssh_force_upload).
+func TestFreshKeyForcesUpload(t *testing.T) {
+	t.Run("ssh already authenticates", func(t *testing.T) {
+		fx := ghFixture(t)
+		fx.Env.FreshKey = true
+		fx.Fake.On("ssh", sshProbe...).Return(run.Result{Stderr: "Hi athome! You've successfully authenticated, but GitHub does not provide shell access.\n", Code: 1})
+		fx.MustExec(steps.GitHub())
+		if len(fx.authAdds()) != 1 || len(fx.signingAdds()) != 1 {
+			t.Errorf("a fresh key must be uploaded:\n%s", fx.dump())
+		}
+	})
+	t.Run("another local key is registered", func(t *testing.T) {
+		fx := ghFixture(t)
+		fx.Env.FreshKey = true
+		other := "AAAAC3NzaC1lZDI1NTE5AAAAIotherkeyblob"
+		fx.PutKey("PRIV", localPub)
+		writeFile(t, fx.Path(".ssh", "other_ed25519.pub"), "ssh-ed25519 "+other+" x@y\n", 0o644)
+		fx.Fake.On("gh", apiUserKeys...).Return(run.Result{Stdout: "ssh-ed25519 " + other + "\n"})
+		fx.MustExec(steps.GitHub())
+		if len(fx.authAdds()) != 1 {
+			t.Errorf("a fresh key must be uploaded:\n%s", fx.dump())
+		}
+	})
+}

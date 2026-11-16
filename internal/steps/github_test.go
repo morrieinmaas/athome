@@ -2,6 +2,7 @@ package steps_test
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -180,6 +181,25 @@ func TestAlreadyRegistered(t *testing.T) {
 			t.Errorf("the signing-key check must still run:\n%s", fx.dump())
 		}
 	})
+}
+
+// A home whose name holds glob metacharacters is a literal path: the local key
+// is still found among the .pub files.
+func TestLocalKeyFoundInHomeWithBracket(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "")
+	fx := newFixture(t)
+	fx.Home = filepath.Join(filepath.Dir(fx.Home), "[x] home")
+	fx.Env.Home = fx.Home
+	fx.Fake.Have("gh")
+	fx.PutKey("PRIV", localPub)
+	fx.Fake.On("gh", "auth", "status").Return(run.Result{Stdout: allScopes, Stderr: allScopes})
+	fx.Fake.On("git", "-C", fx.Repo, "remote", "get-url", "origin").Return(run.Result{Stdout: "https://github.com/morrieinmaas/athome\n"})
+	fx.Fake.On("gh", apiUserKeys...).Return(run.Result{Stdout: "ssh-ed25519 " + localBlob + "\n"})
+	fx.Fake.On("gh", apiSigningKeys...).Return(run.Result{Stdout: "ssh-ed25519 " + localBlob + "\n"})
+	fx.MustExec(steps.GitHub())
+	if !strings.Contains(fx.Log.String(), "A local SSH key is already on GitHub") {
+		t.Errorf("the local .pub must be found in a home holding `[`:\n%s", fx.Log)
+	}
 }
 
 // git signs with ~/.ssh/id_ed25519.pub when present, so that is the key whose

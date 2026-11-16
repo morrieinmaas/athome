@@ -322,6 +322,21 @@ func TestSecretsRestoreAttemptedMarker(t *testing.T) {
 	})
 }
 
+// A home whose name holds glob metacharacters is a literal path, not a pattern.
+func TestSecretsRestoreHomeWithBracket(t *testing.T) {
+	fx := newFixture(t)
+	fx.Home = filepath.Join(filepath.Dir(fx.Home), "[x] home")
+	fx.Env.Home = fx.Home
+	fx.Fake.Have("rbw")
+	p := fx.Path(".local", "bin", "secrets-restore")
+	writeFile(t, p, "#!/bin/sh\nexit 0\n", 0o755)
+	writeFile(t, fx.Path(".secrets", "proj", ".env"), "A=1\n", 0o600)
+	fx.MustExec(steps.Finish())
+	if fx.mentions(p) {
+		t.Errorf("a .env exists under a home holding `[`, restore must not run:\n%s", fx.dump())
+	}
+}
+
 func headStub(fx *fixture, branch string) {
 	fx.Fake.On("git", "-C", fx.Repo, "rev-parse", "--abbrev-ref", "HEAD").Return(run.Result{Stdout: branch + "\n"})
 }

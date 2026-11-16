@@ -96,6 +96,19 @@ func TestImportDir(t *testing.T) {
 	}
 }
 
+func TestImportDirWithBracket(t *testing.T) {
+	fx := newFixture(t)
+	stubDerive(fx)
+	odd := filepath.Join(t.TempDir(), "[a] backup")
+	writeFile(t, filepath.Join(odd, "ssh", "oldbox_ed25519"), "PRIVATE-KEY", 0o600)
+	fx.Env.Opts.ImportFrom = odd
+	fx.Env.Opts.ImportSSH = true
+	fx.MustExec(steps.SSHKey())
+	if got := readFile(t, keyPath(fx)); got != "PRIVATE-KEY" {
+		t.Errorf("imported key = %q, want PRIVATE-KEY from a directory holding `[`", got)
+	}
+}
+
 func TestImportDirKeepsBackupPub(t *testing.T) {
 	fx := newFixture(t)
 	fx.Env.Opts.ImportFrom = backup(t, "oldbox", "PRIVATE-KEY", "ssh-ed25519 FROMBACKUP x\n")

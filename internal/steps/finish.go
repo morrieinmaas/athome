@@ -157,9 +157,26 @@ func restoreMarker(env *Env) string {
 	return filepath.Join(env.Home, ".local", "state", "athome", "secrets-restore-attempted")
 }
 
+// globDir lists the entries of dir whose names match pattern, sorted, as full
+// paths. dir is read literally, so a `[` in it is not a pattern.
+func globDir(dir, pattern string) []string {
+	entries, _ := os.ReadDir(dir)
+	var out []string
+	for _, e := range entries {
+		if ok, _ := filepath.Match(pattern, e.Name()); ok {
+			out = append(out, filepath.Join(dir, e.Name()))
+		}
+	}
+	return out
+}
+
 func hasSecretsEnv(env *Env) bool {
-	m, _ := filepath.Glob(filepath.Join(env.Home, ".secrets", "*", ".env"))
-	return len(m) > 0
+	for _, d := range globDir(filepath.Join(env.Home, ".secrets"), "*") {
+		if fileExists(filepath.Join(d, ".env")) {
+			return true
+		}
+	}
+	return false
 }
 
 func secretsRestoreDone(ctx context.Context, env *Env) (bool, error) {

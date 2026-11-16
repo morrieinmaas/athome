@@ -110,7 +110,7 @@ func SSHKey() []Step {
 
 // skBackupKey returns the first ssh/*_ed25519 (not .pub) in the import dir.
 func skBackupKey(dir string) string {
-	matches, _ := filepath.Glob(filepath.Join(dir, "ssh", "*_ed25519"))
+	matches := globDir(filepath.Join(dir, "ssh"), "*_ed25519")
 	sort.Strings(matches)
 	for _, m := range matches {
 		if !strings.HasSuffix(m, ".pub") {

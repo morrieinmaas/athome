@@ -205,7 +205,7 @@ func ghLocalKeyOnGitHub(ctx context.Context, env *Env) string {
 	if err != nil || r.Code != 0 || strings.TrimSpace(r.Stdout) == "" {
 		return ""
 	}
-	pubs, _ := filepath.Glob(filepath.Join(env.Home, ".ssh", "*.pub"))
+	pubs := globDir(filepath.Join(env.Home, ".ssh"), "*.pub")
 	for _, pub := range pubs {
 		if blob := pubBlob(pub); blob != "" && strings.Contains(r.Stdout, blob) {
 			return pub

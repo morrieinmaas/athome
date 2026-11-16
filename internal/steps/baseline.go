@@ -134,7 +134,7 @@ func packageManager(ctx context.Context, env *Env) error {
 	if env.OS != "darwin" && env.Distro == "fedora" {
 		for _, pkg := range []string{"rpmfusion-free-release", "rpmfusion-nonfree-release"} {
 			if !rpmInstalled(ctx, env, pkg) {
-				baselineDepWarn(env, "%s is not installed (RPM Fusion mirror unreachable?); continuing", pkg)
+				envLogln(env, "%s is not installed (RPM Fusion mirror unreachable?); continuing", pkg)
 			}
 		}
 	}

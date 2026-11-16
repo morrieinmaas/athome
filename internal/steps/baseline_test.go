@@ -330,21 +330,24 @@ func TestPackageManagerCheckFedoraNeedsDnfAndPluginsCore(t *testing.T) {
 	}
 }
 
-// After the script runs, a still missing RPM Fusion release is a warning and a
-// follow-up line, never a failure.
-func TestPackageManagerFedoraWarnsWhenRPMFusionMissing(t *testing.T) {
+// After the script runs, a still missing RPM Fusion release is a plain log
+// line (bash parity): no warning, no follow-up entry, never a failure.
+func TestPackageManagerFedoraLogsWhenRPMFusionMissing(t *testing.T) {
 	fx := newFixture(t)
 	fx.Env.OS, fx.Env.Distro = "linux", "fedora"
 	rpmHave(fx, "rpmfusion-nonfree-release")
 	if _, err := fx.Exec(steps.Baseline()); err != nil {
 		t.Fatalf("a missing RPM Fusion release must not fail the run: %v", err)
 	}
-	if fx.Env.Warnings != 1 || !strings.Contains(fx.Log.String(), "rpmfusion-nonfree-release") {
-		t.Errorf("want one warning naming rpmfusion-nonfree-release, Warnings=%d:\n%s", fx.Env.Warnings, fx.Log.String())
+	if !strings.Contains(fx.Log.String(), "rpmfusion-nonfree-release") {
+		t.Errorf("want a log line naming rpmfusion-nonfree-release:\n%s", fx.Log.String())
+	}
+	if fx.Env.Warnings != 0 {
+		t.Errorf("Warnings = %d, a missing RPM Fusion release only logs", fx.Env.Warnings)
 	}
 	got, _ := os.ReadFile(steps.FollowupLogPath())
-	if !strings.Contains(string(got), "baseline dep") {
-		t.Errorf("want the baseline-dep follow-up line, log: %q", got)
+	if strings.Contains(string(got), "rpmfusion") || strings.Contains(string(got), "baseline dep") {
+		t.Errorf("a missing RPM Fusion release adds no follow-up entry, log: %q", got)
 	}
 	fx = newFixture(t)
 	fx.Env.OS, fx.Env.Distro = "linux", "fedora"

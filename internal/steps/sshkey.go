@@ -212,11 +212,28 @@ func skImportBWApply(ctx context.Context, env *Env) error {
 		return werr
 	}
 	pub, err := skDerive(ctx, env, tmp)
+	var deriveErr error
 	if err != nil {
-		return err
+		// Only a passphrase key is worth a prompt; any other failure is a bad note.
+		if !strings.Contains(err.Error(), "passphrase") {
+			return err
+		}
+		defer os.Remove(tmp + ".pub")
+		if deriveErr = skDerivePubInteractive(ctx, env, tmp); deriveErr == nil {
+			b, rerr := os.ReadFile(tmp + ".pub")
+			if rerr != nil {
+				return rerr
+			}
+			pub = string(b)
+		}
 	}
 	if err := os.Rename(tmp, key); err != nil {
 		return err
+	}
+	if deriveErr != nil {
+		// A valid key whose passphrase did not unlock stays; the marker keeps ssh-pub quiet.
+		skMarkUnderivable(env, key, deriveErr)
+		return nil
 	}
 	return os.WriteFile(key+".pub", []byte(pub), 0o644)
 }

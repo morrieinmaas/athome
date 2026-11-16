@@ -1,6 +1,7 @@
 package steps_test
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -98,6 +99,60 @@ func TestImportBW(t *testing.T) {
 		}
 		if fx.Env.Warnings != 0 {
 			t.Errorf("Warnings = %d, a failed --import-ssh-bw read only logs (B:409)", fx.Env.Warnings)
+		}
+	})
+}
+
+// noTTYDerive fails a non-interactive `ssh-keygen -y` as a passphrase key does
+// without a terminal; the interactive derive goes through to the inner runner.
+type noTTYDerive struct{ run.Runner }
+
+func (n noTTYDerive) Run(ctx context.Context, c run.Cmd) (run.Result, error) {
+	if c.Name == "ssh-keygen" && containsSeq(c.Args, "-y") && !c.Interactive {
+		return run.Result{Code: 1, Stderr: "incorrect passphrase supplied to decrypt private key"}, nil
+	}
+	return n.Runner.Run(ctx, c)
+}
+
+// A passphrase key in the note is derived with the terminal attached, as for --import-from.
+func TestImportBWPassphraseKey(t *testing.T) {
+	const item = "ssh/otherbox_ed25519"
+	setup := func(t *testing.T) *fixture {
+		fx := newFixture(t)
+		fx.Fake.Have("rbw")
+		fx.Fake.On("rbw", "get", "--field", "notes", item).Return(run.Result{Stdout: "BW-PRIVATE\n"})
+		fx.Env.Run = noTTYDerive{deriveSim{fx.Env.Run, fx.Fake}}
+		fx.Env.Opts.ImportSSHBW = item
+		return fx
+	}
+	t.Run("the interactive derive installs key and pub", func(t *testing.T) {
+		fx := setup(t)
+		fx.Fake.On("ssh-keygen", "-y", "-f", keyPath(fx)+".import-tmp").Return(run.Result{Stdout: pubLine})
+		fx.MustExec(steps.SSHKey())
+		if got := readFile(t, keyPath(fx)); !strings.HasPrefix(got, "BW-PRIVATE") {
+			t.Errorf("key = %q, want the Bitwarden notes", got)
+		}
+		if got := readFile(t, keyPath(fx)+".pub"); got != pubLine {
+			t.Errorf(".pub = %q, want the derived key", got)
+		}
+		if left, _ := filepath.Glob(fx.Path(".ssh", "*tmp*")); len(left) != 0 {
+			t.Errorf("temp files left behind: %v", left)
+		}
+	})
+	t.Run("a wrong passphrase keeps the key and writes the marker", func(t *testing.T) {
+		fx := setup(t)
+		fx.Fake.On("ssh-keygen", "-y", "-f", keyPath(fx)+".import-tmp").Return(run.Result{Code: 1, Stderr: "incorrect passphrase"})
+		if _, err := fx.Exec(steps.SSHKey()); err != nil {
+			t.Fatalf("an underivable .pub must not fail the import: %v\n%s", err, fx.Log)
+		}
+		if got := readFile(t, keyPath(fx)); !strings.HasPrefix(got, "BW-PRIVATE") {
+			t.Errorf("the key must be kept, got %q", got)
+		}
+		if got := readFile(t, fx.Path(".local", "state", "athome", "ssh-pub-underivable")); strings.TrimSpace(got) != keyPath(fx) {
+			t.Errorf("marker = %q, want the key path", got)
+		}
+		if left, _ := filepath.Glob(fx.Path(".ssh", "*tmp*")); len(left) != 0 {
+			t.Errorf("temp files left behind: %v", left)
 		}
 	})
 }

@@ -18,8 +18,10 @@ What exists today:
 - `~/.secrets/<repo>/.env*` and a few other files are mirrored by `secrets-backup` into a
   git-crypt vault repo, checked out at `~/.local/share/attic`.
 - The git-crypt key is in Bitwarden as `git-crypt/attic-key`, read by `secrets-restore`.
-- Each machine has one passphrase-less ssh key, `~/.ssh/<host>_ed25519`, registered on
-  GitHub for authentication and signing. Bootstrap can store it in Bitwarden as
+- Each machine has one passphrase-less ssh key, registered on GitHub for authentication
+  and signing. It is `~/.ssh/id_ed25519` when that file exists, else
+  `~/.ssh/<host>_ed25519`: signing, `allowed_signers` and the github.com `IdentityFile` all
+  prefer `id_ed25519`. This spec calls whichever one is in use "the laptop key". Bootstrap can store it in Bitwarden as
   `ssh/<host>_ed25519` and restore it with `--import-ssh-bw`; both are opt-in, and nothing
   refreshes the stored copy when the key changes. These are login items, because rbw
   cannot create secure notes.
@@ -32,8 +34,10 @@ What exists today:
 - **Laptop taken unlocked, or with a known password.** Everything the laptop can reach is
   exposed: its ssh key, and while rbw is unlocked, the git-crypt key, every break-glass key,
   every `.env` value and the `gh` token. The drill below covers this case.
-- **Breached box.** Someone with root on a client box gets that box's key and that scope's
-  `.env` files.
+- **Breached box.** Someone with root on a client box gets that box's key, its `gh` token
+  and that scope's `.env` files. The `gh` token reaches everything your GitHub account
+  does; revoke it at GitHub's authorized OAuth apps, and `machine rm` runs
+  `gh auth logout` on the box.
 
 **Accepted risk:** a box key is registered on your main GitHub account, and a GitHub ssh key
 reaches every repo that account can push to. A breached box can therefore push to more than
@@ -46,7 +50,7 @@ where a client requires one.
 | What | Where |
 | --- | --- |
 | git-crypt key | Bitwarden, `git-crypt/attic-key` (unchanged) |
-| Laptop ssh key | the laptop, plus Bitwarden `ssh/<host>_ed25519`; storing it becomes the default, refreshed on every rotation |
+| Laptop key | the laptop, plus Bitwarden `ssh/<host>_ed25519` (whichever file is in use); storing it becomes the default, refreshed on every rotation |
 | Break-glass key, one per scope | Bitwarden only, `athome/<context>/<scope>/break-glass` |
 | `.env` files and the machine inventory | the git-crypt vault (`~/.local/share/attic`) |
 | A box's own key | that box only, created there, never copied off |
@@ -97,10 +101,14 @@ athome keys rotate [--laptop] [--boxes] [--break-glass] [--all] [--resume]
 Every rotation runs in the same order, so a failure never leaves you locked out:
 
 1. Generate the new key.
-2. Store it in Bitwarden (laptop and break-glass keys).
+2. Store it in Bitwarden (laptop and break-glass keys). An existing item is updated in place
+   with `rbw edit`, never added again with `rbw add`: two items with one name make
+   `rbw get` fail.
 3. Add it everywhere: GitHub, then each box's `authorized_keys`.
 4. Check a login with the new key, on GitHub and on each box.
-5. Only then remove the old key everywhere.
+5. Only then remove the old key everywhere. On each box, `authorized_keys` is reset to the
+   managed set (laptop key, scope break-glass key), which also drops any key someone else
+   added.
 
 An unreachable box is skipped and listed. Progress is kept in
 `~/.local/state/athome/rotate.json`, so `--resume` finishes the skipped boxes later. The old
@@ -129,13 +137,14 @@ Run it by hand after a loss or theft.
 
 **If the laptop was taken unlocked,** also:
 
-8. `athome keys rotate --break-glass`.
-9. Revoke the old `gh` token on GitHub, and rotate the tokens in the affected `.env` files at
-   their providers.
+8. `athome keys rotate --all` instead of step 7. Whoever had the laptop could ssh to every
+   box, copy its key or add their own, so box keys and break-glass keys rotate too, and every
+   box's `authorized_keys` is reset to the managed set.
+9. Revoke the laptop's and every box's `gh` token on GitHub, log each box in again, and
+   rotate the tokens in the affected `.env` files at their providers.
 10. Re-key the vault. git-crypt cannot change its key in place (`docs/secrets.md`), so
     `athome secrets rekey` makes a new vault repo with a new key, stores the key in
-    Bitwarden, and you delete the old repo. Box keys need no change: a box never held
-    anything from the laptop.
+    Bitwarden, and you delete the old repo.
 
 If the laptop key was revoked before you restored it, reach each box with its scope's
 break-glass key and run the rotation from there.
@@ -149,6 +158,8 @@ break-glass key and run the rotation from there.
   key still logs in where it was not yet removed, and `--resume` completes.
 - An unreachable box is skipped, listed, and finished by `--resume`.
 - The break-glass key logs in to a box whose laptop key has been removed.
+- A key added by hand to a box's `authorized_keys` is gone after any rotation.
+- Rotating twice leaves exactly one Bitwarden item per key name.
 - A box's filesystem holds no git-crypt key, no vault checkout and no `.env` outside its
   scope.
 - The live drill against a real GitHub test account and Vaultwarden is manual, run before a

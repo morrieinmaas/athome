@@ -11,8 +11,8 @@ The later specs add subcommands to this binary.
 
 athome's logic lives in bash: `scripts/bootstrap.sh` (1105 lines), `scripts/lib/*.sh`,
 `scripts/teardown.sh`, and helpers in `home/dot_local/bin` (`secrets-backup`,
-`secrets-restore`, `bw-setup`, `cockpit`). First run is about 20 plain-text prompts in a
-row from `home/.chezmoi.toml.tmpl`. Updating means running chezmoi, mise and the package
+`secrets-restore`, `bw-setup`, `cockpit`). First run asks about 20 plain-text questions
+from `home/.chezmoi.toml.tmpl`, plus bootstrap's own. Updating means running chezmoi, mise and the package
 manager by hand.
 
 The remote-machines and keys work adds an inventory with validation, bootstrap over ssh,
@@ -70,7 +70,9 @@ athome version
 `init` takes every flag `bootstrap.sh` takes today, with the same meaning: `--ref`,
 `--machine`, `--config`, `--no-agents`, `--import-from`, `--import-ssh`, `--import-ssh-bw`,
 `--non-interactive` (`-y`, `--yes`). `teardown` keeps today's tiers and its dry run by
-default, so `test/e2e/scenario.sh` needs only the command name changed.
+default. `test/e2e/scenario.sh` changes in two ways: both of its `bootstrap.sh` calls (before
+and after the teardown) gain `--install-from <built binary>`, and its teardown call becomes
+`athome teardown`. `teardown --all` also removes `~/.local/bin/athome`.
 
 ## The init form
 

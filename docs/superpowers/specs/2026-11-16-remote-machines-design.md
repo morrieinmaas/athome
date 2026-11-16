@@ -63,7 +63,7 @@ On the laptop, a remote scope has no directory at all, so a `personal` laptop wi
 
 ## Inventory
 
-One TOML file at `~/.config/athome/machines.toml`, added to `secrets-backup`'s mirror list
+One TOML file at `~/.config/athome/machines.toml`, added to the mirror list of `athome secrets backup` (today's `secrets-backup`)
 so it lives in the vault and reaches every laptop with the git-crypt key. Hostnames never
 reach the public athome repo.
 
@@ -77,6 +77,7 @@ port           = 22
 athome         = "v1.4.0"           # pinned athome version for this box
 forward_agent  = false              # opt-in, see the keys spec
 github_account = ""                 # optional; empty = the account `gh` is logged in as
+repos          = []                 # repos on this box, maintained by `project clone`
 ```
 
 Validation, on every athome command that reads the file:
@@ -116,7 +117,15 @@ what the box needs on each run.
    no credentials) to `~/.local/share/athome`, and `scripts/bootstrap.sh` runs from that
    clone, so the chezmoi source is there as on the laptop.
 3. The laptop passes a generated `bootstrap.toml` (machine type, scope, identity, the
-   version) through ssh, and bootstrap runs `athome init --config` with it.
+   version) through ssh, and bootstrap runs `athome init --config` with it. That file turns
+   off ssh key generation and the GitHub upload (`ATHOME_GENERATE_SSH_KEY=false`), because
+   `machine add` creates the box key itself in step 4.
+
+**No Bitwarden on a box.** `init` with `machineType = "remote"` never runs `bw-setup`,
+`rbw register` or `rbw login`, even though `ssh -t` gives it a terminal. A logged-in rbw on
+a box would reach the whole vault: the git-crypt key, every break-glass key and every
+context's items. rbw may be installed (it is in `packages.yaml` `common`) but is never
+configured. `use ctx` envrcs on a box read the scope's `.env` files only, never rbw.
 
 It sets one new machine type and one new data key:
 
@@ -144,13 +153,23 @@ What the box gets:
 - mesh VPN enrolment when the inventory target is a mesh name;
 - `ATHOME_MACHINE`, `ATHOME_SCOPE` and `ATHOME_CONTEXT_COLOR`, written by chezmoi to
   `~/.zshenv` (read by every zsh, including the non-login shell that starts
-  `grofe proxy`) and to `~/.config/environment.d/athome.conf` (read by systemd user
-  units). They are never added to grofe's `update-environment`, so the laptop's
-  environment cannot override them;
+  `grofe proxy`; `home/dot_zshenv` becomes `dot_zshenv.tmpl` for this) and to
+  `~/.config/environment.d/athome.conf` (read by systemd user units). They are never added
+  to grofe's `update-environment`, so the laptop's environment cannot override them;
+- canopy's remote indicator: after canopy is installed, `init` runs
+  `canopy remote set --machine <name> --scope <scope> --color <colour>` with the values
+  passed as flags (canopy's spec). It does not rely on the `ATHOME_*` variables, which the
+  chezmoi run that installs canopy cannot see yet;
 - a systemd user unit that runs `grofe start-server --restore` at boot (see "Reboots").
 
-Each box runs its own Claude and Codex logins. The OAuth URL opens in the laptop's browser
-through grofe; no credentials are copied.
+Each box runs its own Claude, Codex and `gh` logins. The OAuth URL or device code opens in
+the laptop's browser through grofe; no credentials are copied. The box's `gh` token is
+needed for `gh` itself (pull requests, issues); git over ssh uses the box key. It reaches
+everything your GitHub account does, so the keys spec lists it under "Breached box".
+
+On the laptop, athome's zsh config exports `CANOPY_THEME` as the active theme's name (the
+basename of `$CANOPY_STATE/current/theme`'s target, not a path), so canopy can carry it to a
+box on attach. That export is added when canopy's themes (M5) land.
 
 ## Commands
 
@@ -171,10 +190,11 @@ athome project clone <repo> [--machine <name>]
 1. Validate the entry (scope rules above).
 2. Pin the box's host key in the managed `known_hosts`.
 3. Bootstrap the box (above).
-4. Create the box's key on the box, register it on GitHub (keys spec).
+4. Create the box's key on the box, register it on GitHub from the laptop (keys spec).
 5. Create the scope's break-glass key if it has none, and authorize it on the box.
-6. `grofe machine add`.
-7. Write the inventory entry and run `secrets-backup`.
+6. `gh auth login` on the box, its device code opened in the laptop's browser.
+7. `grofe machine add`.
+8. Write the inventory entry and run `athome secrets backup`.
 
 The inventory is written last, so a failed `machine add` leaves no entry. Whatever earlier
 steps created (a pinned host key, a GitHub key) is listed in the error, and
@@ -186,18 +206,27 @@ steps created (a pinned host key, a GitHub key) is listed in the error, and
 - **`machine rm`** revokes the box's key on GitHub, removes the break-glass authorization,
   the grofe entry, the generated ssh block and the inventory entry. It does not wipe the box.
 - **`project clone`** clones the repo into the scope's directory on the box, creates the
-  worktree layout, runs `mise install`, and copies that repo's `.env` from the vault over
-  ssh. `--machine` can be left out when the scope has one machine.
+  worktree layout, runs `mise install`, copies `~/.secrets/<repo>/.env*` from the laptop to
+  the same path on the box over ssh, and records the repo in the inventory under the
+  machine (`repos = [...]`). `--machine` can be left out when the scope has one machine.
+  `machine sync` copies `.env` files only for repos in that list, which is what keeps a box
+  to its own scope's secrets. The vault keys `.env` files by repo name alone, so two repos
+  with the same name in different contexts share one entry; that limit exists today and is
+  not changed here.
 
 ## Projects
 
 The laptop's project picker (sessionx, zoxide) lists remote projects next to local ones.
-athome keeps a cached project list per machine at `~/.cache/athome/projects/<name>`,
-refreshed on `machine sync` and `project clone`. Picking a remote project runs
+The list comes from the inventory's `repos` per machine. athome also caches the box's
+`$HOME`, read over ssh at `machine add`, so it can build the box's absolute path. Picking a
+remote project runs
 
 ```
-grofe -r <name> new-session -A -s <repo> -c ~/<scope>/<repo>
+grofe -r <name> new-session -A -s <repo> -c <box-home>/<scope>/<repo>
 ```
+
+with `<box-home>` filled in from the cache, so the laptop's shell never expands a `~` into
+the laptop's own home.
 
 which attaches to that repo's session on the box, creating it if needed. You never need to
 remember which client lives where.
@@ -272,6 +301,11 @@ adds a lingering check to it upstream in grofe.
 - `chezmoi execute-template` on `starship.toml`: with `machineType = "remote"` the host
   segment shows machine and scope in the context colour; for `personal` and `work` the
   output is unchanged from today.
+- The box after `machine add`: rbw has no configuration and no login, and no ssh key was
+  generated by `init` itself (only the step 4 key exists).
+- `project clone` then `machine sync`: the box holds `.env` files only for repos in its
+  `repos` list.
+- The project picker's command uses the box's home path, never the laptop's.
 - bats tests for the generated ssh config, run without a network.
 
 ## Docs

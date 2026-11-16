@@ -34,10 +34,10 @@
 # run_onchange, keyed on the pinned ref: change it, and the next `chezmoi
 # apply` installs that grofe. Bumping it is two edits, this comment and ref=.
 #
-# grofe ref: {{ "d26cfc81e996d064385061a8c99c099657346cc5" }}
+# grofe ref: {{ "17419d4393a2100afa6b9c4aa93ca6facbad779c" }}
 set -euo pipefail
 
-ref="d26cfc81e996d064385061a8c99c099657346cc5"
+ref="17419d4393a2100afa6b9c4aa93ca6facbad779c"
 repo="https://github.com/termage/grofe.git"
 dest="${HOME}/.local/lib/grofe"
 
@@ -59,7 +59,11 @@ elif ! GIT_TERMINAL_PROMPT=0 git ls-remote --exit-code "${repo}" HEAD >/dev/null
   exit 0
 else
   printf 'grofe: building %s at %s\n' "${repo}" "${ref}"
-  cargo install --quiet --locked --git "${repo}" --rev "${ref}" --root "${dest}/build" grofe
+  # The git command, not cargo's own git: this machine's gitconfig rewrites
+  # https://github.com/ to SSH, which cargo's built-in client cannot
+  # authenticate ("no authentication methods succeeded").
+  CARGO_NET_GIT_FETCH_WITH_CLI=true \
+    cargo install --quiet --locked --git "${repo}" --rev "${ref}" --root "${dest}/build" grofe
   install -m 755 "${dest}/build/bin/grofe" "${dest}/grofe.new"
 fi
 # Moved into place, so a running server's next exec never sees half a file.

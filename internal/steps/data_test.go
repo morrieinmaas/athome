@@ -211,6 +211,42 @@ func TestDataIdempotent(t *testing.T) {
 	}
 }
 
+// An offline rerun derives no id; the id stored by the online run must stay,
+// and the step must not rewrite the file.
+func TestDataKeepsStoredIdentityWhenOffline(t *testing.T) {
+	for _, handleInCfg := range []bool{true, false} {
+		name := "handle derived empty"
+		if handleInCfg {
+			name = "handle from the config"
+		}
+		t.Run(name, func(t *testing.T) {
+			fx := newFixture(t)
+			fx.Fake.Have("gh")
+			fx.Fake.On("gh", "api", "user", "--jq", ".login").Return(run.Result{Stdout: "octo\n"})
+			fx.Fake.On("gh", "api", "users/octo", "--jq", ".id").Return(run.Result{Stdout: "42\n"})
+			if handleInCfg {
+				fx.Env.Cfg.Data = map[string]string{"githubHandle": "octo"}
+			}
+			fx.MustExec(steps.Data())
+			before := readFile(t, chezmoiTomlPath(fx))
+
+			fx.Fake.On("gh", "api", "user", "--jq", ".login").Return(run.Result{Code: 1})
+			fx.Fake.On("gh", "api", "users/octo", "--jq", ".id").Return(run.Result{Code: 1})
+			rep := fx.MustExec(steps.Data())
+			if len(rep.Applied) != 0 {
+				t.Errorf("offline rerun applied %v, want nothing", rep.Applied)
+			}
+			got := readChezmoiData(t, chezmoiTomlPath(fx))
+			if got["githubHandle"] != "octo" || got["githubId"] != "42" {
+				t.Errorf("handle=%#v id=%#v, want the stored octo and 42", got["githubHandle"], got["githubId"])
+			}
+			if after := readFile(t, chezmoiTomlPath(fx)); after != before {
+				t.Errorf("offline rerun changed the file")
+			}
+		})
+	}
+}
+
 func TestDataRewrittenWhenAnswersChange(t *testing.T) {
 	fx := newFixture(t)
 	fx.Env.Cfg = e2eConfig(t, fx.Home)

@@ -129,8 +129,21 @@ func renderAndRun(ctx context.Context, env *Env, name string) error {
 func packageManager(ctx context.Context, env *Env) error {
 	if err := renderAndRun(ctx, env, pmScript); err != nil {
 		baselineDepWarn(env, "baseline package manager: %v", err)
+		return nil
+	}
+	if env.OS != "darwin" && env.Distro == "fedora" {
+		for _, pkg := range []string{"rpmfusion-free-release", "rpmfusion-nonfree-release"} {
+			if !rpmInstalled(ctx, env, pkg) {
+				baselineDepWarn(env, "%s is not installed (RPM Fusion mirror unreachable?); continuing", pkg)
+			}
+		}
 	}
 	return nil
+}
+
+func rpmInstalled(ctx context.Context, env *Env, pkg string) bool {
+	res, err := env.Run.Run(ctx, run.Cmd{Name: "rpm", Args: []string{"-q", pkg}})
+	return err == nil && res.Code == 0
 }
 
 // pmInstallCmd mirrors scripts/lib/pm.sh.
@@ -276,13 +289,12 @@ func packageManagerDone(ctx context.Context, env *Env) (bool, error) {
 		}
 		return syscall.Access(nanobrewPrefix, 2) == nil, nil // 2 = W_OK
 	case env.Distro == "fedora":
-		for _, pkg := range []string{"dnf-plugins-core", "rpmfusion-free-release", "rpmfusion-nonfree-release"} {
-			res, err := env.Run.Run(ctx, run.Cmd{Name: "rpm", Args: []string{"-q", pkg}})
-			if err != nil || res.Code != 0 {
-				return false, nil
-			}
+		// The script guarantees dnf-plugins-core; RPM Fusion is best effort
+		// there, so a missing release must not re-run the step forever.
+		if _, err := env.Run.LookPath("dnf"); err != nil {
+			return false, nil
 		}
-		return true, nil
+		return rpmInstalled(ctx, env, "dnf-plugins-core"), nil
 	}
 	_, err := env.Run.LookPath("yay")
 	return err == nil, nil

@@ -133,8 +133,23 @@ func dataEntries(ctx context.Context, env *Env) ([]dataEntry, error) {
 
 var idRe = regexp.MustCompile(`"id"\s*:\s*([0-9]*)`)
 
+// storedData is the [data] table already in chezmoi.toml, or nil.
+func storedData(env *Env) map[string]any {
+	var doc struct {
+		Data map[string]any `toml:"data"`
+	}
+	if _, err := toml.DecodeFile(chezmoiConfigPath(env), &doc); err != nil {
+		return nil
+	}
+	return doc.Data
+}
+
 // dataIdentity ports B:830-846. Failures leave the value empty; it never errors.
+// A value that cannot be derived (offline rerun) falls back to the one already
+// stored, so a stored identity is never replaced by "".
 func dataIdentity(ctx context.Context, env *Env) (handle, id string) {
+	stored := storedData(env)
+	storedStr := func(k string) string { s, _ := stored[k].(string); return s }
 	handle = env.Cfg.Data["githubHandle"]
 	_, ghErr := env.Run.LookPath("gh")
 	hasGh := ghErr == nil
@@ -142,6 +157,9 @@ func dataIdentity(ctx context.Context, env *Env) (handle, id string) {
 		if r, err := env.Run.Run(ctx, dgCmd("gh", "api", "user", "--jq", ".login")); err == nil && r.Code == 0 {
 			handle = strings.TrimSpace(r.Stdout)
 		}
+	}
+	if handle == "" {
+		handle = storedStr("githubHandle")
 	}
 	id = env.Cfg.Data["githubId"]
 	if id == "" && handle != "" {
@@ -160,6 +178,9 @@ func dataIdentity(ctx context.Context, env *Env) (handle, id string) {
 				}
 			}
 		}
+	}
+	if id == "" {
+		id = storedStr("githubId")
 	}
 	return handle, id
 }

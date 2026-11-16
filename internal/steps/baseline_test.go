@@ -239,7 +239,7 @@ func TestPackageManagerCheck(t *testing.T) {
 			fx.T.Cleanup(steps.SetNanobrewBin(nb))
 			nanobrewReady(fx)
 		}},
-		{"fedora plugins and rpmfusion", "linux", "fedora", func(fx *fixture) { rpmHave(fx, "") }},
+		{"fedora dnf and plugins-core", "linux", "fedora", func(fx *fixture) { fx.Fake.Have("dnf"); rpmHave(fx, "") }},
 		{"arch yay", "linux", "arch", func(fx *fixture) { fx.Fake.Have("yay") }},
 	}
 	for _, c := range cases {
@@ -301,18 +301,57 @@ func TestPackageManagerCheckDarwinNeedsLinkAndWritablePrefix(t *testing.T) {
 	})
 }
 
-// The script installs dnf-plugins-core and both RPM Fusion releases; all three
-// must be present for the step to be done.
-func TestPackageManagerCheckFedoraNeedsAllThree(t *testing.T) {
-	for _, missing := range []string{"dnf-plugins-core", "rpmfusion-free-release", "rpmfusion-nonfree-release"} {
-		t.Run("missing "+missing, func(t *testing.T) {
+// The script guarantees dnf and dnf-plugins-core; RPM Fusion is best effort in
+// it (mirror down, or already enabled), so only the first two gate the step.
+func TestPackageManagerCheckFedoraNeedsDnfAndPluginsCore(t *testing.T) {
+	cases := []struct {
+		name    string
+		haveDnf bool
+		missing string
+		applied bool
+	}{
+		{"dnf missing", false, "", true},
+		{"dnf-plugins-core missing", true, "dnf-plugins-core", true},
+		{"rpmfusion-free missing", true, "rpmfusion-free-release", false},
+		{"rpmfusion-nonfree missing", true, "rpmfusion-nonfree-release", false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
 			fx := newFixture(t)
 			fx.Env.OS, fx.Env.Distro = "linux", "fedora"
-			rpmHave(fx, missing)
-			if !appliedSet(fx.MustExec(steps.Baseline()))["baseline-package-manager"] {
-				t.Errorf("without %s the script must run:\n%s", missing, fx.dump())
+			if c.haveDnf {
+				fx.Fake.Have("dnf")
+			}
+			rpmHave(fx, c.missing)
+			if got := appliedSet(fx.MustExec(steps.Baseline()))["baseline-package-manager"]; got != c.applied {
+				t.Errorf("applied = %v, want %v:\n%s", got, c.applied, fx.dump())
 			}
 		})
+	}
+}
+
+// After the script runs, a still missing RPM Fusion release is a warning and a
+// follow-up line, never a failure.
+func TestPackageManagerFedoraWarnsWhenRPMFusionMissing(t *testing.T) {
+	fx := newFixture(t)
+	fx.Env.OS, fx.Env.Distro = "linux", "fedora"
+	rpmHave(fx, "rpmfusion-nonfree-release")
+	if _, err := fx.Exec(steps.Baseline()); err != nil {
+		t.Fatalf("a missing RPM Fusion release must not fail the run: %v", err)
+	}
+	if fx.Env.Warnings != 1 || !strings.Contains(fx.Log.String(), "rpmfusion-nonfree-release") {
+		t.Errorf("want one warning naming rpmfusion-nonfree-release, Warnings=%d:\n%s", fx.Env.Warnings, fx.Log.String())
+	}
+	got, _ := os.ReadFile(steps.FollowupLogPath())
+	if !strings.Contains(string(got), "baseline dep") {
+		t.Errorf("want the baseline-dep follow-up line, log: %q", got)
+	}
+	fx = newFixture(t)
+	fx.Env.OS, fx.Env.Distro = "linux", "fedora"
+	rpmHave(fx, "")
+	fx.MustExec(steps.Baseline())
+	if fx.Env.Warnings != 0 {
+		t.Errorf("both releases present: Warnings = %d, want 0", fx.Env.Warnings)
 	}
 }
 

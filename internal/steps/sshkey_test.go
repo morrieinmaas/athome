@@ -435,3 +435,17 @@ func TestImportSSHWithoutImportFromIsANote(t *testing.T) {
 		t.Errorf("a fresh key is generated instead:\n%s", fx.dump())
 	}
 }
+
+// Z3: the check decides from cheap state; the derive runs once, in Apply.
+func TestKeyNoPubDerivesOnce(t *testing.T) {
+	fx := newFixture(t)
+	fx.PutKey("PRIV", "")
+	stubDerive(fx)
+	fx.MustExec(steps.SSHKey())
+	if n := len(fx.callsTo("ssh-keygen", "-y")); n != 1 {
+		t.Errorf("ssh-keygen -y ran %d times, want once (in Apply):\n%s", n, fx.dump())
+	}
+	if got := readFile(t, keyPath(fx)+".pub"); !strings.Contains(got, "AAAAC3NzaC1lZDI1NTE5AAAAIderived") {
+		t.Errorf(".pub = %q, want the derived key", got)
+	}
+}

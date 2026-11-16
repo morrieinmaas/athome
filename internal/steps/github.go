@@ -44,30 +44,7 @@ func GitHub() []Step {
 	return []Step{{
 		Name: "github-keys",
 		Check: func(ctx context.Context, env *Env) (bool, error) {
-			p := decide(ctx, env)
-			switch p.mode {
-			case ghSkip:
-				return true, nil
-			case ghRegistered:
-				switch ghSigningState(ctx, env, p) {
-				case sigNoScope: // the user uploads by hand, so a rerun has nothing to apply
-					ghSigningHint(env, p)
-					return true, nil
-				case sigDone:
-					return true, nil
-				}
-				return false, nil
-			case ghUpload:
-				// No key scope and the refresh cannot help (an env token) or was
-				// refused earlier (the marker): the upload is manual, which the
-				// user finishes by hand. A failed `gh ssh-key add` (scopes
-				// present) is not done and retries.
-				if len(ghMissingScopes(ctx, env)) > 0 && (os.Getenv("GITHUB_TOKEN") != "" || fileExists(ghManualMarker(env))) {
-					ghManualUpload(env, p)
-					return true, nil
-				}
-			}
-			return false, nil
+			return ghCheck(ctx, env, decide(ctx, env))
 		},
 		Apply: func(ctx context.Context, env *Env) error {
 			p := decide(ctx, env)
@@ -80,6 +57,34 @@ func GitHub() []Step {
 			return nil
 		},
 	}}
+}
+
+// ghCheck reports whether the github-keys step has nothing left to apply.
+func ghCheck(ctx context.Context, env *Env, p ghPlan) (bool, error) {
+	switch p.mode {
+	case ghSkip:
+		return true, nil
+	case ghRegistered:
+		switch ghSigningState(ctx, env, p) {
+		case sigNoScope: // the user uploads by hand, so a rerun has nothing to apply
+			ghSigningHint(env, p)
+			return true, nil
+		case sigDone:
+			return true, nil
+		}
+		return false, nil
+	case ghUpload:
+		// No key scope and the refresh was refused or impossible earlier (the
+		// marker): the upload is manual, which the user finishes by hand. The
+		// first run applies, so the instructions and the post-upload steps run
+		// even on an env token. A failed `gh ssh-key add` (scopes present) is
+		// not done and retries.
+		if len(ghMissingScopes(ctx, env)) > 0 && fileExists(ghManualMarker(env)) {
+			ghManualUpload(env, p)
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // ghPreconditions checks what an upload needs (not CI, a .pub, gh, gh authed).
@@ -398,7 +403,7 @@ func ghSeedSSHConfig(home, hostkey string) error {
 	if strings.Contains(string(existing), hostkey) {
 		return os.Chmod(path, 0o600)
 	}
-	block := "\nHost github.com\n    HostName github.com\n    User git\n    IdentityFile ~/.ssh/id_ed25519\n    IdentityFile ~/.ssh/" + hostkey + "\n"
+	block := "\n# === seeded by scripts/lib/ssh.sh — the chezmoi-managed ~/.ssh/config replaces this ===\nHost github.com\n    HostName github.com\n    User git\n    IdentityFile ~/.ssh/id_ed25519\n    IdentityFile ~/.ssh/" + hostkey + "\n"
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
 		return err

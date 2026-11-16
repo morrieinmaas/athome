@@ -30,6 +30,8 @@ type Env struct {
 	Warnings     int
 	KeyGenerated bool     // set by SSHKey when it generated this run's key; ssh-bw-backup runs only then, and github adds a note
 	DataChanged  bool     // set by chezmoi-data when it wrote chezmoi.toml; chezmoi-apply must then run (bash always re-inits after seeding)
+	depWarned    bool     // a baseline dep failure already counted as the run's one dep warning
+	pubFailed    bool     // ssh-pub could not derive the .pub; the step counts as done for the rest of the run
 	Cleanup      []func() // run in reverse order when the run ends, see RunCleanup
 }
 

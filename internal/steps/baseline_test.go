@@ -556,3 +556,21 @@ func TestMiseInstallMustLeaveABinary(t *testing.T) {
 		t.Errorf("want the baseline dep follow-up line, log: %q", got)
 	}
 }
+
+// Z7: bash's one shared deps_rc makes any number of failed baseline deps one
+// warning (B:948-951).
+func TestBaselineDepFailuresCountAsOneWarning(t *testing.T) {
+	fx := newFixture(t)
+	fx.Env.OS, fx.Env.Distro = "darwin", ""
+	fx.Fake.On("nb", "install", "gh", "rbw", "gitleaks").Return(run.Result{Code: 1})
+	fx.Env.Run = fx.Fake // no mise either
+	if _, err := fx.Exec(steps.Baseline()); err != nil {
+		t.Fatalf("failed deps must not abort: %v", err)
+	}
+	if n := strings.Count(fx.Log.String(), "warning: "); n < 2 {
+		t.Fatalf("want at least two dep failures logged, got %d:\n%s", n, fx.Log)
+	}
+	if fx.Env.Warnings != 1 {
+		t.Errorf("Warnings = %d, want 1 for any number of failed deps", fx.Env.Warnings)
+	}
+}

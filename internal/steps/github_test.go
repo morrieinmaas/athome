@@ -551,7 +551,7 @@ func TestManualUploadFallbackConverges(t *testing.T) {
 // Y1: chezmoi's private_config.tmpl writes `<host>_ed25519` into ~/.ssh/config
 // on every machine, so that line proves nothing about an earlier manual
 // fallback. Only GITHUB_TOKEN or the marker file does.
-func TestManualFallbackNeedsMarkerOrToken(t *testing.T) {
+func TestManualFallbackNeedsMarker(t *testing.T) {
 	marker := func(fx *fixture) string {
 		return fx.Path(".local", "state", "athome", "github-manual-upload")
 	}
@@ -580,13 +580,29 @@ func TestManualFallbackNeedsMarkerOrToken(t *testing.T) {
 			t.Errorf("marker present, want nothing applied, applied=%v:\n%s", rep.Applied, fx.dump())
 		}
 	})
-	t.Run("GITHUB_TOKEN means done", func(t *testing.T) {
+	t.Run("GITHUB_TOKEN without the marker still runs the first time", func(t *testing.T) {
 		fx := ghFixture(t)
 		t.Setenv("GITHUB_TOKEN", "ghp_dummy")
 		fx.Fake.On("gh", "auth", "status").Return(run.Result{Stdout: noScopes, Stderr: noScopes})
 		rep := fx.MustExec(steps.GitHub())
+		if len(rep.Applied) != 1 {
+			t.Fatalf("env token, no marker: want the step applied once, applied=%v", rep.Applied)
+		}
+		if !strings.Contains(fx.Log.String(), "manual SSH key upload") {
+			t.Errorf("want the manual upload instructions:\n%s", fx.Log)
+		}
+		if !fx.called("gh", "config", "set", "git_protocol", "ssh") {
+			t.Errorf("want the post-upload git_protocol flip:\n%s", fx.dump())
+		}
+		if !strings.Contains(readFile(t, fx.Path(".ssh", "config")), testHost+"_ed25519") {
+			t.Errorf("want the ssh config seeded")
+		}
+		if !exists(marker(fx)) {
+			t.Errorf("the first run must write the marker")
+		}
+		rep = fx.MustExec(steps.GitHub())
 		if len(rep.Applied) != 0 {
-			t.Errorf("env token, want nothing applied, applied=%v", rep.Applied)
+			t.Errorf("second run with the marker: want nothing applied, applied=%v", rep.Applied)
 		}
 	})
 	t.Run("successful upload removes the marker", func(t *testing.T) {
@@ -600,4 +616,26 @@ func TestManualFallbackNeedsMarkerOrToken(t *testing.T) {
 			t.Errorf("marker must be removed after a successful upload")
 		}
 	})
+}
+
+// Z5: the seeded block is the one scripts/lib/ssh.sh writes, marker line included.
+func TestSeedMatchesBashHelper(t *testing.T) {
+	b, err := os.ReadFile("../../scripts/lib/ssh.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := string(b)
+	start := strings.Index(src, "cat >> \"$HOME/.ssh/config\" <<SSHSEED\n")
+	end := strings.Index(src, "\nSSHSEED\n")
+	if start < 0 || end < start {
+		t.Fatal("seed heredoc not found in scripts/lib/ssh.sh")
+	}
+	want := src[start+len("cat >> \"$HOME/.ssh/config\" <<SSHSEED\n") : end+1]
+	want = strings.ReplaceAll(want, "$hostkey", testHost+"_ed25519")
+
+	fx := ghFixture(t)
+	fx.MustExec(steps.GitHub())
+	if got := sshConfigSeed(t, fx); got != want {
+		t.Errorf("Go seed differs from ssh.sh:\n--- go\n%q\n--- bash\n%q", got, want)
+	}
 }

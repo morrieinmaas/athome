@@ -66,9 +66,15 @@ func appendFollowup(env *Env, line string) {
 	fmt.Fprintf(f, "  • %s\n", line)
 }
 
-// baselineDepWarn is baselineWarn plus B:950's follow-up line, written once.
+// baselineDepWarn is baselineWarn plus B:950's follow-up line, written once; the
+// warning counts at most once per run.
 func baselineDepWarn(env *Env, format string, a ...any) {
-	baselineWarn(env, format, a...)
+	if env.depWarned { // bash's shared deps_rc: one warning however many deps fail
+		envLogf(env, "warning: "+format+"\n", a...)
+	} else {
+		baselineWarn(env, format, a...)
+		env.depWarned = true
+	}
 	appendFollowup(env, "a baseline dep (package manager / gh / rbw / project dirs / mise) failed; re-run `mise run bootstrap`.")
 }
 

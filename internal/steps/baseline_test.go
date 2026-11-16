@@ -184,6 +184,15 @@ func TestChezmoiApplyCheck(t *testing.T) {
 			t.Errorf("a differing home must be applied:\n%s", fx.dump())
 		}
 	})
+	// bash always re-runs chezmoi init after seeding chezmoi.toml (B:769-922).
+	t.Run("data applied, verify passes: applied", func(t *testing.T) {
+		fx := newFixture(t)
+		fx.Fake.On("chezmoi", chezmoiVerify(fx)...).Return(run.Result{Code: 0})
+		rep := fx.MustExec(append(steps.Data(), steps.Baseline()...))
+		if !appliedSet(rep)["chezmoi-data"] || !appliedSet(rep)["chezmoi-apply"] {
+			t.Errorf("seeding chezmoi.toml must force the chezmoi init:\n%s", fx.dump())
+		}
+	})
 }
 
 // nanobrewReady points the nanobrew paths at a temp /opt/nb link and a

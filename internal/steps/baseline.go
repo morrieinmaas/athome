@@ -49,6 +49,7 @@ func baselineWarn(env *Env, format string, a ...any) {
 
 // chezmoiApply is B:769-922: a failed init is a warning, never an error.
 func chezmoiApply(ctx context.Context, env *Env) error {
+	env.DataChanged = false // this init consumes the seeded chezmoi.toml
 	environ := append(os.Environ(),
 		"ATHOME_FOLLOWUP_LOG="+FollowupLogPath(env.Home),
 		"ATHOME_BOOTSTRAP=1",
@@ -196,6 +197,9 @@ func chezmoiApplyDone(ctx context.Context, env *Env) (bool, error) {
 	// B:770: notes from an earlier run must not bleed into this one, even when
 	// the apply is skipped.
 	os.WriteFile(FollowupLogPath(env.Home), nil, 0o644)
+	if env.DataChanged {
+		return false, nil
+	}
 	res, err := env.Run.Run(ctx, run.Cmd{
 		Name: "chezmoi",
 		Args: []string{"verify", "--source=" + sourceDir(env), "--exclude=scripts"},

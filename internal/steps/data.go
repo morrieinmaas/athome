@@ -78,7 +78,11 @@ func Data() []Step {
 			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 				return err
 			}
-			return os.WriteFile(path, []byte(b.String()), 0o600)
+			if err := os.WriteFile(path, []byte(b.String()), 0o600); err != nil {
+				return err
+			}
+			env.DataChanged = true
+			return nil
 		},
 	}}
 }

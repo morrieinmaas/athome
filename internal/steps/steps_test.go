@@ -51,6 +51,9 @@ func newFixture(t *testing.T) *fixture {
 		mustMkdir(t, d)
 	}
 	writeFile(t, filepath.Join(repo, ".chezmoiroot"), "home\n", 0o644)
+	for _, name := range []string{"run_once_before_01-install-package-manager.sh.tmpl", "run_03-setup-project-dirs.sh.tmpl"} {
+		writeFile(t, filepath.Join(repo, "home", ".chezmoiscripts", name), "# "+name+"\n", 0o644)
+	}
 	writeFile(t, filepath.Join(repo, "home", "dot_config", "git", "hooks", "executable_pre-commit"), "#!/bin/sh\n# pre-commit\n", 0o644)
 	writeFile(t, filepath.Join(repo, "home", "dot_config", "git", "hooks", "executable_commit-msg"), "#!/bin/sh\n# commit-msg\n", 0o644)
 

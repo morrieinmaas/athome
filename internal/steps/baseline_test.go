@@ -1,6 +1,7 @@
 package steps_test
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -120,42 +121,17 @@ func TestPackageManagerScriptViaTemplate(t *testing.T) {
 	}
 }
 
-func TestProjectDirs(t *testing.T) {
-	t.Run("personal", func(t *testing.T) {
-		fx := newFixture(t)
-		fx.Env.Cfg.Machine = "personal"
-		fx.MustExec(steps.Baseline())
-		for dir, ctx := range map[string]string{"personal": "personal", "sidebiz": "sidebiz"} {
-			if got := readFile(t, fx.Path(dir, ".envrc")); !strings.Contains(got, "use ctx "+ctx) {
-				t.Errorf("~/%s/.envrc = %q, want `use ctx %s`", dir, got, ctx)
-			}
-		}
-		if exists(fx.Path("work")) {
-			t.Errorf("a personal machine gets no ~/work")
-		}
-	})
-	t.Run("work", func(t *testing.T) {
-		fx := newFixture(t)
-		fx.Env.Cfg.Machine = "work"
-		fx.MustExec(steps.Baseline())
-		if got := readFile(t, fx.Path("work", ".envrc")); !strings.Contains(got, "use ctx work") {
-			t.Errorf("~/work/.envrc = %q, want `use ctx work`", got)
-		}
-		if exists(fx.Path("personal")) || exists(fx.Path("sidebiz")) {
-			t.Errorf("a work machine gets neither ~/personal nor ~/sidebiz")
-		}
-	})
-	t.Run("an existing .envrc is untouched", func(t *testing.T) {
-		fx := newFixture(t)
-		writeFile(t, fx.Path("personal", ".envrc"), "# mine\n", 0o644)
-		fx.MustExec(steps.Baseline())
-		if got := readFile(t, fx.Path("personal", ".envrc")); got != "# mine\n" {
-			t.Errorf(".envrc clobbered: %q", got)
-		}
-		if !exists(fx.Path("sidebiz", ".envrc")) {
-			t.Errorf("the other dir is still seeded")
-		}
-	})
+func TestProjectDirsDone(t *testing.T) {
+	fx := newFixture(t)
+	fx.Env.Cfg.Machine = "personal"
+	writeFile(t, fx.Path("personal", ".envrc"), "x", 0o644)
+	if appliedSet(fx.MustExec(steps.Baseline()))["baseline-project-dirs"] != true {
+		t.Fatal("sidebiz is missing, the step must apply")
+	}
+	writeFile(t, fx.Path("sidebiz", ".envrc"), "x", 0o644)
+	if appliedSet(fx.MustExec(steps.Baseline()))["baseline-project-dirs"] {
+		t.Error("both .envrc present, the step must be skipped")
+	}
 }
 
 func TestMiseBinary(t *testing.T) {
@@ -288,5 +264,69 @@ func TestChezmoiApplyPassesFollowupLog(t *testing.T) {
 	calls := fx.callsTo("chezmoi", chezmoiInit(fx)...)
 	if len(calls) != 1 || !strings.Contains(strings.Join(calls[0].Env, "\n"), "ATHOME_FOLLOWUP_LOG="+steps.FollowupLogPath(fx.Home)) {
 		t.Errorf("chezmoi init env lacks the follow-up log: %+v", calls)
+	}
+}
+
+// F1: with --ref, chezmoi reads the worktree's home/, not the checkout's.
+func TestBaselineUsesRefSource(t *testing.T) {
+	fx := newFixture(t)
+	src := filepath.Join(t.TempDir(), "wt", "home")
+	script := "#!/bin/bash\n# pm from the worktree\n"
+	writeFile(t, filepath.Join(src, ".chezmoiscripts", "run_once_before_01-install-package-manager.sh.tmpl"), script, 0o644)
+	fx.Env.Source = src
+	fx.Fake.On("chezmoi", "verify", "--source="+src, "--exclude=scripts").Return(run.Result{Code: 1})
+	fx.Fake.On("chezmoi", "execute-template").Return(run.Result{Stdout: "echo pm\n"})
+	fx.MustExec(steps.Baseline())
+	if !fx.called("chezmoi", "--exclude=scripts", "--source="+src) {
+		t.Errorf("chezmoi init must use --source=%s:\n%s", src, fx.dump())
+	}
+	if !fx.called("chezmoi", "verify", "--source="+src) {
+		t.Errorf("chezmoi verify must use --source=%s:\n%s", src, fx.dump())
+	}
+	var rendered bool
+	for _, c := range fx.callsTo("chezmoi", "execute-template") {
+		rendered = rendered || c.Stdin == script
+	}
+	if !rendered {
+		t.Errorf("the pm script must be read from the worktree source:\n%s", fx.dump())
+	}
+}
+
+// F6: after the package manager step, nb and mise are findable by later steps.
+func TestBaselineExtendsPath(t *testing.T) {
+	fx := newFixture(t)
+	t.Setenv("PATH", "/usr/bin")
+	fx.MustExec(steps.Baseline())
+	want := "/opt/nanobrew/prefix/bin:" + filepath.Join(fx.Home, ".local", "bin") + ":/usr/bin"
+	if got := os.Getenv("PATH"); got != want {
+		t.Errorf("PATH = %q, want %q", got, want)
+	}
+}
+
+// F19: a missing baseline script is a warning, not silence.
+func TestMissingBaselineScriptWarns(t *testing.T) {
+	fx := newFixture(t)
+	if err := os.Remove(filepath.Join(fx.Repo, "home", ".chezmoiscripts", "run_once_before_01-install-package-manager.sh.tmpl")); err != nil {
+		t.Fatal(err)
+	}
+	fx.MustExec(steps.Baseline())
+	if fx.Env.Warnings < 1 || !strings.Contains(fx.Log.String(), "run_once_before_01-install-package-manager.sh.tmpl") {
+		t.Errorf("a missing script must warn (Warnings=%d):\n%s", fx.Env.Warnings, fx.Log)
+	}
+}
+
+// F18: the project dirs come from the repo's own script, not a Go copy.
+func TestProjectDirsRendersTheRepoScript(t *testing.T) {
+	fx := newFixture(t)
+	script := "# dirs {{ .machineType }}\n"
+	writeFile(t, filepath.Join(fx.Repo, "home", ".chezmoiscripts", "run_03-setup-project-dirs.sh.tmpl"), script, 0o644)
+	fx.Fake.On("chezmoi", "execute-template").Return(run.Result{Stdout: "echo dirs\n"})
+	fx.MustExec(steps.Baseline())
+	var piped bool
+	for _, c := range fx.Fake.Calls() {
+		piped = piped || (c.Name == "bash" && c.Stdin == "echo dirs\n")
+	}
+	if !piped || exists(fx.Path("personal", ".envrc")) {
+		t.Errorf("the rendered script must run via bash, and Go must not seed dirs itself (piped=%v):\n%s", piped, fx.dump())
 	}
 }

@@ -11,9 +11,10 @@ import (
 )
 
 const (
-	pmScript       = "run_once_before_01-install-package-manager.sh.tmpl"
-	baselinePkgs   = "gh rbw gitleaks"
-	nanobrewBinDir = "/opt/nanobrew/prefix/bin"
+	pmScript          = "run_once_before_01-install-package-manager.sh.tmpl"
+	projectDirsScript = "run_03-setup-project-dirs.sh.tmpl"
+	baselinePkgs      = "gh rbw gitleaks"
+	nanobrewBinDir    = "/opt/nanobrew/prefix/bin"
 )
 
 var nanobrewBin = filepath.Join(nanobrewBinDir, "nb")
@@ -36,15 +37,9 @@ func FollowupLogPath(_ string) string {
 	return filepath.Join(tmpDir(), "athome-bootstrap-followup.log")
 }
 
-func baselineLog(env *Env, format string, a ...any) {
-	if env.Log != nil {
-		fmt.Fprintf(env.Log, format, a...)
-	}
-}
-
 func baselineWarn(env *Env, format string, a ...any) {
 	env.Warnings++
-	baselineLog(env, "warning: "+format+"\n", a...)
+	envLogf(env, "warning: "+format+"\n", a...)
 }
 
 // chezmoiApply is B:769-922: a failed init is a warning, never an error.
@@ -58,10 +53,10 @@ func chezmoiApply(ctx context.Context, env *Env) error {
 		res, err := env.Run.Run(ctx, run.Cmd{Name: "gh", Args: []string{"auth", "token"}})
 		if tok := strings.TrimSpace(res.Stdout); err == nil && res.Code == 0 && tok != "" {
 			environ = append(environ, "GITHUB_TOKEN="+tok, "MISE_GITHUB_TOKEN="+tok)
-			baselineLog(env, "mise will use gh's GitHub token\n")
+			envLogf(env, "mise will use gh's GitHub token\n")
 		}
 	}
-	source := filepath.Join(env.RepoRoot, "home")
+	source := sourceDir(env)
 	res, err := env.Run.Run(ctx, run.Cmd{
 		Name:        "chezmoi",
 		Args:        []string{"init", "--apply", "--force", "--exclude=scripts", "--source=" + source},
@@ -84,11 +79,10 @@ func tmpDir() string {
 }
 
 // renderAndRun is B:933/941: render a chezmoi script template, pipe it to bash.
-// A script that is not in the repo is skipped.
 func renderAndRun(ctx context.Context, env *Env, name string) error {
-	tmpl, err := os.ReadFile(filepath.Join(env.RepoRoot, "home", ".chezmoiscripts", name))
+	tmpl, err := os.ReadFile(filepath.Join(sourceDir(env), ".chezmoiscripts", name))
 	if err != nil {
-		return nil
+		return fmt.Errorf("read %s: %w", name, err)
 	}
 	rendered, err := env.Run.Run(ctx, run.Cmd{Name: "chezmoi", Args: []string{"execute-template"}, Stdin: string(tmpl)})
 	if err != nil || rendered.Code != 0 {
@@ -148,41 +142,27 @@ func installPackages(ctx context.Context, env *Env) error {
 	return nil
 }
 
-// projectDirContexts mirrors run_03-setup-project-dirs.sh.tmpl.
-func projectDirContexts(machine string) [][2]string {
+// projectDirContexts lists the dirs run_03-setup-project-dirs.sh.tmpl seeds per
+// machine type; only the done check needs them, the script does the seeding.
+func projectDirContexts(machine string) []string {
 	if machine == "work" {
-		return [][2]string{{"work", "work"}}
+		return []string{"work"}
 	}
-	return [][2]string{{"personal", "personal"}, {"sidebiz", "sidebiz"}}
+	return []string{"personal", "sidebiz"}
 }
 
 func projectDirsDone(_ context.Context, env *Env) (bool, error) {
 	for _, d := range projectDirContexts(env.Cfg.Machine) {
-		if _, err := os.Stat(filepath.Join(env.Home, d[0], ".envrc")); err != nil {
+		if _, err := os.Stat(filepath.Join(env.Home, d, ".envrc")); err != nil {
 			return false, nil
 		}
 	}
 	return true, nil
 }
 
-func projectDirs(_ context.Context, env *Env) error {
-	for _, d := range projectDirContexts(env.Cfg.Machine) {
-		dir := filepath.Join(env.Home, d[0])
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return err
-		}
-		envrc := filepath.Join(dir, ".envrc")
-		if _, err := os.Stat(envrc); err == nil {
-			continue
-		}
-		body := fmt.Sprintf("# Auto-seeded by chezmoi (run_03-setup-project-dirs.sh.tmpl).\n"+
-			"# Bundles the right rbw/Bitwarden context for anything under %s/ -\n"+
-			"# subdirectories inherit unless they override with their own .envrc.\n"+
-			"use ctx %s\n", dir, d[1])
-		if err := os.WriteFile(envrc, []byte(body), 0o644); err != nil {
-			return err
-		}
-		baselineLog(env, "seeded %s\n", envrc)
+func projectDirs(ctx context.Context, env *Env) error {
+	if err := renderAndRun(ctx, env, projectDirsScript); err != nil {
+		baselineWarn(env, "baseline project dirs: %v", err)
 	}
 	return nil
 }
@@ -210,13 +190,14 @@ func chezmoiApplyDone(ctx context.Context, env *Env) (bool, error) {
 	os.WriteFile(FollowupLogPath(env.Home), nil, 0o644)
 	res, err := env.Run.Run(ctx, run.Cmd{
 		Name: "chezmoi",
-		Args: []string{"verify", "--source=" + filepath.Join(env.RepoRoot, "home"), "--exclude=scripts"},
+		Args: []string{"verify", "--source=" + sourceDir(env), "--exclude=scripts"},
 	})
 	return err == nil && res.Code == 0, nil
 }
 
 // packageManagerDone: the OS's package manager is already set up.
 func packageManagerDone(ctx context.Context, env *Env) (bool, error) {
+	prependBaselinePath(env)
 	switch {
 	case env.OS == "darwin":
 		if _, err := env.Run.LookPath("nb"); err == nil {
@@ -230,4 +211,15 @@ func packageManagerDone(ctx context.Context, env *Env) (bool, error) {
 	}
 	_, err := env.Run.LookPath("yay")
 	return err == nil, nil
+}
+
+// prependBaselinePath ports B:935: a just-installed nb (and mise) must be
+// findable by the rest of the run, so put their dirs first on PATH.
+func prependBaselinePath(env *Env) {
+	front := nanobrewBinDir + string(os.PathListSeparator) + filepath.Join(env.Home, ".local", "bin")
+	path := os.Getenv("PATH")
+	if path == front || strings.HasPrefix(path, front+string(os.PathListSeparator)) {
+		return
+	}
+	os.Setenv("PATH", front+string(os.PathListSeparator)+path)
 }

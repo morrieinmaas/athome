@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/morrieinmaas/athome/internal/run"
+	"github.com/morrieinmaas/athome/internal/run/runtest"
 	"github.com/morrieinmaas/athome/internal/steps"
 )
 
@@ -28,6 +29,7 @@ func backup(t *testing.T, name, priv, pub string) string {
 func keyPath(fx *fixture) string { return fx.Path(".ssh", testHost+"_ed25519") }
 
 func stubDerive(fx *fixture) {
+	fx.Env.Run = deriveSim{fx.Env.Run, fx.Fake}
 	fx.Fake.On("ssh-keygen", "-y", "-f", keyPath(fx)).Return(run.Result{Stdout: pubLine})
 }
 
@@ -43,6 +45,25 @@ func (f flakyDerive) Run(ctx context.Context, c run.Cmd) (run.Result, error) {
 		return run.Result{Code: 1, Stderr: "invalid format"}, nil
 	}
 	return res, err
+}
+
+// deriveSim answers the interactive derive, `sh -c 'exec ssh-keygen -y -f "$1" > "$2"' athome-derive KEY OUT`,
+// from the fake's `ssh-keygen -y -f KEY` rule: it records that call as ssh-keygen,
+// with the Interactive flag, and writes the rule's stdout to OUT.
+type deriveSim struct {
+	run.Runner
+	fake *runtest.Fake
+}
+
+func (d deriveSim) Run(ctx context.Context, c run.Cmd) (run.Result, error) {
+	if c.Name == "sh" && len(c.Args) == 5 && c.Args[2] == "athome-derive" {
+		res, _ := d.fake.Run(ctx, run.Cmd{Name: "ssh-keygen", Args: []string{"-y", "-f", c.Args[3]}, Interactive: c.Interactive})
+		if res.Code == 0 {
+			os.WriteFile(c.Args[4], []byte(res.Stdout), 0o600)
+		}
+		return run.Result{Code: res.Code}, nil
+	}
+	return d.Runner.Run(ctx, c)
 }
 
 func generateCalls(fx *fixture) []run.Cmd { return fx.callsTo("ssh-keygen", "-t", "ed25519") }
@@ -493,5 +514,40 @@ func TestKeyNoPubDerivesOnce(t *testing.T) {
 	}
 	if got := readFile(t, keyPath(fx)+".pub"); !strings.Contains(got, "AAAAC3NzaC1lZDI1NTE5AAAAIderived") {
 		t.Errorf(".pub = %q, want the derived key", got)
+	}
+}
+
+// C1: an import without a .pub derives it interactively (a passphrase may be
+// asked on the terminal) and, when that fails, behaves like ssh-pub: it logs,
+// leaves the underivable marker and does not fail, so run 1 and run 2 agree.
+func TestImportDirDeriveIsInteractiveAndFailureOnlyLogs(t *testing.T) {
+	fx := newFixture(t)
+	stubDerive(fx)
+	fx.Fake.On("ssh-keygen", "-y", "-f", keyPath(fx)).Return(run.Result{Code: 1, Stderr: "incorrect passphrase"})
+	fx.Env.Opts.ImportFrom = backup(t, "oldbox", "PRIVATE-KEY", "")
+	fx.Env.Opts.ImportSSH = true
+
+	if _, err := fx.Exec(steps.SSHKey()); err != nil {
+		t.Fatalf("an underivable .pub must not fail the import: %v\n%s", err, fx.Log)
+	}
+	calls := fx.callsTo("ssh-keygen", "-y", "-f", keyPath(fx))
+	if len(calls) == 0 || !calls[0].Interactive {
+		t.Errorf("the import's ssh-keygen -y must be interactive: %+v", calls)
+	}
+	if got := readFile(t, keyPath(fx)); got != "PRIVATE-KEY" {
+		t.Errorf("key = %q, want the imported key kept", got)
+	}
+	if !strings.Contains(fx.Log.String(), "could not derive the public key") {
+		t.Errorf("the failure must be logged:\n%s", fx.Log)
+	}
+	if !exists(pubMarker(fx)) {
+		t.Errorf("the underivable marker must be written")
+	}
+	rep, err := fx.Rerun(steps.SSHKey())
+	if err != nil {
+		t.Fatalf("second run: %v", err)
+	}
+	if len(rep.Applied) != 0 {
+		t.Errorf("second run applied %v, want nothing", rep.Applied)
 	}
 }

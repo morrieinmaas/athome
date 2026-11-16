@@ -46,6 +46,30 @@ func skDerivePub(ctx context.Context, env *Env, key string) error {
 	return os.WriteFile(key+".pub", []byte(pub), 0o644)
 }
 
+// skDerivePubInteractive is skDerivePub with the terminal attached, so ssh-keygen
+// can ask for a passphrase, as in bash. Interactive output is not captured, so
+// the key goes through a shell redirect into a temp file.
+func skDerivePubInteractive(ctx context.Context, env *Env, key string) error {
+	out := key + ".pub.tmp"
+	defer os.Remove(out)
+	res, err := env.Run.Run(ctx, run.Cmd{
+		Name:        "sh",
+		Args:        []string{"-c", `exec ssh-keygen -y -f "$1" > "$2"`, "athome-derive", key, out},
+		Interactive: true,
+	})
+	if err != nil {
+		return err
+	}
+	if res.Code != 0 {
+		return fmt.Errorf("ssh-keygen -y -f %s failed", key)
+	}
+	pub, err := os.ReadFile(out)
+	if err != nil || len(pub) == 0 {
+		return fmt.Errorf("ssh-keygen -y -f %s gave no public key", key)
+	}
+	return os.WriteFile(key+".pub", pub, 0o644)
+}
+
 func skCopy(src, dst string, mode os.FileMode) error {
 	b, err := os.ReadFile(src)
 	if err != nil {
@@ -132,8 +156,8 @@ func skImportDirApply(ctx context.Context, env *Env) error {
 		if err := skCopy(src+".pub", key+".pub", 0o644); err != nil {
 			return err
 		}
-	} else if err := skDerivePub(ctx, env, key); err != nil {
-		return err
+	} else if err := skDerivePubInteractive(ctx, env, key); err != nil {
+		skMarkUnderivable(env, key, err)
 	}
 	envLogln(env, "ssh key restored as %s", filepath.Base(key))
 	return nil
@@ -272,16 +296,22 @@ func skPubCheck(ctx context.Context, env *Env) (bool, error) {
 	return false, nil
 }
 
+// skMarkUnderivable logs a failed derive and leaves the marker, so no later
+// process applies ssh-pub again.
+func skMarkUnderivable(env *Env, key string, cause error) {
+	envLogln(env, "could not derive the public key: %v", cause)
+	marker := skPubMarker(env)
+	if os.MkdirAll(filepath.Dir(marker), 0o755) == nil {
+		os.WriteFile(marker, []byte(key+"\n"), 0o644)
+	}
+}
+
 // skPubApply writes the .pub from the private key. A failure only logs and
 // leaves the marker; a derived .pub removes it.
 func skPubApply(ctx context.Context, env *Env) error {
 	key := skKeyPath(ctx, env)
 	if err := skDerivePub(ctx, env, key); err != nil {
-		envLogln(env, "could not derive the public key: %v", err)
-		marker := skPubMarker(env)
-		if os.MkdirAll(filepath.Dir(marker), 0o755) == nil {
-			os.WriteFile(marker, []byte(key+"\n"), 0o644)
-		}
+		skMarkUnderivable(env, key, err)
 		return nil
 	}
 	os.Remove(skPubMarker(env))

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"path/filepath"
 
 	"github.com/morrieinmaas/athome/internal/config"
 	"github.com/morrieinmaas/athome/internal/run"
@@ -20,6 +21,7 @@ type Env struct {
 	Run      run.Runner
 	Home     string
 	RepoRoot string
+	Source   string // chezmoi source dir; set by the --ref step, default RepoRoot/home, see sourceDir
 	OS       string
 	Distro   string
 	Opts     Opts
@@ -73,6 +75,15 @@ func envLogf(env *Env, format string, a ...any) {
 	if env.Log != nil {
 		fmt.Fprintf(env.Log, format, a...)
 	}
+}
+
+// sourceDir is the chezmoi source dir: the --ref worktree's home/ when there is
+// one, else the checkout's home/ (bash's SOURCE_FOR_CHEZMOI).
+func sourceDir(env *Env) string {
+	if env.Source != "" {
+		return env.Source
+	}
+	return filepath.Join(env.RepoRoot, "home")
 }
 
 // RunCleanup runs the registered cleanups, last registered first.

@@ -169,6 +169,40 @@ func TestRefWorktree(t *testing.T) {
 	})
 }
 
+// B:240: leaked worktrees of killed runs are pruned first, ref or not.
+func TestWorktreePrunedFirst(t *testing.T) {
+	fx := newFixture(t)
+	fx.Env.Opts.Ref = "v1.2.3"
+	fx.Exec(steps.Prepare())
+	var prune, add = -1, -1
+	for i, c := range fx.Fake.Calls() {
+		if c.Name == "git" && containsSeq(c.Args, "worktree", "prune") && containsSeq(c.Args, "-C", fx.Repo) && prune < 0 {
+			prune = i
+		}
+		if c.Name == "git" && containsSeq(c.Args, "worktree", "add") && add < 0 {
+			add = i
+		}
+	}
+	if prune < 0 || prune > add {
+		t.Errorf("want `git -C repo worktree prune` before worktree add (prune=%d add=%d):\n%s", prune, add, fx.dump())
+	}
+}
+
+// F1: the ref step publishes the worktree's home/ as the chezmoi source.
+func TestRefWorktreeSetsSource(t *testing.T) {
+	fx := newFixture(t)
+	fx.Env.Opts.Ref = "v1.2.3"
+	fx.Exec(steps.Prepare()) // the Fake creates no home/, so this errors after the add
+	adds := fx.callsTo("git", "worktree", "add", "--detach")
+	if len(adds) == 0 {
+		t.Fatalf("no worktree add recorded:\n%s", fx.dump())
+	}
+	wt := adds[0].Args[len(adds[0].Args)-2]
+	if want := filepath.Join(wt, "home"); fx.Env.Source != want {
+		t.Errorf("Env.Source = %q, want %q", fx.Env.Source, want)
+	}
+}
+
 func TestChezmoiInstall(t *testing.T) {
 	t.Run("skipped when chezmoi is on PATH", func(t *testing.T) {
 		fx := newFixture(t)
@@ -191,14 +225,25 @@ func TestSudoCache(t *testing.T) {
 	t.Run("caches credentials once", func(t *testing.T) {
 		fx := newFixture(t)
 		fx.Fake.Have("chezmoi")
+		fx.Fake.On("sudo", "-n", "true").Return(run.Result{Code: 1})
 		fx.MustExec(steps.Prepare())
 		if !fx.called("sudo", "-v") {
 			t.Errorf("`sudo -v` not recorded:\n%s", fx.dump())
 		}
 	})
+	t.Run("already cached credentials are not asked for again", func(t *testing.T) {
+		fx := newFixture(t)
+		fx.Fake.Have("chezmoi")
+		fx.Fake.On("sudo", "-n", "true").Return(run.Result{Code: 0})
+		rep := fx.MustExec(steps.Prepare())
+		if appliedSet(rep)["sudo-cache"] || fx.called("sudo", "-v") {
+			t.Errorf("a warm sudo cache is done, no prompt:\n%s", fx.dump())
+		}
+	})
 	t.Run("a refused sudo is a warning, not an error", func(t *testing.T) {
 		fx := newFixture(t)
 		fx.Fake.Have("chezmoi")
+		fx.Fake.On("sudo", "-n", "true").Return(run.Result{Code: 1})
 		fx.Fake.On("sudo", "-v").Return(run.Result{Code: 1})
 		if _, err := fx.Exec(steps.Prepare()); err != nil {
 			t.Fatalf("sudo refusal must not fail the run: %v", err)

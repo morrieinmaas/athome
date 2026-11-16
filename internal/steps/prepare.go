@@ -19,12 +19,10 @@ func Prepare() []Step {
 		{Name: "repo-check", Check: prepRepoCheck, Apply: prepNoApply},
 		{Name: "chezmoi-link", Check: prepLinkCheck, Apply: prepLinkApply},
 		{Name: "ref-worktree", Check: prepWorktreeCheck, Apply: prepWorktreeApply},
-		{Name: "sudo-cache", Check: prepNeverDone, Apply: prepSudoApply},
+		{Name: "sudo-cache", Check: prepSudoCheck, Apply: prepSudoApply},
 		{Name: "chezmoi-install", Check: prepChezmoiCheck, Apply: prepInstallChezmoi},
 	}
 }
-
-func prepNeverDone(context.Context, *Env) (bool, error) { return false, nil }
 
 func prepNoApply(context.Context, *Env) error { return nil }
 
@@ -102,6 +100,8 @@ func prepGitBranch(ctx context.Context, env *Env) (string, error) {
 
 // prepWorktreeCheck: no worktree is needed without --ref or when it equals HEAD.
 func prepWorktreeCheck(ctx context.Context, env *Env) (bool, error) {
+	// B:240: drop worktrees leaked by hard-killed earlier runs; a no-op otherwise.
+	env.Run.Run(ctx, run.Cmd{Name: "git", Args: []string{"-C", env.RepoRoot, "worktree", "prune"}})
 	if env.Opts.Ref == "" {
 		return true, nil
 	}
@@ -134,10 +134,22 @@ func prepWorktreeApply(ctx context.Context, env *Env) error {
 		env.Run.Run(context.Background(), run.Cmd{Name: "git", Args: []string{"-C", env.RepoRoot, "worktree", "remove", "--force", wt}})
 		os.RemoveAll(wt)
 	})
+	env.Source = filepath.Join(wt, "home")
 	if fi, err := os.Stat(filepath.Join(wt, "home")); err != nil || !fi.IsDir() {
 		return fmt.Errorf("%s doesn't exist at ref %s: this ref has no chezmoi sources under home/", filepath.Join(wt, "home"), env.Opts.Ref)
 	}
 	return nil
+}
+
+// prepSudoCheck: done when the credentials are already cached (`sudo -n true`
+// succeeds, which also covers NOPASSWD). The keep-warm loop still has to run.
+func prepSudoCheck(ctx context.Context, env *Env) (bool, error) {
+	res, err := env.Run.Run(ctx, run.Cmd{Name: "sudo", Args: []string{"-n", "true"}})
+	if err != nil || res.Code != 0 {
+		return false, nil
+	}
+	sudoKeepWarm(ctx, env)
+	return true, nil
 }
 
 // prepSudoApply ports B:332-338: one prompt, then a keep-warm loop until ctx ends.
@@ -148,6 +160,11 @@ func prepSudoApply(ctx context.Context, env *Env) error {
 		env.Warnings++
 		return nil
 	}
+	sudoKeepWarm(ctx, env)
+	return nil
+}
+
+func sudoKeepWarm(ctx context.Context, env *Env) {
 	go func() {
 		for {
 			select {
@@ -158,7 +175,6 @@ func prepSudoApply(ctx context.Context, env *Env) error {
 			}
 		}
 	}()
-	return nil
 }
 
 func prepChezmoiCheck(_ context.Context, env *Env) (bool, error) {

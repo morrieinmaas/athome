@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -482,4 +483,30 @@ func TestSudoStartsBeforeTheSteps(t *testing.T) {
 	if len(rep.Applied)+len(rep.Skipped) != 1 {
 		t.Errorf("sudo must not add a step: %+v", rep)
 	}
+}
+
+// Safety net: init with valid args in a repo fixture goes through the Fake, never
+// a binary on PATH. PATH is an empty directory (see TestMain).
+func TestInitWithValidArgsOnlyTouchesTheFake(t *testing.T) {
+	home := sandbox(t)
+	inRepo(t)
+	if cli.RealRunnerInstalled() {
+		t.Fatal("the real runner is installed in a test")
+	}
+	if p, err := exec.LookPath("sh"); err == nil {
+		t.Fatalf("PATH reaches real binaries (%s); TestMain must empty it", p)
+	}
+	f := run.NewFake()
+	defer cli.SetRunner(f)()
+	cfg := tmpFile(t, "a.toml", "machine = \"personal\"\nincludeAgents = false\n")
+	code, _, _ := runMain("init", "--config", cfg, "--non-interactive")
+	if len(f.Calls()) == 0 {
+		t.Errorf("exit %d: the run never reached the runner; the fixture is not a valid init", code)
+	}
+	for _, c := range f.Calls() {
+		if c.Name == "sudo" && len(c.Args) == 1 && c.Args[0] == "-v" {
+			return
+		}
+	}
+	t.Errorf("no `sudo -v` recorded, so the keep-alive did not go through the runner: %v (home %s)", f.Calls(), home)
 }

@@ -22,6 +22,10 @@ import (
 
 var Version = "dev"
 
+// newRunner builds the Runner every step reaches external tools through. Tests
+// replace it, so no test can start a real process.
+var newRunner = run.Exec
+
 var Commit = "none"
 
 const (
@@ -191,7 +195,7 @@ func newInitEnv(o initOpts, stdout, stderr io.Writer) (*steps.Env, int) {
 		}
 		return nil, exitError
 	}
-	r := run.Exec()
+	r := newRunner()
 	return &steps.Env{
 		Cfg:      cfg,
 		Run:      r,

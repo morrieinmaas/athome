@@ -2,8 +2,10 @@ package cli
 
 import (
 	"context"
+	"reflect"
 
 	"github.com/morrieinmaas/athome/internal/config"
+	"github.com/morrieinmaas/athome/internal/run"
 	"github.com/morrieinmaas/athome/internal/steps"
 )
 
@@ -21,4 +23,16 @@ func CheckRepoPath(repo string) error { return checkRepoPath(repo) }
 
 func Execute(ctx context.Context, env *steps.Env, list []steps.Step) (steps.Report, error) {
 	return execute(ctx, env, list)
+}
+
+// SetRunner makes Main build r instead of the real runner; it returns the undo.
+func SetRunner(r run.Runner) (restore func()) {
+	old := newRunner
+	newRunner = func() run.Runner { return r }
+	return func() { newRunner = old }
+}
+
+// RealRunnerInstalled reports whether Main would run real processes.
+func RealRunnerInstalled() bool {
+	return reflect.TypeOf(newRunner()) == reflect.TypeOf(run.Exec())
 }

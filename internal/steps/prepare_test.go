@@ -437,3 +437,63 @@ func TestSymlinkRelativeTarget(t *testing.T) {
 		}
 	})
 }
+
+// B:270-280: without --ref Setup says which ref it bootstraps from, fetches the
+// tags quietly (a failure is ignored) and points at the latest release.
+func TestSetupAnnouncesTheRef(t *testing.T) {
+	describe := func(fx *fixture, tag string) {
+		fx.Fake.On("git", "-C", fx.Repo, "describe", "--tags", "--abbrev=0").Return(run.Result{Stdout: tag})
+	}
+	setup := func(t *testing.T, fx *fixture) string {
+		t.Helper()
+		if err := steps.Setup(context.Background(), fx.Env); err != nil {
+			t.Fatal(err)
+		}
+		return fx.Log.String()
+	}
+	t.Run("branch with a newer release tag", func(t *testing.T) {
+		fx := newFixture(t)
+		describe(fx, "v1.2.0\n")
+		log := setup(t, fx)
+		if !strings.Contains(log, "==> bootstrapping from the cloned ref: main") {
+			t.Errorf("want the ref announced:\n%s", log)
+		}
+		if !strings.Contains(log, "latest tagged release is v1.2.0") || !strings.Contains(log, "--ref v1.2.0") {
+			t.Errorf("want the latest tag and the --ref hint:\n%s", log)
+		}
+		if !fx.called("git", "-C", fx.Repo, "fetch", "--tags", "--quiet") {
+			t.Errorf("want a quiet git fetch --tags:\n%s", fx.dump())
+		}
+	})
+	t.Run("detached HEAD", func(t *testing.T) {
+		fx := newFixture(t)
+		headStub(fx, "HEAD")
+		if log := setup(t, fx); !strings.Contains(log, "==> bootstrapping from the checked-out commit (detached HEAD)") {
+			t.Errorf("want the detached note:\n%s", log)
+		}
+	})
+	t.Run("the ref is the latest tag: no hint", func(t *testing.T) {
+		fx := newFixture(t)
+		headStub(fx, "v1.2.0")
+		describe(fx, "v1.2.0\n")
+		if log := setup(t, fx); strings.Contains(log, "latest tagged release") {
+			t.Errorf("no hint when already on the tag:\n%s", log)
+		}
+	})
+	t.Run("no tags and a failing fetch are not errors", func(t *testing.T) {
+		fx := newFixture(t)
+		fx.Fake.On("git", "-C", fx.Repo, "fetch", "--tags", "--quiet").Return(run.Result{Code: 1})
+		describe(fx, "")
+		if log := setup(t, fx); strings.Contains(log, "latest tagged release") {
+			t.Errorf("no tag, no hint:\n%s", log)
+		}
+	})
+	t.Run("--ref given: silent, no fetch", func(t *testing.T) {
+		fx := newFixture(t)
+		fx.Env.Opts.Ref = "v0.9.0"
+		describe(fx, "v1.2.0\n")
+		if log := setup(t, fx); strings.Contains(log, "bootstrapping from") || fx.called("git", "fetch") {
+			t.Errorf("an explicit --ref needs no announcement:\n%s\n%s", log, fx.dump())
+		}
+	})
+}

@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/morrieinmaas/athome/internal/config"
 	"github.com/morrieinmaas/athome/internal/run"
@@ -59,7 +60,34 @@ func Setup(ctx context.Context, env *Env) error {
 	prependPath(nanobrewBinDir + string(os.PathListSeparator) + filepath.Join(env.Home, ".local", "bin"))
 	env.Run.Run(ctx, run.Cmd{Name: "git", Args: []string{"-C", env.RepoRoot, "worktree", "prune"}})
 	skPubMarkerTidy(env)
+	announceRef(ctx, env)
 	return nil
+}
+
+// announceRef ports B:270-280: without --ref, say which ref is bootstrapped
+// from and point at the latest release. Informational; it never changes what is
+// built and ignores every failure.
+func announceRef(ctx context.Context, env *Env) {
+	if env.Opts.Ref != "" {
+		return
+	}
+	ref, err := prepGitBranch(ctx, env)
+	if err != nil {
+		return
+	}
+	if ref == "HEAD" {
+		envLogln(env, "==> bootstrapping from the checked-out commit (detached HEAD)")
+	} else {
+		envLogln(env, "==> bootstrapping from the cloned ref: %s", ref)
+	}
+	env.Run.Run(ctx, run.Cmd{Name: "git", Args: []string{"-C", env.RepoRoot, "fetch", "--tags", "--quiet"}})
+	res, err := env.Run.Run(ctx, run.Cmd{Name: "git", Args: []string{"-C", env.RepoRoot, "describe", "--tags", "--abbrev=0"}})
+	if err != nil || res.Code != 0 {
+		return
+	}
+	if tag := strings.TrimSpace(res.Stdout); tag != "" && tag != ref {
+		envLogln(env, "    (latest tagged release is %s: pass --ref %s to pin it)", tag, tag)
+	}
 }
 
 // Execute runs list in order. A step whose Check reports done is skipped;

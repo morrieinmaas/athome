@@ -279,6 +279,9 @@ func TestKeyActionGenerateBacksUp(t *testing.T) {
 	if len(pubBaks) != 1 || readFile(t, pubBaks[0]) != pubLine {
 		t.Errorf("the old .pub must be kept as %s.pub.<ts>.bak, found %v", keyPath(fx), pubBaks)
 	}
+	if !strings.Contains(fx.Log.String(), "sshKeyAction=generate rotates this host's key on every run") {
+		t.Errorf("the rotation must be announced:\n%s", fx.Log)
+	}
 }
 
 func TestBWCopyOnlyFresh(t *testing.T) {

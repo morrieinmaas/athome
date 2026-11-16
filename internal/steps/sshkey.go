@@ -175,8 +175,13 @@ func skKeygenCheck(ctx context.Context, env *Env) (bool, error) {
 		if env.Cfg.Data["sshKeyAction"] == "reupload" {
 			env.FreshKey = true
 		}
-		// ponytail: sshKeyAction=generate regenerates on every run, as bash does.
-		return env.Cfg.Data["sshKeyAction"] != "generate", nil
+		// ponytail: sshKeyAction=generate rotates the key on every run, as bash
+		// does, so the "second run applies nothing" criterion excludes it.
+		if env.Cfg.Data["sshKeyAction"] == "generate" {
+			envLogln(env, "sshKeyAction=generate rotates this host's key on every run")
+			return false, nil
+		}
+		return true, nil
 	}
 	if env.Cfg.Data["generateSshKey"] == "false" {
 		envLogln(env, "no ssh key generated: bring your own / use the agent")

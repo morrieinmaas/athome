@@ -72,6 +72,9 @@ func prepLinkCheck(_ context.Context, env *Env) (bool, error) {
 		if err != nil {
 			return false, err
 		}
+		if !filepath.IsAbs(target) { // a relative target is relative to the link's directory
+			target = filepath.Join(filepath.Dir(link), target)
+		}
 		if prepSamePath(target, env.RepoRoot) {
 			return true, nil
 		}

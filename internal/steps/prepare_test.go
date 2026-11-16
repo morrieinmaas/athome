@@ -404,3 +404,35 @@ func TestChezmoiInstallMustLeaveABinary(t *testing.T) {
 		t.Errorf("error %q does not name the step chezmoi-install", err)
 	}
 }
+
+// V6: a relative symlink target is resolved against the link's directory.
+func TestSymlinkRelativeTarget(t *testing.T) {
+	t.Run("relative link to the repo is accepted", func(t *testing.T) {
+		fx := newFixture(t)
+		mustMkdir(t, filepath.Dir(chezmoiLink(fx)))
+		rel, err := filepath.Rel(filepath.Dir(chezmoiLink(fx)), fx.Repo)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(rel, chezmoiLink(fx)); err != nil {
+			t.Fatal(err)
+		}
+		fx.MustExec(steps.Prepare())
+		if got, _ := os.Readlink(chezmoiLink(fx)); got != rel {
+			t.Errorf("link = %q, want it untouched at %q", got, rel)
+		}
+	})
+	t.Run("relative link elsewhere fails", func(t *testing.T) {
+		fx := newFixture(t)
+		mustMkdir(t, filepath.Join(filepath.Dir(chezmoiLink(fx)), "elsewhere"))
+		if err := os.Symlink("elsewhere", chezmoiLink(fx)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := fx.Exec(steps.Prepare()); err == nil {
+			t.Fatal("a relative link to another directory must fail")
+		}
+		if got, _ := os.Readlink(chezmoiLink(fx)); got != "elsewhere" {
+			t.Errorf("link now %q, must stay", got)
+		}
+	})
+}

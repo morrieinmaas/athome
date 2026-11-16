@@ -49,7 +49,14 @@ func GitHub() []Step {
 			case ghSkip:
 				return true, nil
 			case ghRegistered:
-				return ghSigningState(ctx, env, p) == sigDone, nil
+				switch ghSigningState(ctx, env, p) {
+				case sigNoScope: // the user uploads by hand, so a rerun has nothing to apply
+					ghSigningHint(env, p)
+					return true, nil
+				case sigDone:
+					return true, nil
+				}
+				return false, nil
 			}
 			return false, nil
 		},
@@ -91,7 +98,7 @@ func ghDecide(ctx context.Context, env *Env) ghPlan {
 	if def := filepath.Join(env.Home, ".ssh", "id_ed25519.pub"); fileExists(def) {
 		p.signPub = def
 	}
-	if env.FreshKey { // B:424-438 ssh_force_upload: skip both "already set up" branches
+	if env.FreshKey { // B:436-438 ssh_force_upload (sshKeyAction=reupload): skip both "already set up" branches
 		p.mode = ghUpload
 	} else if ghSSHAuthenticates(ctx, env) {
 		envLogf(env, "SSH already authenticates to GitHub, skipping key upload (already set up)\n")
@@ -101,6 +108,10 @@ func ghDecide(ctx context.Context, env *Env) ghPlan {
 		p.mode = ghRegistered
 	} else {
 		p.mode = ghUpload
+	}
+	if p.mode == ghRegistered && env.KeyGenerated { // B:615-621
+		envLogf(env, "    note: a fresh per-host key was generated at %s\n", strings.TrimSuffix(p.pub, ".pub"))
+		envLogf(env, "          upload it later with: gh ssh-key add %s\n", p.pub)
 	}
 	return p
 }
@@ -194,11 +205,6 @@ func ghSigningState(ctx context.Context, env *Env, p ghPlan) ghSigning {
 // ghEnsureSigning uploads the signing key, or says how to when the scope is missing.
 func ghEnsureSigning(ctx context.Context, env *Env, p ghPlan) {
 	switch ghSigningState(ctx, env, p) {
-	case sigNoScope:
-		envLogf(env, "  ! commit-signing key not uploaded: gh lacks the %s scope.\n", scopeSigning)
-		envLogf(env, "    Commits sign locally but show \"Unverified\" on GitHub until you run:\n")
-		envLogf(env, "      gh auth refresh -h github.com -s %s\n", scopeSigning)
-		envLogf(env, "      gh ssh-key add %s --title \"%s-sign\" --type signing\n", p.signPub, p.host)
 	case sigUpload:
 		ghAdd(ctx, env, p.signPub, p.host+"-sign", true)
 	case sigDone:
@@ -209,6 +215,14 @@ func ghEnsureSigning(ctx context.Context, env *Env, p ghPlan) {
 }
 
 // ghAdd ports add_gh_ssh_key (B:533-544). A failure is logged, never returned.
+// ghSigningHint tells the user how to upload the signing key by hand (B:575-578).
+func ghSigningHint(env *Env, p ghPlan) {
+	envLogf(env, "  ! commit-signing key not uploaded: gh lacks the %s scope.\n", scopeSigning)
+	envLogf(env, "    Commits sign locally but show \"Unverified\" on GitHub until you run:\n")
+	envLogf(env, "      gh auth refresh -h github.com -s %s\n", scopeSigning)
+	envLogf(env, "      gh ssh-key add %s --title \"%s-sign\" --type signing\n", p.signPub, p.host)
+}
+
 func ghAdd(ctx context.Context, env *Env, pub, title string, signing bool) {
 	args := []string{"ssh-key", "add", pub, "--title", title}
 	if signing {

@@ -17,18 +17,19 @@ type Step struct {
 }
 
 type Env struct {
-	Cfg      config.Config
-	Run      run.Runner
-	Home     string
-	RepoRoot string
-	Source   string // chezmoi source dir; set by the --ref step, default RepoRoot/home, see sourceDir
-	OS       string
-	Distro   string
-	Opts     Opts
-	Log      io.Writer
-	Warnings int
-	FreshKey bool     // set by SSHKey on generate or sshKeyAction=reupload; forces the GitHub upload
-	Cleanup  []func() // run in reverse order when the run ends, see RunCleanup
+	Cfg          config.Config
+	Run          run.Runner
+	Home         string
+	RepoRoot     string
+	Source       string // chezmoi source dir; set by the --ref step, default RepoRoot/home, see sourceDir
+	OS           string
+	Distro       string
+	Opts         Opts
+	Log          io.Writer
+	Warnings     int
+	FreshKey     bool     // set by SSHKey on sshKeyAction=reupload only (B:436-438); forces the GitHub upload
+	KeyGenerated bool     // set by SSHKey when it generated this run's key; only adds a note
+	Cleanup      []func() // run in reverse order when the run ends, see RunCleanup
 }
 
 type Opts struct {

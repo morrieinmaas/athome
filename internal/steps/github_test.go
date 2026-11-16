@@ -307,7 +307,7 @@ func TestRemoteToSSH(t *testing.T) {
 	}
 }
 
-// A freshly generated or re-upload key is uploaded even when SSH already
+// A re-upload key (sshKeyAction=reupload) is uploaded even when SSH already
 // authenticates or another local key is registered (B:424-438, ssh_force_upload).
 func TestFreshKeyForcesUpload(t *testing.T) {
 	t.Run("ssh already authenticates", func(t *testing.T) {
@@ -378,5 +378,37 @@ func TestAuthRefreshIsInteractive(t *testing.T) {
 	calls := fx.callsTo("gh", "auth", "refresh")
 	if len(calls) != 1 || !calls[0].Interactive {
 		t.Errorf("want one interactive gh auth refresh, got %+v", calls)
+	}
+}
+
+// AC7: "SSH works, no signing scope" is a state the user resolves by hand, so a
+// second run applies nothing for GitHub; the hint still shows on each run.
+func TestNoSigningScopeConvergesAfterOneRun(t *testing.T) {
+	fx := ghFixture(t)
+	fx.Fake.On("gh", "auth", "status").Return(run.Result{Stdout: noScopes, Stderr: noScopes})
+	fx.Fake.On("ssh", sshProbe...).Return(run.Result{Stderr: "Hi athome! You've successfully authenticated, but GitHub does not provide shell access.\n", Code: 1})
+	fx.MustExec(steps.GitHub())
+	rep := fx.MustExec(steps.GitHub())
+	if len(rep.Applied) != 0 {
+		t.Errorf("second run applied %v, want nothing:\n%s", rep.Applied, fx.Log)
+	}
+	if n := strings.Count(fx.Log.String(), "gh auth refresh -h github.com -s admin:ssh_signing_key"); n != 2 {
+		t.Errorf("the manual signing-key hint printed %d times, want once per run:\n%s", n, fx.Log)
+	}
+}
+
+// A generated key is not force-uploaded (that is only sshKeyAction=reupload): when
+// SSH already authenticates it is skipped with the "upload it later" note (B:615-621).
+func TestGeneratedKeyIsNotForceUploaded(t *testing.T) {
+	fx := ghFixture(t)
+	fx.Env.KeyGenerated = true
+	fx.Fake.On("ssh", sshProbe...).Return(run.Result{Stderr: "Hi athome! You've successfully authenticated, but GitHub does not provide shell access.\n", Code: 1})
+	fx.Fake.On("gh", apiSigningKeys...).Return(run.Result{Stdout: "ssh-ed25519 " + localBlob + "\n"})
+	fx.MustExec(steps.GitHub())
+	if len(fx.addCalls()) != 0 {
+		t.Errorf("a generated key must go through the already-authenticates skip:\n%s", fx.dump())
+	}
+	if want := "gh ssh-key add " + keyPath(fx) + ".pub"; !strings.Contains(fx.Log.String(), want) {
+		t.Errorf("want the note %q, got:\n%s", want, fx.Log)
 	}
 }

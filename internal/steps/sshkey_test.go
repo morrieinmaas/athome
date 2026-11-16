@@ -327,3 +327,24 @@ func TestKeyHostFallbackMatchesShortHostname(t *testing.T) {
 		t.Errorf("want ssh-keygen -f %s:\n%s", want, fx.dump())
 	}
 }
+
+// Only sshKeyAction=reupload forces the GitHub upload (B:436-438); a generated
+// key is merely marked as generated.
+func TestKeyFlags(t *testing.T) {
+	t.Run("generate does not force the upload", func(t *testing.T) {
+		fx := newFixture(t)
+		fx.MustExec(steps.SSHKey())
+		if fx.Env.FreshKey || !fx.Env.KeyGenerated {
+			t.Errorf("FreshKey=%v KeyGenerated=%v, want false and true", fx.Env.FreshKey, fx.Env.KeyGenerated)
+		}
+	})
+	t.Run("reupload forces the upload", func(t *testing.T) {
+		fx := newFixture(t)
+		fx.PutKey("PRIV", "ssh-ed25519 AAAA x\n")
+		fx.Env.Cfg.Data["sshKeyAction"] = "reupload"
+		fx.MustExec(steps.SSHKey())
+		if !fx.Env.FreshKey || fx.Env.KeyGenerated {
+			t.Errorf("FreshKey=%v KeyGenerated=%v, want true and false", fx.Env.FreshKey, fx.Env.KeyGenerated)
+		}
+	})
+}

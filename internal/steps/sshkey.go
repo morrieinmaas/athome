@@ -64,7 +64,7 @@ func SSHKey() []Step {
 					return err
 				}
 				fresh = true
-				env.FreshKey = true
+				env.KeyGenerated = true
 				return nil
 			},
 		},

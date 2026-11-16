@@ -307,8 +307,12 @@ func ghMissingScopes(ctx context.Context, env *Env) []string {
 
 func ghWriteManualMarker(env *Env) {
 	path := ghManualMarker(env)
-	if os.MkdirAll(filepath.Dir(path), 0o755) == nil {
-		os.WriteFile(path, nil, 0o644)
+	err := os.MkdirAll(filepath.Dir(path), 0o755)
+	if err == nil {
+		err = os.WriteFile(path, nil, 0o644)
+	}
+	if err != nil {
+		envLogln(env, "could not record the manual upload in %s: %v", path, err)
 	}
 }
 

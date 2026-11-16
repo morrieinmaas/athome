@@ -567,3 +567,17 @@ func TestImportBWUnlockIsInteractive(t *testing.T) {
 		t.Errorf("rbw unlock must run interactive: %+v", calls)
 	}
 }
+
+// C4: a marker that cannot be written is logged, never fatal.
+func TestPubMarkerWriteFailureIsLogged(t *testing.T) {
+	fx := newFixture(t)
+	fx.PutKey("PRIV", "")
+	fx.Fake.On("ssh-keygen", "-y", "-f", keyPath(fx)).Return(run.Result{Code: 1, Stderr: "incorrect passphrase"})
+	writeFile(t, fx.Path(".local"), "in the way", 0o644) // MkdirAll(.local/state/...) fails
+	if _, err := fx.Exec(steps.SSHKey()); err != nil {
+		t.Fatalf("a marker write failure must not fail the run: %v", err)
+	}
+	if !strings.Contains(fx.Log.String(), "could not record") {
+		t.Errorf("want the marker write failure logged:\n%s", fx.Log)
+	}
+}

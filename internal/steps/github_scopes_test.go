@@ -86,3 +86,17 @@ func TestNoSigningScopeConvergesAfterOneRun(t *testing.T) {
 		t.Errorf("the manual signing-key hint printed %d times, want once per run:\n%s", n, fx.Log)
 	}
 }
+
+// C4: the manual-upload marker that cannot be written is logged, never fatal.
+func TestManualMarkerWriteFailureIsLogged(t *testing.T) {
+	fx := ghFixture(t)
+	t.Setenv("GITHUB_TOKEN", "ghp_dummy")
+	fx.Fake.On("gh", "auth", "status").Return(run.Result{Stdout: noScopes, Stderr: noScopes})
+	writeFile(t, fx.Path(".local"), "in the way", 0o644) // MkdirAll(.local/state/...) fails
+	if _, err := fx.Exec(steps.GitHub()); err != nil {
+		t.Fatalf("a marker write failure must not fail the run: %v", err)
+	}
+	if !strings.Contains(fx.Log.String(), "could not record") {
+		t.Errorf("want the marker write failure logged:\n%s", fx.Log)
+	}
+}

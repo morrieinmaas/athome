@@ -302,8 +302,12 @@ func skPubCheck(ctx context.Context, env *Env) (bool, error) {
 func skMarkUnderivable(env *Env, key string, cause error) {
 	envLogln(env, "could not derive the public key: %v", cause)
 	marker := skPubMarker(env)
-	if os.MkdirAll(filepath.Dir(marker), 0o755) == nil {
-		os.WriteFile(marker, []byte(key+"\n"), 0o644)
+	err := os.MkdirAll(filepath.Dir(marker), 0o755)
+	if err == nil {
+		err = os.WriteFile(marker, []byte(key+"\n"), 0o644)
+	}
+	if err != nil {
+		envLogln(env, "could not record the underivable key in %s: %v", marker, err)
 	}
 }
 

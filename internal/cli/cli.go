@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"strings"
 	"syscall"
+	"unicode/utf8"
 
 	"github.com/BurntSushi/toml"
 	"github.com/morrieinmaas/athome/internal/config"
@@ -33,6 +34,7 @@ const (
 type initOpts struct {
 	Ref         string
 	Machine     string
+	MachineSet  bool // --machine was given, even as ""
 	Config      string
 	NoAgents    bool
 	ImportFrom  string
@@ -94,6 +96,7 @@ func parseInit(args []string) (initOpts, error) {
 	if fs.NArg() > 0 {
 		return o, fmt.Errorf("unexpected argument %q", fs.Arg(0))
 	}
+	fs.Visit(func(f *flag.Flag) { o.MachineSet = o.MachineSet || f.Name == "machine" })
 	if o.ImportSSH && o.ImportFrom == "" {
 		return o, errors.New("--import-ssh needs --import-from <dir>")
 	}
@@ -134,14 +137,15 @@ func runInit(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "athome init: %v\n", err)
 		return exitError
 	}
-	cfg, err := config.Load(config.Options{
-		ConfigPath: o.Config,
-		RepoRoot:   repo,
-		Home:       home,
-		Env:        environMap(),
-		Machine:    o.Machine,
-		NoAgents:   o.NoAgents,
-	})
+	if err := checkRepoPath(repo); err != nil {
+		fmt.Fprintf(stderr, "athome init: %v\n", err)
+		return exitUsage
+	}
+	cfgOpts, stepOpts := buildOptions(o, repo, home, environMap(), os.Getenv("ATHOME_CI") != "")
+	cfg, err := config.Load(cfgOpts)
+	if cfg.Source != "" { // B:188, before the answers are validated
+		fmt.Fprintf(stdout, "==> non-interactive config: %s\n", cfg.Source)
+	}
 	if err != nil {
 		fmt.Fprintf(stderr, "athome init: %v\n", err)
 		if errors.Is(err, config.ErrUsage) {
@@ -158,25 +162,52 @@ func runInit(args []string, stdout, stderr io.Writer) int {
 		RepoRoot: repo,
 		OS:       runtime.GOOS,
 		Distro:   distro(r),
-		Opts: steps.Opts{
-			Ref:         o.Ref,
-			ImportFrom:  o.ImportFrom,
-			ImportSSH:   o.ImportSSH,
-			ImportSSHBW: o.ImportSSHBW,
-			CI:          os.Getenv("ATHOME_CI") != "",
-		},
-		Log: stdout,
+		Opts:     stepOpts,
+		Log:      stdout,
 	}
 	defer env.RunCleanup()
 	ctx, stop := signal.NotifyContext(context.Background(), stopSignals...)
 	defer stop()
-	rep, err := steps.Execute(ctx, env, steps.All())
+	rep, err := execute(ctx, env, steps.All())
 	if err != nil {
 		fmt.Fprintf(stderr, "athome init: %v\n", err)
 		return exitError
 	}
 	printFinish(stdout, rep, env.Warnings, steps.FollowupLogPath(home))
 	return exitOK
+}
+
+// buildOptions turns the parsed flags into the config and step options.
+func buildOptions(o initOpts, repo, home string, environ map[string]string, ci bool) (config.Options, steps.Opts) {
+	return config.Options{
+		ConfigPath: o.Config,
+		RepoRoot:   repo,
+		Home:       home,
+		Env:        environ,
+		Machine:    o.Machine,
+		MachineSet: o.MachineSet,
+		NoAgents:   o.NoAgents,
+	}, steps.Opts{
+		Ref:         o.Ref,
+		ImportFrom:  o.ImportFrom,
+		ImportSSH:   o.ImportSSH,
+		ImportSSHBW: o.ImportSSHBW,
+		CI:          ci,
+	}
+}
+
+// checkRepoPath rejects a path chezmoi.toml cannot pin, before any step runs.
+func checkRepoPath(repo string) error {
+	if !utf8.ValidString(repo) {
+		return fmt.Errorf("the repo path %q is not valid UTF-8, so chezmoi.toml cannot pin its source; move the repo to a UTF-8 path", repo)
+	}
+	return nil
+}
+
+// execute starts the sudo keep-alive (not a step), then runs the steps.
+func execute(ctx context.Context, env *steps.Env, list []steps.Step) (steps.Report, error) {
+	defer steps.StartSudo(ctx, env)()
+	return steps.Execute(ctx, env, list)
 }
 
 // stopSignals cancel the run; the deferred cleanup (the --ref worktree) still runs.

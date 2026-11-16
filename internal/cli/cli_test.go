@@ -2,12 +2,17 @@ package cli_test
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/morrieinmaas/athome/internal/cli"
+	"github.com/morrieinmaas/athome/internal/config"
+	"github.com/morrieinmaas/athome/internal/run"
+	"github.com/morrieinmaas/athome/internal/steps"
 )
 
 // Main(init ...) executes real steps once it gets past argument and config
@@ -307,5 +312,141 @@ func TestRepoRootFromPinnedSourceDir(t *testing.T) {
 	code, _, errOut := runMain("init", "--machine", "laptop")
 	if code != 2 {
 		t.Errorf("exit = %d stderr %q, want 2 (repo found via sourceDir, then the bad machine)", code, errOut)
+	}
+}
+
+// Every flag lands in the field the steps and the config read it from.
+func TestFlagEffects(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := tmpFile(t, "a.toml", "")
+	environ := map[string]string{"K": "v"}
+	base := config.Options{RepoRoot: "/repo", Home: "/home", Env: environ}
+	cases := []struct {
+		name string
+		args []string
+		ci   bool
+		cfg  func(*config.Options)
+		step func(*steps.Opts)
+	}{
+		{"none", nil, false, func(*config.Options) {}, func(*steps.Opts) {}},
+		{"--ref", []string{"--ref", "v1.2.3"}, false, func(*config.Options) {}, func(o *steps.Opts) { o.Ref = "v1.2.3" }},
+		{"--import-ssh-bw", []string{"--import-ssh-bw", "ssh/x"}, false, func(*config.Options) {}, func(o *steps.Opts) { o.ImportSSHBW = "ssh/x" }},
+		{"--import-from", []string{"--import-from", dir}, false, func(*config.Options) {}, func(o *steps.Opts) { o.ImportFrom = dir }},
+		{"--import-from --import-ssh", []string{"--import-from", dir, "--import-ssh"}, false, func(*config.Options) {}, func(o *steps.Opts) { o.ImportFrom, o.ImportSSH = dir, true }},
+		{"--machine work", []string{"--machine", "work"}, false, func(o *config.Options) { o.Machine, o.MachineSet = "work", true }, func(*steps.Opts) {}},
+		{"--machine empty", []string{"--machine", ""}, false, func(o *config.Options) { o.MachineSet = true }, func(*steps.Opts) {}},
+		{"--no-agents", []string{"--no-agents"}, false, func(o *config.Options) { o.NoAgents = true }, func(*steps.Opts) {}},
+		{"--config", []string{"--config", cfgFile}, false, func(o *config.Options) { o.ConfigPath = cfgFile }, func(*steps.Opts) {}},
+		{"ATHOME_CI", nil, true, func(*config.Options) {}, func(o *steps.Opts) { o.CI = true }},
+		{"-y changes nothing", []string{"-y", "--yes", "--non-interactive"}, false, func(*config.Options) {}, func(*steps.Opts) {}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			wantCfg, wantSteps := base, steps.Opts{}
+			c.cfg(&wantCfg)
+			c.step(&wantSteps)
+			gotCfg, gotSteps, err := cli.OptionsFromArgs(c.args, "/repo", "/home", environ, c.ci)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(gotCfg, wantCfg) {
+				t.Errorf("config.Options = %+v, want %+v", gotCfg, wantCfg)
+			}
+			if gotSteps != wantSteps {
+				t.Errorf("steps.Opts = %+v, want %+v", gotSteps, wantSteps)
+			}
+		})
+	}
+}
+
+// R9: --machine "" is validated, not defaulted.
+func TestEmptyMachineFlagIsUsageError(t *testing.T) {
+	for _, args := range [][]string{{"init", "--machine", ""}, {"init", "--machine="}} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			sandbox(t)
+			inRepo(t)
+			code, _, errOut := runMain(args...)
+			if code != 2 || !strings.Contains(errOut, "machine must be personal|work (got: )") {
+				t.Errorf("exit %d stderr %q; want 2 with the machine message", code, errOut)
+			}
+		})
+	}
+}
+
+// R8: the config file in use is logged (B:188), also when its answers are then rejected.
+func TestConfigFileIsLogged(t *testing.T) {
+	sandbox(t)
+	inRepo(t)
+	cfg := tmpFile(t, "a.toml", "machine = \"laptop\"\n")
+	code, out, _ := runMain("init", "--config", cfg)
+	if code != 2 {
+		t.Fatalf("exit = %d, want 2", code)
+	}
+	if want := "==> non-interactive config: " + cfg + "\n"; !strings.Contains(out, want) {
+		t.Errorf("stdout %q lacks %q", out, want)
+	}
+}
+
+func TestNoConfigNoLogLine(t *testing.T) {
+	sandbox(t)
+	inRepo(t)
+	_, out, _ := runMain("init", "--machine", "laptop")
+	if strings.Contains(out, "non-interactive config") {
+		t.Errorf("no config file, no log line, got %q", out)
+	}
+}
+
+// R5: a repo path chezmoi.toml cannot pin is rejected before any step.
+func TestRepoPathMustBeUTF8(t *testing.T) {
+	if err := cli.CheckRepoPath("/ok/repo"); err != nil {
+		t.Errorf("a UTF-8 path was rejected: %v", err)
+	}
+	bad := "/tmp/repo-\xff\xfe"
+	err := cli.CheckRepoPath(bad)
+	if err == nil || !strings.Contains(err.Error(), "UTF-8") || !strings.Contains(err.Error(), "repo-") {
+		t.Errorf("CheckRepoPath(%q) = %v, want an error naming the path", bad, err)
+	}
+}
+
+func TestNonUTF8RepoIsUsageError(t *testing.T) {
+	sandbox(t)
+	repo := filepath.Join(t.TempDir(), "repo-\xff")
+	if err := os.MkdirAll(filepath.Join(repo, "home", ".chezmoiscripts"), 0o755); err != nil {
+		t.Skipf("this filesystem rejects non-UTF-8 names: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, ".chezmoiroot"), []byte("home\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(repo)
+	code, _, errOut := runMain("init")
+	if code != 2 || !strings.Contains(errOut, "UTF-8") {
+		t.Errorf("exit %d stderr %q; want 2 naming the UTF-8 problem", code, errOut)
+	}
+}
+
+// R7: the sudo keep-alive starts before the first step and is not a step.
+func TestSudoStartsBeforeTheSteps(t *testing.T) {
+	f := run.NewFake()
+	env := &steps.Env{Run: f, OS: "linux"}
+	var seenSudo bool
+	list := []steps.Step{{
+		Name: "probe",
+		Check: func(context.Context, *steps.Env) (bool, error) {
+			for _, c := range f.Calls() {
+				seenSudo = seenSudo || (c.Name == "sudo" && len(c.Args) == 1 && c.Args[0] == "-v")
+			}
+			return true, nil
+		},
+		Apply: func(context.Context, *steps.Env) error { return nil },
+	}}
+	rep, err := cli.Execute(context.Background(), env, list)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !seenSudo {
+		t.Errorf("`sudo -v` must have run before the first step: %v", f.Calls())
+	}
+	if len(rep.Applied)+len(rep.Skipped) != 1 {
+		t.Errorf("sudo must not add a step: %+v", rep)
 	}
 }

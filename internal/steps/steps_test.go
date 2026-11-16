@@ -39,6 +39,10 @@ type fixture struct {
 // chezmoi hostname query is stubbed to testHost, the first branch query to main.
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
+	// Steps prepend to the process PATH and write the follow-up log under
+	// $TMPDIR; t.Setenv restores both when the test ends.
+	t.Setenv("PATH", os.Getenv("PATH"))
+	t.Setenv("TMPDIR", t.TempDir())
 	root := t.TempDir()
 	home := filepath.Join(root, "home dir") // a space on purpose
 	repo := filepath.Join(root, "src repo")

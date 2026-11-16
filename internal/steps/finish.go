@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/morrieinmaas/athome/internal/run"
 )
@@ -51,7 +52,10 @@ func pinSourceDir(_ context.Context, env *Env) error {
 		return err
 	}
 	src := filepath.Join(env.RepoRoot, "home")
-	out := []byte(fmt.Sprintf("sourceDir = %q\n", src))
+	if !utf8.ValidString(src) {
+		return fmt.Errorf("the source path %q is not valid UTF-8, so chezmoi.toml cannot pin it; move the repo to a UTF-8 path", src)
+	}
+	out := []byte(fmt.Sprintf("sourceDir = \"%s\"\n", tomlStr(src)))
 	out = append(out, b...)
 	tmp := p + ".new"
 	if err := os.WriteFile(tmp, out, 0o600); err != nil {

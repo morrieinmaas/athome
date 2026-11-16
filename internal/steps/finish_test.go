@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/BurntSushi/toml"
+
 	"github.com/morrieinmaas/athome/internal/run"
 	"github.com/morrieinmaas/athome/internal/steps"
 )
@@ -49,6 +51,37 @@ func TestSourceDirPin(t *testing.T) {
 			t.Errorf("the pin must appear exactly once:\n%s", got)
 		}
 	})
+}
+
+// F16: the pinned path is a TOML string, not a Go-quoted one.
+func TestSourceDirPinEscapesTOML(t *testing.T) {
+	fx := newFixture(t)
+	fx.Env.RepoRoot = fx.Path("odd \\ \"q\" \a dir") // backslash, quotes and a BEL
+	writeFile(t, chezmoiConfig(fx), "[data]\n    machineType = \"personal\"\n", 0o600)
+	fx.MustExec([]steps.Step{steps.Finish()[0]})
+	var doc struct {
+		SourceDir string `toml:"sourceDir"`
+	}
+	if _, err := toml.DecodeFile(chezmoiConfig(fx), &doc); err != nil {
+		t.Fatalf("chezmoi.toml is no longer valid TOML: %v\n%s", err, readFile(t, chezmoiConfig(fx)))
+	}
+	if want := filepath.Join(fx.Env.RepoRoot, "home"); doc.SourceDir != want {
+		t.Errorf("sourceDir = %q, want %q", doc.SourceDir, want)
+	}
+}
+
+func TestSourceDirPinRejectsNonUTF8(t *testing.T) {
+	fx := newFixture(t)
+	fx.Env.RepoRoot = fx.Path("bad\xffdir")
+	seed := "[data]\n    machineType = \"personal\"\n"
+	writeFile(t, chezmoiConfig(fx), seed, 0o600)
+	_, err := fx.Exec([]steps.Step{steps.Finish()[0]})
+	if err == nil || !strings.Contains(err.Error(), "UTF-8") {
+		t.Fatalf("want an error naming UTF-8, got %v", err)
+	}
+	if got := readFile(t, chezmoiConfig(fx)); got != seed {
+		t.Errorf("chezmoi.toml must stay untouched: %q", got)
+	}
 }
 
 func hooksDir(fx *fixture) string { return filepath.Join(fx.Repo, ".git", "hooks") }

@@ -86,7 +86,25 @@ func Data() []Step {
 // tomlStr escapes a value for a TOML basic string. bootstrap.sh escapes only
 // backslash and quote (B:877); control characters are added so the file always parses.
 func tomlStr(s string) string {
-	return strings.NewReplacer(`\`, `\\`, `"`, `\"`, "\n", `\n`, "\r", `\r`, "\t", `\t`).Replace(s)
+	var b strings.Builder
+	for _, r := range s {
+		switch {
+		case r == '\\' || r == '"':
+			b.WriteByte('\\')
+			b.WriteRune(r)
+		case r == '\n':
+			b.WriteString(`\n`)
+		case r == '\r':
+			b.WriteString(`\r`)
+		case r == '\t':
+			b.WriteString(`\t`)
+		case r < 0x20 || r == 0x7f:
+			fmt.Fprintf(&b, `\u%04X`, r)
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 func dataEntries(ctx context.Context, env *Env) ([]dataEntry, error) {

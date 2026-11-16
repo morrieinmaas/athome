@@ -64,16 +64,18 @@ every context. A breached box leaks its own scope's `.env` files and nothing els
 
 ## Box keys
 
-Each box gets one key, created on the box at `machine add` and never copied off.
+Each box gets one key, `~/.ssh/<hostname>_ed25519`, created on the box at `machine add` and
+never copied off. That name matters: the generated ssh config sets `IdentitiesOnly yes` and
+offers github.com only `~/.ssh/id_ed25519` and `~/.ssh/<hostname>_ed25519`, and signing uses
+the same files.
 
 - It works while you are detached, so agents on the box can push at 3am.
 - A breach leaks that one key, and you revoke it on its own.
 - athome registers it with `gh` as an authentication key and a signing key on the scope's
   `github_account` (default: the account `gh` is logged in as), and removes it at
   `machine rm`. Registering the signing key is what makes commits show as verified.
-- On the box, `allowed_signers` is rendered by chezmoi from the box's own public key
-  (`dot_config/git/allowed_signers.tmpl` gains a remote branch), so `git log
-  --show-signature` verifies locally too.
+- On the box, the existing `dot_config/git/allowed_signers.tmpl` already picks up that
+  file, so `git log --show-signature` verifies locally with no template change.
 
 Agent forwarding is an opt-in per machine (`forward_agent = true`). It forwards the laptop's
 one key, so `machine add` warns that root on the box can use that key while you are

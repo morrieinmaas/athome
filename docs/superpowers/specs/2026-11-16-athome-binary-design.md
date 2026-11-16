@@ -60,7 +60,7 @@ athome init [flags]          # first run: answers, ssh key, chezmoi init --apply
 athome update                # self, chezmoi, mise, packages, grofe, canopy, then sync --all
 athome status                # what athome manages here and whether it is current
 athome teardown [--state|--dotfiles|--all] [--execute] [--yes]
-athome secrets backup|restore
+athome secrets backup|restore|rekey
 athome machine ...           # remote-machines spec
 athome keys ...              # keys-and-recovery spec
 athome project clone ...     # remote-machines spec
@@ -69,7 +69,8 @@ athome version
 
 `init` takes every flag `bootstrap.sh` takes today, with the same meaning: `--ref`,
 `--machine`, `--config`, `--no-agents`, `--import-from`, `--import-ssh`, `--import-ssh-bw`,
-`--non-interactive` (`-y`, `--yes`). `teardown` keeps today's tiers and its dry run by
+`--non-interactive` (`-y`, `--yes`). It adds `--restore` for a replacement laptop (keys spec),
+which restores the ssh key and the vault before any key is generated. `teardown` keeps today's tiers and its dry run by
 default. `test/e2e/scenario.sh` changes in two ways: both of its `bootstrap.sh` calls (before
 and after the teardown) gain `--install-from <built binary>`, and its teardown call becomes
 `athome teardown`. `teardown --all` also removes `~/.local/bin/athome`.

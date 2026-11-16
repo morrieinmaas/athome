@@ -125,7 +125,9 @@ what the box needs on each run.
 `rbw register` or `rbw login`, even though `ssh -t` gives it a terminal. A logged-in rbw on
 a box would reach the whole vault: the git-crypt key, every break-glass key and every
 context's items. rbw may be installed (it is in `packages.yaml` `common`) but is never
-configured. `use ctx` envrcs on a box read the scope's `.env` files only, never rbw.
+configured. `use ctx` (direnv's `use_ctx`) reads only rbw, so on a box it loads nothing;
+repo secrets load from `~/.secrets/<repo>/.env` through each repo's mise `_.file`, as on the
+laptop.
 
 It sets one new machine type and one new data key:
 
@@ -178,11 +180,16 @@ actions.
 
 ```
 athome machine add <name> --scope work/acme --target <host> [--user u] [--jump j] [--port p]
+                  [--github-account a] [--forward-agent] [--athome <tag>]
 athome machine sync [<name> | --all]
 athome machine rm <name> [--force]
 athome machine ls
 athome project clone <repo> [--machine <name>]
 ```
+
+Every inventory field has a `machine add` flag, so the steps below have the values before
+the entry is written. `--athome` defaults to the version of the laptop's own `athome`, and
+`--github-account` to the account `gh` is logged in as.
 
 **`machine add`** runs these steps in order. Each step checks before it acts, so rerunning
 `machine add` after a failure resumes at the failed step:
@@ -251,6 +258,10 @@ The prompt is starship, from `home/dot_config/starship.toml`, which becomes a te
 remote machine its host segment is replaced, at render time, by fixed text such as
 `acme-dev · work/acme` in the scope's context colour. Nothing runs per prompt. On the laptop
 the template renders as today.
+
+When canopy's themes (M5) add their starship overlay, canopy's merged config takes
+athome's rendered `~/.config/starship.toml` as its base and changes only colours, so the
+remote segment survives. canopy's remote-awareness spec states the same rule.
 
 ## The ssh nudge
 

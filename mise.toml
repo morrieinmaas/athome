@@ -26,6 +26,7 @@ _.path = ["{{env.HOME}}/.local/bin"]
 [tools]
 # Test runner for test/*.bats (`mise run test`). CI apt-installs its own.
 bats = "1.14.0"
+go = "1.27"
 
 [tasks.bootstrap]
 description = "Provision this machine (args pass through, e.g. --config bootstrap.local.toml)"

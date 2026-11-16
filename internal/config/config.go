@@ -80,26 +80,38 @@ func Load(o Options) (Config, error) {
 		cfg.Data[a.key] = v
 	}
 
+	machine, includeAgents, err := resolveMachineAgents(o, text)
+	if err != nil {
+		return cfg, err
+	}
+	cfg.Machine, cfg.IncludeAgents = machine, includeAgents
+	return cfg, nil
+}
+
+// resolveMachineAgents picks machine and includeAgents: flag over file over
+// default, then validates both (B:222-234).
+func resolveMachineAgents(o Options, text string) (machine string, includeAgents bool, err error) {
+	machine, includeAgents = "personal", true
 	if o.Machine != "" || o.MachineSet {
-		cfg.Machine = o.Machine
+		machine = o.Machine
 	} else if m := cfgGet(text, "machine"); m != "" {
-		cfg.Machine = m
+		machine = m
 	}
 	if o.NoAgents {
-		cfg.IncludeAgents = false
+		includeAgents = false
 	} else if a := cfgGet(text, "includeAgents"); a != "" {
 		switch a {
 		case "true":
 		case "false":
-			cfg.IncludeAgents = false
+			includeAgents = false
 		default:
-			return cfg, fmt.Errorf("%w: includeAgents must be true|false (got: %s)", ErrUsage, a)
+			return machine, includeAgents, fmt.Errorf("%w: includeAgents must be true|false (got: %s)", ErrUsage, a)
 		}
 	}
-	if cfg.Machine != "personal" && cfg.Machine != "work" {
-		return cfg, fmt.Errorf("%w: machine must be personal|work (got: %s)", ErrUsage, cfg.Machine)
+	if machine != "personal" && machine != "work" {
+		return machine, includeAgents, fmt.Errorf("%w: machine must be personal|work (got: %s)", ErrUsage, machine)
 	}
-	return cfg, nil
+	return machine, includeAgents, nil
 }
 
 // readAnswersFile finds the answers file: --config, else the repo's

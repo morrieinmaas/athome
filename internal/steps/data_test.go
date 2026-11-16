@@ -1,6 +1,7 @@
 package steps_test
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -237,5 +238,63 @@ func TestDataKeepsSourceDirPin(t *testing.T) {
 	rep := fx.MustExec(steps.Data())
 	if len(rep.Applied) != 0 {
 		t.Errorf("a sourceDir pin ahead of an unchanged [data] must not trigger a rewrite, applied %v", rep.Applied)
+	}
+}
+
+// F2: chezmoi init re-renders chezmoi.toml with extra keys and tables around the
+// seed; the step is done once every seed key has its wanted value.
+func TestDataIgnoresExtraKeys(t *testing.T) {
+	fx := newFixture(t)
+	fx.Env.Cfg = e2eConfig(t, fx.Home)
+	fx.MustExec(steps.Data())
+	path := chezmoiTomlPath(fx)
+	rendered := "[git]\n    command = \"git\"\n" + readFile(t, path) + "    source_dir_extra = \"x\"\n"
+	if err := os.WriteFile(path, []byte(rendered), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if rep := fx.MustExec(steps.Data()); len(rep.Applied) != 0 {
+		t.Errorf("extra keys must not trigger a rewrite, applied %v", rep.Applied)
+	}
+	if got := readFile(t, path); got != rendered {
+		t.Errorf("the rendered config was overwritten:\n%s", got)
+	}
+}
+
+// F4: [data].hostname is bash's short hostname, not chezmoi's .chezmoi.hostname.
+func TestDataHostnameIsTheShortHostname(t *testing.T) {
+	fx := newFixture(t)
+	t.Setenv("HOSTNAME", "short.example.org")
+	fx.MustExec(steps.Data()) // chezmoi reports testhost
+	if got := readChezmoiData(t, chezmoiTomlPath(fx))["hostname"]; got != "short" {
+		t.Errorf("hostname = %#v, want short", got)
+	}
+}
+
+// F5: $HOSTNAME, then os.Hostname(), then /etc/hostname.
+func TestShortHostnameOrder(t *testing.T) {
+	etc := filepath.Join(t.TempDir(), "hostname")
+	writeFile(t, etc, "fromfile.lan\n", 0o644)
+	host := func(h string, err error) func() (string, error) {
+		return func() (string, error) { return h, err }
+	}
+	cases := []struct {
+		name, env string
+		osHost    func() (string, error)
+		want      string
+	}{
+		{"env wins", "fromenv.x", host("fromos", nil), "fromenv"},
+		{"os.Hostname before /etc/hostname", "", host("fromos.x", nil), "fromos"},
+		{"/etc/hostname last", "", host("", errors.New("no")), "fromfile"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Setenv("HOSTNAME", c.env)
+			t.Cleanup(steps.SetHostnameSources(c.osHost, etc))
+			fx := newFixture(t)
+			fx.MustExec(steps.Data())
+			if got := readChezmoiData(t, chezmoiTomlPath(fx))["hostname"]; got != c.want {
+				t.Errorf("hostname = %#v, want %q", got, c.want)
+			}
+		})
 	}
 }

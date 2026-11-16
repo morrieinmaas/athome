@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"reflect"
 	"regexp"
 	"strings"
 
@@ -48,15 +47,18 @@ func Data() []Step {
 			if _, err := toml.DecodeFile(chezmoiConfigPath(env), &doc); err != nil {
 				return false, nil // missing or unreadable: write it
 			}
-			want := map[string]any{}
+			// chezmoi init re-renders the file with more keys around the seed,
+			// so only the seed keys count.
 			for _, e := range entries {
+				var want any = e.val
 				if e.isB {
-					want[e.key] = e.bool
-				} else {
-					want[e.key] = e.val
+					want = e.bool
+				}
+				if got, ok := doc.Data[e.key]; !ok || got != want {
+					return false, nil
 				}
 			}
-			return reflect.DeepEqual(doc.Data, want), nil
+			return true, nil
 		},
 		Apply: func(ctx context.Context, env *Env) error {
 			entries, err := dataEntries(ctx, env)
@@ -92,7 +94,7 @@ func dataEntries(ctx context.Context, env *Env) ([]dataEntry, error) {
 	handle, id := dataIdentity(ctx, env)
 	entries := []dataEntry{
 		{key: "machineType", val: env.Cfg.Machine},
-		{key: "hostname", val: dataHostname(ctx, env)},
+		{key: "hostname", val: shortHostname()}, // B:881; the key path uses dataHostname
 		{key: "githubHandle", val: handle},
 		{key: "githubId", val: id},
 	}
@@ -150,16 +152,21 @@ func dataHostname(ctx context.Context, env *Env) string {
 	return shortHostname()
 }
 
-// shortHostname ports B:93-101.
+var (
+	osHostname  = os.Hostname // gethostname(2), what bash's $HOSTNAME builtin is
+	etcHostname = "/etc/hostname"
+)
+
+// shortHostname ports B:93-101: $HOSTNAME, then gethostname(2), then /etc/hostname.
 func shortHostname() string {
 	h := os.Getenv("HOSTNAME")
 	if h == "" {
-		if b, err := os.ReadFile("/etc/hostname"); err == nil {
-			h = strings.TrimSpace(string(b))
-		}
+		h, _ = osHostname()
 	}
 	if h == "" {
-		h, _ = os.Hostname()
+		if b, err := os.ReadFile(etcHostname); err == nil {
+			h = strings.TrimSpace(string(b))
+		}
 	}
 	if i := strings.IndexByte(h, '.'); i >= 0 {
 		h = h[:i]

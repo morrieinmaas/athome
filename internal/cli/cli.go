@@ -218,7 +218,7 @@ func runInitEnv(env *steps.Env, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "athome init: %v\n", err)
 		return exitError
 	}
-	printFinish(stdout, rep, env.Warnings, steps.FollowupLogPath(env.Home))
+	printFinish(stdout, rep, env.Warnings, steps.FollowupLogPath())
 	return exitOK
 }
 

@@ -128,22 +128,24 @@ func restoreScript(env *Env) string {
 // B:1015-1030: restore only when rbw is unlocked, no ~/.secrets/*/.env exists
 // and the secrets-restore script is executable.
 func secretsRestoreDone(ctx context.Context, env *Env) (bool, error) {
-	fi, err := os.Stat(restoreScript(env))
-	if err != nil || fi.Mode().Perm()&0o111 == 0 {
-		return true, nil
-	}
 	if !rbwUnlocked(ctx, env) {
 		return true, nil
 	}
-	m, _ := filepath.Glob(filepath.Join(env.Home, ".secrets", "*", ".env"))
-	return len(m) > 0, nil
+	if m, _ := filepath.Glob(filepath.Join(env.Home, ".secrets", "*", ".env")); len(m) > 0 {
+		return true, nil
+	}
+	fi, err := os.Stat(restoreScript(env))
+	if err != nil || fi.Mode().Perm()&0o111 == 0 {
+		appendFollowup("Secrets: run `secrets-restore` to recover ~/.config env files from the encrypted vault. See docs/secrets.md.")
+		return true, nil
+	}
+	return false, nil
 }
 
 func restoreSecrets(ctx context.Context, env *Env) error {
 	r, err := env.Run.Run(ctx, run.Cmd{Name: restoreScript(env), Interactive: true})
 	if err != nil || r.Code != 0 {
 		envLogf(env, "  secrets-restore had issues; run it manually later.\n")
-		env.Warnings++
 	}
 	return nil
 }

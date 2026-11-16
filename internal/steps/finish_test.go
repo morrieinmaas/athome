@@ -217,6 +217,37 @@ func TestSecretsRestoreSkip(t *testing.T) {
 		if _, err := fx.Exec(steps.Finish()); err != nil {
 			t.Fatalf("secrets-restore trouble is a message, not an error: %v", err)
 		}
+		if fx.Env.Warnings != 0 {
+			t.Errorf("Warnings = %d, a failing secrets-restore only logs (B:1026)", fx.Env.Warnings)
+		}
+	})
+	t.Run("unlocked, empty, no script: a follow-up line", func(t *testing.T) {
+		fx := newFixture(t)
+		fx.Fake.Have("rbw")
+		fx.MustExec(steps.Finish())
+		got, _ := os.ReadFile(steps.FollowupLogPath())
+		if !strings.Contains(string(got), "Secrets: run `secrets-restore`") {
+			t.Errorf("want the secrets-restore follow-up line (B:1028), log: %q", got)
+		}
+	})
+	t.Run("unlocked, empty, script not executable: a follow-up line", func(t *testing.T) {
+		fx := newFixture(t)
+		fx.Fake.Have("rbw")
+		writeFile(t, fx.Path(".local", "bin", "secrets-restore"), "#!/bin/sh\n", 0o644)
+		fx.MustExec(steps.Finish())
+		got, _ := os.ReadFile(steps.FollowupLogPath())
+		if !strings.Contains(string(got), "Secrets: run `secrets-restore`") {
+			t.Errorf("want the secrets-restore follow-up line (B:1028), log: %q", got)
+		}
+	})
+	t.Run("rbw locked: no follow-up line", func(t *testing.T) {
+		fx := newFixture(t)
+		fx.Fake.Have("rbw")
+		fx.Fake.On("rbw", "unlocked").Return(run.Result{Code: 1})
+		fx.MustExec(steps.Finish())
+		if got, _ := os.ReadFile(steps.FollowupLogPath()); len(got) != 0 {
+			t.Errorf("a locked rbw says nothing here (B:1017), log: %q", got)
+		}
 	})
 }
 

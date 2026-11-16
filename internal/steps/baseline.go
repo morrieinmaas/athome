@@ -37,8 +37,8 @@ func Baseline() []Step {
 }
 
 // FollowupLogPath is where chezmoi's scripts append manual-step notes (B:769).
-// Like bash it lives in $TMPDIR, so home does not enter the path.
-func FollowupLogPath(_ string) string {
+// Like bash it lives in $TMPDIR.
+func FollowupLogPath() string {
 	return filepath.Join(tmpDir(), "athome-bootstrap-followup.log")
 }
 
@@ -47,11 +47,31 @@ func baselineWarn(env *Env, format string, a ...any) {
 	envLogf(env, "warning: "+format+"\n", a...)
 }
 
+// appendFollowup adds a bullet to the follow-up log unless it is already there.
+func appendFollowup(line string) {
+	path := FollowupLogPath()
+	if b, err := os.ReadFile(path); err == nil && strings.Contains(string(b), line) {
+		return
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	fmt.Fprintf(f, "  • %s\n", line)
+}
+
+// baselineDepWarn is baselineWarn plus B:950's follow-up line, written once.
+func baselineDepWarn(env *Env, format string, a ...any) {
+	baselineWarn(env, format, a...)
+	appendFollowup("a baseline dep (package manager / gh / rbw / project dirs / mise) failed; re-run `mise run bootstrap`.")
+}
+
 // chezmoiApply is B:769-922: a failed init is a warning, never an error.
 func chezmoiApply(ctx context.Context, env *Env) error {
 	env.DataChanged = false // this init consumes the seeded chezmoi.toml
 	environ := append(os.Environ(),
-		"ATHOME_FOLLOWUP_LOG="+FollowupLogPath(env.Home),
+		"ATHOME_FOLLOWUP_LOG="+FollowupLogPath(),
 		"ATHOME_BOOTSTRAP=1",
 		"PATH="+nanobrewBinDir+":"+os.Getenv("PATH"),
 	)
@@ -71,8 +91,10 @@ func chezmoiApply(ctx context.Context, env *Env) error {
 	})
 	if err != nil {
 		baselineWarn(env, "chezmoi init could not run: %v; re-run `mise run apply` to finish", err)
+		appendFollowup("chezmoi init could not run during bootstrap; re-run `mise run apply` (idempotent) to finish.")
 	} else if res.Code != 0 {
 		baselineWarn(env, "chezmoi init exited %d; bootstrap continues, re-run `mise run apply` to finish", res.Code)
+		appendFollowup(fmt.Sprintf("chezmoi init exited %d during bootstrap; re-run `mise run apply` (idempotent) to finish.", res.Code))
 	}
 	return nil
 }
@@ -106,7 +128,7 @@ func renderAndRun(ctx context.Context, env *Env, name string) error {
 
 func packageManager(ctx context.Context, env *Env) error {
 	if err := renderAndRun(ctx, env, pmScript); err != nil {
-		baselineWarn(env, "baseline package manager: %v", err)
+		baselineDepWarn(env, "baseline package manager: %v", err)
 	}
 	return nil
 }
@@ -143,7 +165,7 @@ func installPackages(ctx context.Context, env *Env) error {
 	install.Interactive = true
 	res, err := env.Run.Run(ctx, install)
 	if err != nil || res.Code != 0 {
-		baselineWarn(env, "baseline packages (%s) failed; re-run bootstrap", baselinePkgs)
+		baselineDepWarn(env, "baseline packages (%s) failed; re-run bootstrap", baselinePkgs)
 	}
 	return nil
 }
@@ -168,7 +190,7 @@ func projectDirsDone(_ context.Context, env *Env) (bool, error) {
 
 func projectDirs(ctx context.Context, env *Env) error {
 	if err := renderAndRun(ctx, env, projectDirsScript); err != nil {
-		baselineWarn(env, "baseline project dirs: %v", err)
+		baselineDepWarn(env, "baseline project dirs: %v", err)
 	}
 	return nil
 }
@@ -185,7 +207,7 @@ func installMise(ctx context.Context, env *Env) error {
 		Interactive: true,
 	})
 	if err != nil || res.Code != 0 {
-		baselineWarn(env, "mise install failed; re-run bootstrap")
+		baselineDepWarn(env, "mise install failed; re-run bootstrap")
 	}
 	return nil
 }
@@ -196,7 +218,7 @@ func installMise(ctx context.Context, env *Env) error {
 func chezmoiApplyDone(ctx context.Context, env *Env) (bool, error) {
 	// B:770: notes from an earlier run must not bleed into this one, even when
 	// the apply is skipped.
-	os.WriteFile(FollowupLogPath(env.Home), nil, 0o644)
+	os.WriteFile(FollowupLogPath(), nil, 0o644)
 	if env.DataChanged {
 		return false, nil
 	}

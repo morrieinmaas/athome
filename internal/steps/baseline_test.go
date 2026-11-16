@@ -25,6 +25,10 @@ func TestChezmoiApplyNonFatal(t *testing.T) {
 		if fx.Env.Warnings < 1 {
 			t.Errorf("Warnings = %d, want at least 1", fx.Env.Warnings)
 		}
+		got, _ := os.ReadFile(steps.FollowupLogPath())
+		if !strings.Contains(string(got), "chezmoi init exited 1 during bootstrap") {
+			t.Errorf("want the chezmoi init follow-up line (B:921), log: %q", got)
+		}
 	})
 	t.Run("success runs the documented command and adds none", func(t *testing.T) {
 		fx := newFixture(t)
@@ -99,6 +103,10 @@ func TestPackagesFailureIsAWarning(t *testing.T) {
 	}
 	if fx.Env.Warnings < 1 {
 		t.Errorf("Warnings = %d, want at least 1", fx.Env.Warnings)
+	}
+	got, _ := os.ReadFile(steps.FollowupLogPath())
+	if !strings.Contains(string(got), "a baseline dep (package manager / gh / rbw / project dirs / mise) failed") {
+		t.Errorf("want the baseline dep follow-up line (B:950), log: %q", got)
 	}
 }
 
@@ -326,7 +334,7 @@ func TestChezmoiInitAndInstallsAreInteractive(t *testing.T) {
 func TestFollowupLogTruncated(t *testing.T) {
 	fx := newFixture(t)
 	t.Setenv("TMPDIR", t.TempDir())
-	log := steps.FollowupLogPath(fx.Home)
+	log := steps.FollowupLogPath()
 	writeFile(t, log, "  * stale note\n", 0o644)
 	fx.Fake.On("chezmoi", chezmoiVerify(fx)...).Return(run.Result{Code: 0})
 	fx.MustExec(steps.Baseline())
@@ -343,7 +351,7 @@ func TestChezmoiApplyPassesFollowupLog(t *testing.T) {
 	t.Setenv("TMPDIR", t.TempDir())
 	fx.MustExec(steps.Baseline())
 	calls := fx.callsTo("chezmoi", chezmoiInit(fx)...)
-	if len(calls) != 1 || !strings.Contains(strings.Join(calls[0].Env, "\n"), "ATHOME_FOLLOWUP_LOG="+steps.FollowupLogPath(fx.Home)) {
+	if len(calls) != 1 || !strings.Contains(strings.Join(calls[0].Env, "\n"), "ATHOME_FOLLOWUP_LOG="+steps.FollowupLogPath()) {
 		t.Errorf("chezmoi init env lacks the follow-up log: %+v", calls)
 	}
 }

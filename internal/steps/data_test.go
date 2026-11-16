@@ -247,6 +247,24 @@ func TestDataKeepsStoredIdentityWhenOffline(t *testing.T) {
 	}
 }
 
+// A stored id belongs to the stored handle; for another handle it is wrong, so
+// an offline run with a changed handle leaves the id empty.
+func TestDataDropsStoredIDWhenHandleChanges(t *testing.T) {
+	fx := newFixture(t)
+	fx.Fake.Have("gh")
+	fx.Fake.On("gh", "api", "users/octo", "--jq", ".id").Return(run.Result{Stdout: "42\n"})
+	fx.Env.Cfg.Data = map[string]string{"githubHandle": "octo"}
+	fx.MustExec(steps.Data())
+
+	fx.Fake.On("gh", "api", "users/other", "--jq", ".id").Return(run.Result{Code: 1})
+	fx.Env.Cfg.Data = map[string]string{"githubHandle": "other"}
+	fx.MustRerun(steps.Data())
+	got := readChezmoiData(t, chezmoiTomlPath(fx))
+	if got["githubHandle"] != "other" || got["githubId"] != "" {
+		t.Errorf("handle=%#v id=%#v, want other and an empty id", got["githubHandle"], got["githubId"])
+	}
+}
+
 func TestDataRewrittenWhenAnswersChange(t *testing.T) {
 	fx := newFixture(t)
 	fx.Env.Cfg = e2eConfig(t, fx.Home)

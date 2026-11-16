@@ -148,7 +148,8 @@ func storedData(env *Env) map[string]any {
 
 // dataIdentity ports B:830-846. Failures leave the value empty; it never errors.
 // A value that cannot be derived (offline rerun) falls back to the one already
-// stored, so a stored identity is never replaced by "".
+// stored, so a stored identity is never replaced by "". The stored id is only
+// reused for the stored handle; for another handle it would be someone else's.
 func dataIdentity(ctx context.Context, env *Env) (handle, id string) {
 	stored := storedData(env)
 	storedStr := func(k string) string { s, _ := stored[k].(string); return s }
@@ -181,7 +182,7 @@ func dataIdentity(ctx context.Context, env *Env) (handle, id string) {
 			}
 		}
 	}
-	if id == "" {
+	if id == "" && handle == storedStr("githubHandle") {
 		id = storedStr("githubId")
 	}
 	return handle, id

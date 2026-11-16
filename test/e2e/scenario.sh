@@ -47,9 +47,13 @@ assert_init_idempotent() {
   fi
 }
 
-# Baseline bootstrap, then converge with apply, asserting each half.
+# Baseline bootstrap (binary runner: a second init right after must be a no-op,
+# before apply changes the home), then converge with apply, asserting each half.
 bootstrap_and_verify() {
   run_bootstrap
+  if [ "$runner" = binary ]; then
+    assert_init_idempotent
+  fi
   bash test/e2e/verify-baseline.sh
   chezmoi apply
   bash test/e2e/verify.sh
@@ -57,10 +61,6 @@ bootstrap_and_verify() {
 
 phase "1/3 bootstrap -> apply -> verify"
 bootstrap_and_verify
-if [ "$runner" = binary ]; then
-  phase "1b/3 athome init again -> must apply 0"
-  assert_init_idempotent
-fi
 
 phase "2/3 seed user-data canaries -> teardown --all -> verify-teardown"
 # Canaries the teardown MUST NOT touch — the safety contract under test.

@@ -199,8 +199,8 @@ bootstrap. For now it runs the same baseline steps as `bootstrap.sh`, and a
 second run skips whatever is already done.
 
 ```bash
-go build ./cmd/athome
-./athome init --config <file> --machine personal
+go build -o ~/.local/bin/athome ./cmd/athome
+athome init --config <file> --machine personal
 ```
 
 `scripts/bootstrap.sh` stays the supported install path for now; the binary is

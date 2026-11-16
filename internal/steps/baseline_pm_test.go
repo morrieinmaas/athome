@@ -43,6 +43,19 @@ func TestPackages(t *testing.T) {
 	}
 }
 
+func TestPackagesDarwinNoSudo(t *testing.T) {
+	fx := newFixture(t)
+	t.Cleanup(steps.SetNanobrewBin(filepath.Join(t.TempDir(), "nb")))
+	fx.Env.OS, fx.Env.Distro = "darwin", ""
+	r, stop := steps.WarmSudo(fx.Fake, fx.Log)
+	defer stop()
+	fx.Env.Run = r
+	fx.MustExec(steps.Baseline())
+	if n := sudoVCount(fx.Fake); n != 0 {
+		t.Errorf("darwin nb install must not prime sudo, got %d sudo -v:\n%s", n, fx.dump())
+	}
+}
+
 func TestPackagesFailureIsAWarning(t *testing.T) {
 	fx := newFixture(t)
 	fx.Env.OS, fx.Env.Distro = "darwin", ""

@@ -350,12 +350,11 @@ func TestRunCleanupReverseOrder(t *testing.T) {
 }
 
 // V1: the warm-up also fires for commands that run sudo internally (the
-// package-manager script, yay, nb), once, before the first of them.
+// package-manager script, yay), once, before the first of them.
 func TestWarmSudoForNeedsSudoCommands(t *testing.T) {
 	cases := []struct{ name, os, distro, install string }{
 		{"arch", "linux", "arch", "yay"},
 		{"fedora", "linux", "fedora", "sudo"},
-		{"darwin", "darwin", "", "nb"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

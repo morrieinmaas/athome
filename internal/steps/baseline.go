@@ -161,7 +161,7 @@ func rpmInstalled(ctx context.Context, env *Env, pkg string) bool {
 func pmInstallCmd(env *Env, pkgs ...string) run.Cmd {
 	switch {
 	case env.OS == "darwin":
-		return run.Cmd{Name: "nb", Args: append([]string{"install"}, pkgs...), NeedsSudo: true}
+		return run.Cmd{Name: "nb", Args: append([]string{"install"}, pkgs...)}
 	case env.Distro == "fedora":
 		return run.Cmd{Name: "sudo", Args: append([]string{"dnf", "install", "-y"}, pkgs...)}
 	}

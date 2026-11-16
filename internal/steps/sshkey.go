@@ -193,7 +193,7 @@ func skKeygenApply(ctx context.Context, env *Env) error {
 			return err
 		}
 		if fileExists(key + ".pub") {
-			if err := os.Rename(key+".pub", key+".pub."+ts+".old"); err != nil {
+			if err := os.Rename(key+".pub", key+".pub."+ts+".bak"); err != nil {
 				return err
 			}
 		}
@@ -221,8 +221,14 @@ func skPubCheck(ctx context.Context, env *Env) (bool, error) {
 	return !fileExists(key) || fileExists(key+".pub"), nil
 }
 
+// skPubApply carries on when the .pub cannot be derived (a passphrase key
+// without a tty), as bash does.
 func skPubApply(ctx context.Context, env *Env) error {
-	return skDerivePub(ctx, env, skKeyPath(ctx, env))
+	if err := skDerivePub(ctx, env, skKeyPath(ctx, env)); err != nil {
+		env.Warnings++
+		envLogln(env, "could not derive the public key: %v", err)
+	}
+	return nil
 }
 
 func skShellQuote(s string) string {

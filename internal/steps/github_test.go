@@ -332,3 +332,51 @@ func TestFreshKeyForcesUpload(t *testing.T) {
 		}
 	})
 }
+
+// "SSH already works" with no signing scope must still tell the user how to
+// upload the signing key (B:575-578).
+func TestRegisteredWithoutSigningScopePrintsInstructions(t *testing.T) {
+	fx := ghFixture(t)
+	fx.Fake.On("gh", "auth", "status").Return(run.Result{Stdout: noScopes, Stderr: noScopes})
+	fx.Fake.On("ssh", sshProbe...).Return(run.Result{Stderr: "Hi athome! You've successfully authenticated, but GitHub does not provide shell access.\n", Code: 1})
+	fx.MustExec(steps.GitHub())
+	if !strings.Contains(fx.Log.String(), "gh auth refresh -h github.com -s admin:ssh_signing_key") {
+		t.Errorf("want the manual signing-key instructions in the log, got %q", fx.Log.String())
+	}
+	if len(fx.addCalls()) != 0 {
+		t.Errorf("no scope, nothing to upload:\n%s", fx.dump())
+	}
+}
+
+// Check and Apply share one decision: one ssh probe, one log line.
+func TestDecisionComputedOnce(t *testing.T) {
+	fx := ghFixture(t)
+	fx.Fake.On("ssh", sshProbe...).Return(run.Result{Stderr: "Hi athome! You've successfully authenticated, but GitHub does not provide shell access.\n", Code: 1})
+	fx.MustExec(steps.GitHub()) // signing key missing, so Apply runs after Check
+	if n := len(fx.callsTo("ssh", sshProbe...)); n != 1 {
+		t.Errorf("ssh -T ran %d times, want 1:\n%s", n, fx.dump())
+	}
+	if n := strings.Count(fx.Log.String(), "SSH already authenticates"); n != 1 {
+		t.Errorf("decision logged %d times, want 1:\n%s", n, fx.Log)
+	}
+}
+
+func TestRemoteSetURLFailureIsNotReported(t *testing.T) {
+	fx := ghFixture(t)
+	fx.Fake.On("git", "-C", fx.Repo, "remote", "set-url", "origin", "git@github.com:morrieinmaas/athome.git").Return(run.Result{Code: 1})
+	fx.MustExec(steps.GitHub())
+	if strings.Contains(fx.Log.String(), "HTTPS -> SSH") {
+		t.Errorf("a failed set-url must not be logged as success:\n%s", fx.Log)
+	}
+}
+
+// The device code from `gh auth refresh` must reach the terminal.
+func TestAuthRefreshIsInteractive(t *testing.T) {
+	fx := ghFixture(t)
+	fx.Fake.On("gh", "auth", "status").Return(run.Result{Stdout: noScopes, Stderr: noScopes})
+	fx.MustExec(steps.GitHub())
+	calls := fx.callsTo("gh", "auth", "refresh")
+	if len(calls) != 1 || !calls[0].Interactive {
+		t.Errorf("want one interactive gh auth refresh, got %+v", calls)
+	}
+}

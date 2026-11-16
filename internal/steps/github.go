@@ -2,7 +2,6 @@ package steps
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -34,25 +33,31 @@ const (
 // GitHub, seed ~/.ssh/config and switch the repo remote to ssh. It never fails
 // the run on a GitHub problem; it logs what to do by hand instead.
 func GitHub() []Step {
+	var plan *ghPlan // decided once in Check, reused by Apply
+	decide := func(ctx context.Context, env *Env) ghPlan {
+		if plan == nil {
+			p := ghDecide(ctx, env)
+			plan = &p
+		}
+		return *plan
+	}
 	return []Step{{
 		Name: "github-keys",
 		Check: func(ctx context.Context, env *Env) (bool, error) {
-			p := ghDecide(ctx, env)
+			p := decide(ctx, env)
 			switch p.mode {
 			case ghSkip:
 				return true, nil
 			case ghRegistered:
-				return !ghSigningNeedsUpload(ctx, env, p, false), nil
+				return ghSigningState(ctx, env, p) == sigDone, nil
 			}
 			return false, nil
 		},
 		Apply: func(ctx context.Context, env *Env) error {
-			p := ghDecide(ctx, env)
+			p := decide(ctx, env)
 			switch p.mode {
 			case ghRegistered:
-				if ghSigningNeedsUpload(ctx, env, p, true) {
-					ghAdd(ctx, env, p.signPub, p.host+"-sign", true)
-				}
+				ghEnsureSigning(ctx, env, p)
 			case ghUpload:
 				ghUploadAll(ctx, env, p)
 			}
@@ -61,25 +66,24 @@ func GitHub() []Step {
 	}}
 }
 
-// ghDecide ports the branch ladder at B:605-633 with the --non-interactive answers.
 func ghDecide(ctx context.Context, env *Env) ghPlan {
 	var p ghPlan
 	if env.Opts.CI {
-		ghLog(env, "==> ATHOME_CI set, skipping GitHub SSH-key upload (test/headless; never touches a real account)\n")
+		envLogf(env, "==> ATHOME_CI set, skipping GitHub SSH-key upload (test/headless; never touches a real account)\n")
 		return p
 	}
 	p.sshHost = dataHostname(ctx, env)
 	p.pub = filepath.Join(env.Home, ".ssh", p.sshHost+"_ed25519.pub")
 	if _, err := os.Stat(p.pub); err != nil {
-		ghLog(env, "no %s, skipping ssh-key upload\n", p.pub)
+		envLogf(env, "no %s, skipping ssh-key upload\n", p.pub)
 		return p
 	}
 	if _, err := env.Run.LookPath("gh"); err != nil {
-		ghLog(env, "gh not installed, skipping ssh-key upload (run `gh ssh-key add` manually later)\n")
+		envLogf(env, "gh not installed, skipping ssh-key upload (run `gh ssh-key add` manually later)\n")
 		return p
 	}
 	if r, err := env.Run.Run(ctx, dgCmd("gh", "auth", "status")); err != nil || r.Code != 0 {
-		ghLog(env, "gh not authed, skipping ssh-key upload (run `gh ssh-key add` manually later)\n")
+		envLogf(env, "gh not authed, skipping ssh-key upload (run `gh ssh-key add` manually later)\n")
 		return p
 	}
 	p.host = shortHostname()
@@ -90,10 +94,10 @@ func ghDecide(ctx context.Context, env *Env) ghPlan {
 	if env.FreshKey { // B:424-438 ssh_force_upload: skip both "already set up" branches
 		p.mode = ghUpload
 	} else if ghSSHAuthenticates(ctx, env) {
-		ghLog(env, "SSH already authenticates to GitHub, skipping key upload (already set up)\n")
+		envLogf(env, "SSH already authenticates to GitHub, skipping key upload (already set up)\n")
 		p.mode = ghRegistered
 	} else if existing := ghLocalKeyOnGitHub(ctx, env); existing != "" {
-		ghLog(env, "A local SSH key is already on GitHub (%s), skipping upload.\n", filepath.Base(existing))
+		envLogf(env, "A local SSH key is already on GitHub (%s), skipping upload.\n", filepath.Base(existing))
 		p.mode = ghRegistered
 	} else {
 		p.mode = ghUpload
@@ -104,12 +108,6 @@ func ghDecide(ctx context.Context, env *Env) ghPlan {
 func fileExists(path string) bool {
 	fi, err := os.Stat(path)
 	return err == nil && fi.Mode().IsRegular()
-}
-
-func ghLog(env *Env, format string, a ...any) {
-	if env.Log != nil {
-		fmt.Fprintf(env.Log, format, a...)
-	}
 }
 
 // ghSSHAuthenticates ports B:549-557: GitHub's success banner comes with exit 1.
@@ -171,28 +169,43 @@ func ghLocalKeyOnGitHub(ctx context.Context, env *Env) string {
 	return ""
 }
 
-// ghSigningNeedsUpload ports ensure_signing_key_on_github (B:571-586) up to the
-// upload itself. It logs the manual instructions when the scope is missing.
-func ghSigningNeedsUpload(ctx context.Context, env *Env, p ghPlan, verbose bool) bool {
+type ghSigning int
+
+const (
+	sigDone    ghSigning = iota // nothing to do (no key, or already on GitHub)
+	sigNoScope                  // gh lacks the signing scope: the user must upload by hand
+	sigUpload                   // scope present, key missing on GitHub
+)
+
+// ghSigningState ports ensure_signing_key_on_github (B:571-586) without its side effects.
+func ghSigningState(ctx context.Context, env *Env, p ghPlan) ghSigning {
 	if !fileExists(p.signPub) {
-		return false
+		return sigDone
 	}
 	if !ghHasScope(ctx, env, scopeSigning) {
-		if verbose {
-			ghLog(env, "  ! commit-signing key not uploaded: gh lacks the %s scope.\n", scopeSigning)
-			ghLog(env, "    Commits sign locally but show \"Unverified\" on GitHub until you run:\n")
-			ghLog(env, "      gh auth refresh -h github.com -s %s\n", scopeSigning)
-			ghLog(env, "      gh ssh-key add %s --title \"%s-sign\" --type signing\n", p.signPub, p.host)
-		}
-		return false
+		return sigNoScope
 	}
 	if ghKeyRegistered(ctx, env, "user/ssh_signing_keys", p.signPub) {
-		if verbose {
-			ghLog(env, "  signing key already on GitHub (%s)\n", filepath.Base(p.signPub))
-		}
-		return false
+		return sigDone
 	}
-	return true
+	return sigUpload
+}
+
+// ghEnsureSigning uploads the signing key, or says how to when the scope is missing.
+func ghEnsureSigning(ctx context.Context, env *Env, p ghPlan) {
+	switch ghSigningState(ctx, env, p) {
+	case sigNoScope:
+		envLogf(env, "  ! commit-signing key not uploaded: gh lacks the %s scope.\n", scopeSigning)
+		envLogf(env, "    Commits sign locally but show \"Unverified\" on GitHub until you run:\n")
+		envLogf(env, "      gh auth refresh -h github.com -s %s\n", scopeSigning)
+		envLogf(env, "      gh ssh-key add %s --title \"%s-sign\" --type signing\n", p.signPub, p.host)
+	case sigUpload:
+		ghAdd(ctx, env, p.signPub, p.host+"-sign", true)
+	case sigDone:
+		if fileExists(p.signPub) {
+			envLogf(env, "  signing key already on GitHub (%s)\n", filepath.Base(p.signPub))
+		}
+	}
 }
 
 // ghAdd ports add_gh_ssh_key (B:533-544). A failure is logged, never returned.
@@ -203,71 +216,92 @@ func ghAdd(ctx context.Context, env *Env, pub, title string, signing bool) {
 	}
 	r, err := env.Run.Run(ctx, dgCmd("gh", args...))
 	if err == nil && r.Code == 0 {
-		ghLog(env, "  uploaded: %s\n", title)
+		envLogf(env, "  uploaded: %s\n", title)
 		return
 	}
 	env.Warnings++
-	ghLog(env, "  %s: upload failed\n", title)
+	envLogf(env, "  %s: upload failed\n", title)
 	for _, line := range strings.Split(strings.TrimSpace(r.Stdout+r.Stderr), "\n") {
 		if line != "" {
-			ghLog(env, "    gh said: %s\n", line)
+			envLogf(env, "    gh said: %s\n", line)
 		}
 	}
 }
 
 // ghUploadAll ports B:633-747.
 func ghUploadAll(ctx context.Context, env *Env, p ghPlan) {
+	if ghEnsureScopes(ctx, env) {
+		ghUploadKeys(ctx, env, p)
+	} else {
+		ghManualUpload(env, p)
+	}
+	ghPostUpload(ctx, env, p)
+}
+
+// ghEnsureScopes refreshes missing token scopes. It reports false when the
+// upload has to be done by hand.
+func ghEnsureScopes(ctx context.Context, env *Env) bool {
 	var missing []string
 	for _, s := range []string{scopePublic, scopeSigning} {
 		if !ghHasScope(ctx, env, s) {
 			missing = append(missing, s)
 		}
 	}
-	viaWeb := false
-	if len(missing) > 0 {
-		ghLog(env, "==> gh auth is missing scope(s): %s\n", strings.Join(missing, " "))
-		if os.Getenv("GITHUB_TOKEN") != "" {
-			ghLog(env, "    gh is authed via the GITHUB_TOKEN env var, scopes can't be refreshed on an env token, so falling back to manual upload.\n")
-			viaWeb = true
-		} else if r, err := env.Run.Run(ctx, dgCmd("gh", "auth", "refresh", "-h", "github.com", "-s", strings.Join(missing, ","))); err != nil || r.Code != 0 {
-			ghLog(env, "    gh auth refresh failed, falling back to manual upload.\n")
-			viaWeb = true
-		}
+	if len(missing) == 0 {
+		return true
 	}
+	envLogf(env, "==> gh auth is missing scope(s): %s\n", strings.Join(missing, " "))
+	if os.Getenv("GITHUB_TOKEN") != "" {
+		envLogf(env, "    gh is authed via the GITHUB_TOKEN env var, scopes can't be refreshed on an env token, so falling back to manual upload.\n")
+		return false
+	}
+	// Interactive: the device code and URL must reach the user.
+	refresh := dgCmd("gh", "auth", "refresh", "-h", "github.com", "-s", strings.Join(missing, ","))
+	refresh.Interactive = true
+	if r, err := env.Run.Run(ctx, refresh); err != nil || r.Code != 0 {
+		envLogf(env, "    gh auth refresh failed, falling back to manual upload.\n")
+		return false
+	}
+	return true
+}
 
-	if viaWeb {
-		env.Warnings++
-		ghLog(env, "==> manual SSH key upload:\n")
-		ghLog(env, "    Visit https://github.com/settings/ssh/new (auth tab)\n")
-		ghLog(env, "    and https://github.com/settings/ssh/signing/new (signing tab)\n")
-		ghLog(env, "    Paste each block below, once as auth key, once as signing key:\n")
-		ghLog(env, "  -- %s --\n", p.host)
-		if b, err := os.ReadFile(p.pub); err == nil {
-			ghLog(env, "%s\n", strings.TrimRight(string(b), "\n"))
-		}
-		ghLog(env, "    Then re-run if you want the gh git_protocol switch to ssh\n")
-		ghLog(env, "    (or run it manually: gh config set git_protocol ssh --host github.com)\n")
+func ghUploadKeys(ctx context.Context, env *Env, p ghPlan) {
+	if ghKeyRegistered(ctx, env, "user/keys", p.pub) {
+		envLogf(env, "  auth key already on GitHub: matching %s\n", p.host)
 	} else {
-		if ghKeyRegistered(ctx, env, "user/keys", p.pub) {
-			ghLog(env, "  auth key already on GitHub: matching %s\n", p.host)
-		} else {
-			ghAdd(ctx, env, p.pub, p.host, false)
-		}
-		if ghKeyRegistered(ctx, env, "user/ssh_signing_keys", p.signPub) {
-			ghLog(env, "  signing key already on GitHub: matching %s-sign\n", p.host)
-		} else {
-			ghAdd(ctx, env, p.signPub, p.host+"-sign", true)
-		}
+		ghAdd(ctx, env, p.pub, p.host, false)
 	}
+	if ghKeyRegistered(ctx, env, "user/ssh_signing_keys", p.signPub) {
+		envLogf(env, "  signing key already on GitHub: matching %s-sign\n", p.host)
+	} else {
+		ghAdd(ctx, env, p.signPub, p.host+"-sign", true)
+	}
+}
 
+func ghManualUpload(env *Env, p ghPlan) {
+	env.Warnings++
+	envLogf(env, "==> manual SSH key upload:\n")
+	envLogf(env, "    Visit https://github.com/settings/ssh/new (auth tab)\n")
+	envLogf(env, "    and https://github.com/settings/ssh/signing/new (signing tab)\n")
+	envLogf(env, "    Paste each block below, once as auth key, once as signing key:\n")
+	envLogf(env, "  -- %s --\n", p.host)
+	if b, err := os.ReadFile(p.pub); err == nil {
+		envLogf(env, "%s\n", strings.TrimRight(string(b), "\n"))
+	}
+	envLogf(env, "    Then re-run if you want the gh git_protocol switch to ssh\n")
+	envLogf(env, "    (or run it manually: gh config set git_protocol ssh --host github.com)\n")
+}
+
+// ghPostUpload flips the gh protocol, seeds ~/.ssh/config and moves an https origin to ssh.
+func ghPostUpload(ctx context.Context, env *Env, p ghPlan) {
 	if r, err := env.Run.Run(ctx, dgCmd("gh", "config", "set", "git_protocol", "ssh", "--host", "github.com")); err == nil && r.Code == 0 {
-		ghLog(env, "gh: default protocol switched to ssh\n")
+		envLogf(env, "gh: default protocol switched to ssh\n")
 	}
 
-	ghLog(env, "==> seeding github.com Host -> %s_ed25519 in ~/.ssh/config\n", p.sshHost)
+	envLogf(env, "==> seeding github.com Host -> %s_ed25519 in ~/.ssh/config\n", p.sshHost)
 	if err := ghSeedSSHConfig(env.Home, p.sshHost+"_ed25519"); err != nil {
 		env.Warnings++
-		ghLog(env, "could not seed ~/.ssh/config: %v\n", err)
+		envLogf(env, "could not seed ~/.ssh/config: %v\n", err)
 	}
 
 	r, err := env.Run.Run(ctx, dgCmd("git", "-C", env.RepoRoot, "remote", "get-url", "origin"))
@@ -277,14 +311,12 @@ func ghUploadAll(ctx context.Context, env *Env, p ghPlan) {
 	current := strings.TrimSpace(r.Stdout)
 	if rest, ok := strings.CutPrefix(current, "https://github.com/"); ok {
 		sshRemote := "git@github.com:" + strings.TrimSuffix(rest, ".git") + ".git"
-		if _, err := env.Run.Run(ctx, dgCmd("git", "-C", env.RepoRoot, "remote", "set-url", "origin", sshRemote)); err == nil {
-			ghLog(env, "%s remote: HTTPS -> SSH (%s)\n", env.RepoRoot, sshRemote)
+		if res, err := env.Run.Run(ctx, dgCmd("git", "-C", env.RepoRoot, "remote", "set-url", "origin", sshRemote)); err == nil && res.Code == 0 {
+			envLogf(env, "%s remote: HTTPS -> SSH (%s)\n", env.RepoRoot, sshRemote)
 		}
 	}
 }
 
-// ghSeedSSHConfig ports scripts/lib/ssh.sh:13-27: append the github.com block
-// unless the key basename already appears in ~/.ssh/config.
 func ghSeedSSHConfig(home, hostkey string) error {
 	dir := filepath.Join(home, ".ssh")
 	if err := os.MkdirAll(dir, 0o700); err != nil {

@@ -120,6 +120,18 @@ func TestImportFromMissingDir(t *testing.T) {
 	}
 }
 
+func TestKeyNoPubDeriveFailureWarns(t *testing.T) {
+	fx := newFixture(t)
+	fx.PutKey("PRIV", "")
+	fx.Fake.On("ssh-keygen", "-y", "-f", keyPath(fx)).Return(run.Result{Code: 1, Stderr: "incorrect passphrase"})
+	if _, err := fx.Exec(steps.SSHKey()); err != nil {
+		t.Fatalf("a passphrase key whose .pub cannot be derived must not fail the run: %v", err)
+	}
+	if fx.Env.Warnings != 1 {
+		t.Errorf("Warnings = %d, want 1", fx.Env.Warnings)
+	}
+}
+
 func TestImportBW(t *testing.T) {
 	const item = "ssh/otherbox_ed25519"
 	t.Run("restores the key from the notes field", func(t *testing.T) {
@@ -245,9 +257,13 @@ func TestKeyActionGenerateBacksUp(t *testing.T) {
 	if len(generateCalls(fx)) != 1 {
 		t.Fatalf("sshKeyAction = generate must generate:\n%s", fx.dump())
 	}
-	baks, _ := filepath.Glob(keyPath(fx) + ".*.bak")
+	baks, _ := filepath.Glob(keyPath(fx) + ".[0-9]*.bak")
 	if len(baks) != 1 || readFile(t, baks[0]) != "OLD-PRIV" {
 		t.Errorf("the old key must be kept as %s.<ts>.bak, found %v", keyPath(fx), baks)
+	}
+	pubBaks, _ := filepath.Glob(keyPath(fx) + ".pub.*.bak")
+	if len(pubBaks) != 1 || readFile(t, pubBaks[0]) != pubLine {
+		t.Errorf("the old .pub must be kept as %s.pub.<ts>.bak, found %v", keyPath(fx), pubBaks)
 	}
 }
 

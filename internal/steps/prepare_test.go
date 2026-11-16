@@ -347,3 +347,46 @@ func TestRunCleanupReverseOrder(t *testing.T) {
 		t.Errorf("cleanup order = %v, want [3 2 1]", got)
 	}
 }
+
+// V1: the warm-up also fires for commands that run sudo internally (the
+// package-manager script, yay, nb), once, before the first of them.
+func TestWarmSudoForNeedsSudoCommands(t *testing.T) {
+	cases := []struct{ name, os, distro, install string }{
+		{"arch", "linux", "arch", "yay"},
+		{"fedora", "linux", "fedora", "sudo"},
+		{"darwin", "darwin", "", "nb"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			fx := newFixture(t)
+			t.Cleanup(steps.SetNanobrewBin(filepath.Join(t.TempDir(), "nb")))
+			fx.Env.OS, fx.Env.Distro = c.os, c.distro
+			fx.Fake.On("rpm", "-q", "dnf-plugins-core").Return(run.Result{Code: 1})
+			fx.Fake.On("chezmoi", "execute-template").Return(run.Result{Stdout: "echo pm\n"})
+			r, stop := steps.WarmSudo(fx.Fake, fx.Log)
+			defer stop()
+			fx.Env.Run = r
+			fx.MustExec(steps.Baseline())
+			if n := sudoVCount(fx.Fake); n != 1 {
+				t.Fatalf("want exactly one sudo -v, got %d:\n%s", n, fx.dump())
+			}
+			calls := fx.Fake.Calls()
+			vAt, bashAt, installAt := -1, -1, -1
+			for i, cmd := range calls {
+				switch {
+				case cmd.Name == "sudo" && len(cmd.Args) == 1 && cmd.Args[0] == "-v":
+					vAt = i
+				case cmd.Name == "bash" && bashAt < 0:
+					bashAt = i
+				case cmd.Name == c.install && cmd.NeedsSudo || cmd.Name == "sudo" && len(cmd.Args) > 0 && cmd.Args[0] == "dnf":
+					if installAt < 0 {
+						installAt = i
+					}
+				}
+			}
+			if bashAt < 0 || installAt < 0 || vAt < 0 || vAt > bashAt || vAt > installAt {
+				t.Errorf("sudo -v (%d) must precede the pm script (%d) and the install (%d):\n%s", vAt, bashAt, installAt, fx.dump())
+			}
+		})
+	}
+}

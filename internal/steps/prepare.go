@@ -170,7 +170,7 @@ func WarmSudo(r run.Runner, log io.Writer) (run.Runner, func()) {
 }
 
 func (s *sudoRunner) Run(ctx context.Context, c run.Cmd) (run.Result, error) {
-	if c.Name == "sudo" && (len(c.Args) == 0 || c.Args[0] != "-n") {
+	if c.NeedsSudo || (c.Name == "sudo" && (len(c.Args) == 0 || c.Args[0] != "-n")) {
 		s.once.Do(func() { s.warm(ctx) })
 	}
 	return s.Runner.Run(ctx, c)

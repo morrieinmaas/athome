@@ -21,6 +21,9 @@ type Cmd struct {
 	// Interactive inherits os.Stdin, os.Stdout and os.Stderr, so the user sees
 	// the command's output and can answer its prompts. Result then carries only Code.
 	Interactive bool
+	// NeedsSudo marks a command that runs sudo internally, so the sudo
+	// warm-up wrapper caches credentials before it.
+	NeedsSudo bool
 }
 
 type Result struct {

@@ -119,7 +119,7 @@ func renderAndRun(ctx context.Context, env *Env, name string) error {
 	if rendered.Stdout == "" {
 		return nil
 	}
-	res, err := env.Run.Run(ctx, run.Cmd{Name: "bash", Stdin: rendered.Stdout, Interactive: true})
+	res, err := env.Run.Run(ctx, run.Cmd{Name: "bash", Stdin: rendered.Stdout, Interactive: true, NeedsSudo: name == pmScript})
 	if err != nil || res.Code != 0 {
 		return fmt.Errorf("%s exited non-zero", name)
 	}
@@ -137,7 +137,7 @@ func packageManager(ctx context.Context, env *Env) error {
 func pmInstallCmd(env *Env, pkgs ...string) run.Cmd {
 	switch {
 	case env.OS == "darwin":
-		return run.Cmd{Name: "nb", Args: append([]string{"install"}, pkgs...)}
+		return run.Cmd{Name: "nb", Args: append([]string{"install"}, pkgs...), NeedsSudo: true}
 	case env.Distro == "fedora":
 		return run.Cmd{Name: "sudo", Args: append([]string{"dnf", "install", "-y"}, pkgs...)}
 	}
@@ -148,7 +148,7 @@ func pmInstallCmd(env *Env, pkgs ...string) run.Cmd {
 		}
 		args = append(args, p)
 	}
-	return run.Cmd{Name: "yay", Args: args}
+	return run.Cmd{Name: "yay", Args: args, NeedsSudo: true}
 }
 
 func packagesDone(_ context.Context, env *Env) (bool, error) {

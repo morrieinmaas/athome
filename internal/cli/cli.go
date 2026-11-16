@@ -80,15 +80,44 @@ func initFlags(o *initOpts, out io.Writer) *flag.FlagSet {
 	fs.BoolVar(&o.ImportSSH, "import-ssh", false, "import the ssh key from --import-from")
 	fs.StringVar(&o.ImportSSHBW, "import-ssh-bw", "", "Bitwarden item holding the ssh key")
 	fs.BoolVar(&o.NonInter, "non-interactive", false, "never prompt")
-	fs.BoolVar(&o.Yes, "y", false, "assume yes")
-	fs.BoolVar(&o.Yes, "yes", false, "assume yes")
+	fs.BoolVar(&o.Yes, "y", false, "same as --non-interactive")
+	fs.BoolVar(&o.Yes, "yes", false, "same as --non-interactive")
 	fs.Usage = func() {}
 	return fs
+}
+
+// bash's exact flag set (B:115-130). Go's flag package also takes -ref, --y and
+// --name=value, which bash rejects.
+var (
+	valueFlags = map[string]bool{"--ref": true, "--machine": true, "--config": true, "--import-from": true, "--import-ssh-bw": true}
+	boolFlags  = map[string]bool{"--no-agents": true, "--import-ssh": true, "--non-interactive": true, "-y": true, "--yes": true}
+)
+
+// checkInitArgs rejects every argument form bash's case statement does not know.
+// It stops at -h/--help, which bash answers before reading anything after it.
+func checkInitArgs(args []string) error {
+	for i := 0; i < len(args); i++ {
+		switch a := args[i]; {
+		case a == "-h" || a == "--help":
+			return nil
+		case valueFlags[a]:
+			i++ // the value is taken as is, even when it looks like a flag
+		case boolFlags[a]:
+		case strings.HasPrefix(a, "-"):
+			return fmt.Errorf("unknown flag %q", a)
+		default:
+			return fmt.Errorf("unexpected argument %q", a)
+		}
+	}
+	return nil
 }
 
 // parseInit parses the init flags. flag.ErrHelp means -h was given.
 func parseInit(args []string) (initOpts, error) {
 	var o initOpts
+	if err := checkInitArgs(args); err != nil {
+		return o, err
+	}
 	fs := initFlags(&o, io.Discard)
 	if err := fs.Parse(args); err != nil {
 		return o, err
@@ -126,20 +155,29 @@ func runInit(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "athome init: %v\n", err)
 		return exitUsage
 	}
+	env, code := newInitEnv(o, stdout, stderr)
+	if env == nil {
+		return code
+	}
+	return runInitEnv(env, stdout, stderr)
+}
 
+// newInitEnv resolves the home, the repo and the answers and builds the Env. On
+// failure it prints the error and returns a nil Env with the exit code.
+func newInitEnv(o initOpts, stdout, stderr io.Writer) (*steps.Env, int) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		fmt.Fprintf(stderr, "athome init: %v\n", err)
-		return exitError
+		return nil, exitError
 	}
 	repo, err := findRepoRoot(home)
 	if err != nil {
 		fmt.Fprintf(stderr, "athome init: %v\n", err)
-		return exitError
+		return nil, exitError
 	}
 	if err := checkRepoPath(repo); err != nil {
 		fmt.Fprintf(stderr, "athome init: %v\n", err)
-		return exitUsage
+		return nil, exitUsage
 	}
 	cfgOpts, stepOpts := buildOptions(o, repo, home, environMap(), os.Getenv("ATHOME_CI") != "")
 	cfg, err := config.Load(cfgOpts)
@@ -149,13 +187,12 @@ func runInit(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		fmt.Fprintf(stderr, "athome init: %v\n", err)
 		if errors.Is(err, config.ErrUsage) {
-			return exitUsage
+			return nil, exitUsage
 		}
-		return exitError
+		return nil, exitError
 	}
-
 	r := run.Exec()
-	env := &steps.Env{
+	return &steps.Env{
 		Cfg:      cfg,
 		Run:      r,
 		Home:     home,
@@ -164,7 +201,11 @@ func runInit(args []string, stdout, stderr io.Writer) int {
 		Distro:   distro(r),
 		Opts:     stepOpts,
 		Log:      stdout,
-	}
+	}, exitOK
+}
+
+// runInitEnv runs every step against env, then prints the finish report.
+func runInitEnv(env *steps.Env, stdout, stderr io.Writer) int {
 	defer env.RunCleanup()
 	ctx, stop := signal.NotifyContext(context.Background(), stopSignals...)
 	defer stop()
@@ -173,7 +214,7 @@ func runInit(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "athome init: %v\n", err)
 		return exitError
 	}
-	printFinish(stdout, rep, env.Warnings, steps.FollowupLogPath(home))
+	printFinish(stdout, rep, env.Warnings, steps.FollowupLogPath(env.Home))
 	return exitOK
 }
 
@@ -218,6 +259,8 @@ var stopSignals = []os.Signal{os.Interrupt, syscall.SIGTERM}
 func printFinish(w io.Writer, rep steps.Report, warnings int, followupLog string) {
 	if warnings > 0 {
 		fmt.Fprintf(w, "athome: finished with %d warning(s), not fully ready; see the notes above\n", warnings)
+	} else {
+		fmt.Fprint(w, "\nbaseline ready: chezmoi, mise, ssh, gh, rbw, config files, project dirs.\n\nNext: install everything else\n  mise run apply      # full package set + desktop/shell scripts (re-runnable daily)\n")
 	}
 	if b, err := os.ReadFile(followupLog); err == nil && len(b) > 0 {
 		fmt.Fprintf(w, "\nFollow-up actions you (or the system) need to do:\n%s", b)
@@ -225,8 +268,45 @@ func printFinish(w io.Writer, rep steps.Report, warnings int, followupLog string
 			fmt.Fprintln(w)
 		}
 	}
+	fmt.Fprint(w, finishFooter)
 	printSummary(w, rep)
 }
+
+// finishFooter is the heredoc at the end of bash (B:1071-1105).
+const finishFooter = `
+Day-to-day (mise is the front door, run from the repo):
+
+  mise run apply               # render source -> $HOME (the de facto next step; idempotent)
+  mise run update              # pull latest, then apply
+  mise run diff                # preview pending changes
+  mise run status              # show what has drifted
+
+Shell aliases (anywhere):
+
+  czu                          # chezmoi update -v (pull + apply)
+  czd                          # chezmoi diff
+  cze ~/.zshrc                 # edit a tracked file (auto-applies)
+  czdoc                        # chezmoi doctor
+
+Next manual steps:
+
+  1. Secrets (Bitwarden): handled above if you said yes. To (re)run it anytime:
+       bw-setup          # registers a new device (API key) if needed, then unlocks
+     See docs/secrets.md for the API-key / EU-region / Vaultwarden details.
+
+  2. (Optional) Reuse this SSH key on another box. It's stored in Bitwarden as a
+     secure note (ssh/<hostname>_ed25519); restore it elsewhere with:
+       athome init --import-ssh-bw ssh/<hostname>_ed25519
+
+  3. VPNs (when ready):
+       sudo netbird up                                   # mesh (NetBird Cloud SSO)
+       nordvpn login --username "..." --password "..."   # Linux; macOS uses the GUI
+
+  4. After ` + "`mise run apply`" + ` (it installs zsh + makes it your login shell),
+     log out and back in so new terminals pick it up (the running desktop
+     session keeps the old $SHELL). For THIS terminal right now:
+       exec zsh
+`
 
 // printSummary is the one final line of a successful run.
 func printSummary(w io.Writer, rep steps.Report) {

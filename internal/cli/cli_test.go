@@ -117,6 +117,24 @@ func TestInitHelpListsEveryFlag(t *testing.T) {
 	}
 }
 
+// S13: -y and --yes are aliases, and the help says so.
+func TestInitHelpYesIsAlias(t *testing.T) {
+	sandbox(t)
+	inNoRepo(t)
+	_, out, _ := runMain("init", "--help")
+	for _, f := range []string{"-y\t", "--yes\t"} {
+		var line string
+		for _, l := range strings.Split(out, "\n") {
+			if strings.HasPrefix(strings.TrimSpace(l), f) {
+				line = l
+			}
+		}
+		if !strings.Contains(line, "same as --non-interactive") {
+			t.Errorf("help line for %q = %q, want it to say \"same as --non-interactive\":\n%s", f, line, out)
+		}
+	}
+}
+
 func TestUnknownFlag(t *testing.T) {
 	for _, args := range [][]string{
 		{"init", "--bogus"},
@@ -124,6 +142,20 @@ func TestUnknownFlag(t *testing.T) {
 		{"init", "--machine", "work", "--bogus"},
 		{"init", "--bogus", "--machine", "work"},
 		{"init", "--no-such-flag=1"},
+		// S6: Go's flag package accepts forms bash's case statement does not.
+		{"init", "-ref", "v1"},
+		{"init", "-yes"},
+		{"init", "-non-interactive"},
+		{"init", "-machine", "work"},
+		{"init", "--y"},
+		{"init", "--ref=v1"},
+		{"init", "--machine=work"},
+		{"init", "--no-agents=true"},
+		{"init", "--yes=true"},
+		{"init", "-y=true"},
+		{"init", "-help"},
+		{"init", "--"},
+		{"init", "stray"},
 	} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
 			sandbox(t)
@@ -361,7 +393,8 @@ func TestFlagEffects(t *testing.T) {
 
 // R9: --machine "" is validated, not defaulted.
 func TestEmptyMachineFlagIsUsageError(t *testing.T) {
-	for _, args := range [][]string{{"init", "--machine", ""}, {"init", "--machine="}} {
+	// The --machine= form is no longer this case: bash rejects it as an unknown flag (S6).
+	for _, args := range [][]string{{"init", "--machine", ""}} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
 			sandbox(t)
 			inRepo(t)

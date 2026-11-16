@@ -37,11 +37,34 @@ func TestPrintFinishKeepsSummaryLast(t *testing.T) {
 	}
 }
 
-func TestPrintFinishQuietWhenClean(t *testing.T) {
+// S10: B:1050-1105, the finish footer comes before the summary line.
+func TestPrintFinishFooter(t *testing.T) {
 	var b bytes.Buffer
 	printFinish(&b, steps.Report{}, 0, filepath.Join(t.TempDir(), "missing.log"))
-	if got, want := b.String(), "athome: applied 0, skipped 0\n"; got != want {
-		t.Errorf("output = %q, want %q", got, want)
+	out := b.String()
+	for _, want := range []string{
+		"baseline ready",
+		"mise run apply",
+		"Day-to-day (mise is the front door",
+		"Shell aliases (anywhere):",
+		"Next manual steps:",
+		"bw-setup",
+		"sudo netbird up",
+		"After `mise run apply` (it installs zsh",
+		"exec zsh",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("footer lacks %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "\\$") || strings.Contains(out, "\\`") {
+		t.Errorf("heredoc escapes leaked into the footer:\n%s", out)
+	}
+	if !strings.HasSuffix(out, "athome: applied 0, skipped 0\n") {
+		t.Errorf("the summary must be the last line:\n%s", out)
+	}
+	if strings.Index(out, "exec zsh") > strings.Index(out, "athome: applied") {
+		t.Errorf("the footer must come before the summary:\n%s", out)
 	}
 }
 

@@ -14,7 +14,7 @@ Global constraints:
 - Behaviour source of truth: `scripts/bootstrap.sh`, `scripts/lib/*.sh` on origin/main. Each step's doc comment names the bash line range it ports.
 - No prompts in build 1: anything bash would ask takes the `--non-interactive` answer.
 - External tools only through `run.Runner`; no step calls `os/exec` directly. Tests never touch the real `$HOME`: every test uses `t.TempDir()` as home.
-- Never modify `scripts/bootstrap.sh`, `scripts/teardown.sh` or the verify scripts.
+- Never modify `scripts/bootstrap.sh` or the verify scripts; `scripts/teardown.sh` changes only to remove athome's own state markers in its state tier.
 
 ```mermaid
 flowchart LR

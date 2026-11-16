@@ -208,6 +208,8 @@ Decisions:
   was kept and how to restore over it.
 - When the GitHub handle or id cannot be derived (offline, rate limit), athome keeps the
   value already in `[data]`; `bootstrap.sh` wrote an empty string.
+- On Fedora, athome logs a note when RPM Fusion is still missing after the package-manager
+  script (bootstrap.sh is silent); no warning.
 
 Acceptance criteria:
 

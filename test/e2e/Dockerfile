@@ -8,11 +8,12 @@
 # into the final image. COMMIT is optional (CI passes the git sha).
 FROM golang:1.27 AS athome-build
 ARG COMMIT=none
+ARG TARGETARCH
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build \
     -ldflags "-X github.com/morrieinmaas/athome/internal/cli.Version=e2e -X github.com/morrieinmaas/athome/internal/cli.Commit=${COMMIT}" \
     -o /out/athome ./cmd/athome
 

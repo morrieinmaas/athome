@@ -101,4 +101,5 @@ echo "==> running bootstrap e2e"
 # `set -u` on stock macOS bash 3.2 when no packages are skipped (native host).
 exec "$engine" run --rm --platform "$platform" \
   -e "GITHUB_TOKEN=$token" -e "MISE_GITHUB_TOKEN=$token" \
+  -e "ATHOME_E2E_RUNNER=${ATHOME_E2E_RUNNER:-bash}" \
   ${skip_env[@]+"${skip_env[@]}"} "$img"

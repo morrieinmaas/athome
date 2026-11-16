@@ -21,9 +21,35 @@ export PATH="$HOME/.local/bin:$HOME/.local/share/mise/shims:/opt/nanobrew/prefix
 
 phase() { printf '\n\033[1;35m========== %s ==========\033[0m\n' "$1"; }
 
+# ATHOME_E2E_RUNNER: bash (default, scripts/bootstrap.sh) or binary (athome init).
+runner="${ATHOME_E2E_RUNNER:-bash}"
+case "$runner" in
+  bash|binary) ;;
+  *) echo "unknown ATHOME_E2E_RUNNER='$runner' (expected: bash | binary)" >&2; exit 1 ;;
+esac
+
+run_bootstrap() {
+  if [ "$runner" = binary ]; then
+    athome init --config test/e2e/bootstrap.toml --machine personal
+  else
+    ./scripts/bootstrap.sh --config test/e2e/bootstrap.toml --machine personal
+  fi
+}
+
+# Second `athome init` must be a no-op: last stdout line "athome: applied 0, skipped N".
+assert_init_idempotent() {
+  local last
+  last="$(athome init --config test/e2e/bootstrap.toml --machine personal | tail -n 1)"
+  printf '%s\n' "$last"
+  if ! [[ "$last" =~ ^athome:\ applied\ 0,\ skipped\ [0-9]+$ ]]; then
+    echo "FAIL: second athome init was not a no-op: '$last'" >&2
+    exit 1
+  fi
+}
+
 # Baseline bootstrap, then converge with apply, asserting each half.
 bootstrap_and_verify() {
-  ./scripts/bootstrap.sh --config test/e2e/bootstrap.toml --machine personal
+  run_bootstrap
   bash test/e2e/verify-baseline.sh
   chezmoi apply
   bash test/e2e/verify.sh
@@ -31,6 +57,10 @@ bootstrap_and_verify() {
 
 phase "1/3 bootstrap -> apply -> verify"
 bootstrap_and_verify
+if [ "$runner" = binary ]; then
+  phase "1b/3 athome init again -> must apply 0"
+  assert_init_idempotent
+fi
 
 phase "2/3 seed user-data canaries -> teardown --all -> verify-teardown"
 # Canaries the teardown MUST NOT touch — the safety contract under test.

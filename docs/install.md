@@ -191,3 +191,17 @@ can restore them:
 ```bash
 ./scripts/bootstrap.sh --import-ssh-bw ssh/<hostname>_ed25519
 ```
+
+## athome binary (preview)
+
+`athome` is a Go binary that is growing into a replacement for the bash
+bootstrap. For now it runs the same baseline steps as `bootstrap.sh`, and a
+second run skips whatever is already done.
+
+```bash
+go build ./cmd/athome
+./athome init --config <file> --machine personal
+```
+
+`scripts/bootstrap.sh` stays the supported install path for now; the binary is
+exercised in CI next to it (the e2e `binary` runner) but is not yet the default.

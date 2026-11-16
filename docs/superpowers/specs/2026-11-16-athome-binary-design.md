@@ -217,7 +217,7 @@ Acceptance criteria:
    `bootstrap.sh` writes for the same inputs, key for key.
 5. Each step is a name, a check and an apply; a step whose check passes is skipped.
 6. A run that fails at step N, rerun, skips steps before N and resumes at N.
-7. A second `athome init` with the same inputs applies no step.
+7. A second `athome init` with the same inputs, without `--ref`, applies no step.
 8. With `ATHOME_CI` set no GitHub key upload is attempted.
 9. The e2e containers (arch, fedora) pass `verify-baseline.sh`, `verify.sh` and
    `verify-teardown.sh` unchanged with `ATHOME_E2E_RUNNER=binary`; CI runs both runners.

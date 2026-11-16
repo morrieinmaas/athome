@@ -333,7 +333,7 @@ func TestRemoteToSSH(t *testing.T) {
 func TestFreshKeyForcesUpload(t *testing.T) {
 	t.Run("ssh already authenticates", func(t *testing.T) {
 		fx := ghFixture(t)
-		fx.Env.ForceUpload = true
+		fx.Env.Cfg.Data["sshKeyAction"] = "reupload"
 		fx.Fake.On("ssh", sshProbe...).Return(run.Result{Stderr: "Hi athome! You've successfully authenticated, but GitHub does not provide shell access.\n", Code: 1})
 		fx.MustExec(steps.GitHub())
 		if len(fx.authAdds()) != 1 || len(fx.signingAdds()) != 1 {
@@ -342,7 +342,7 @@ func TestFreshKeyForcesUpload(t *testing.T) {
 	})
 	t.Run("another local key is registered", func(t *testing.T) {
 		fx := ghFixture(t)
-		fx.Env.ForceUpload = true
+		fx.Env.Cfg.Data["sshKeyAction"] = "reupload"
 		other := "AAAAC3NzaC1lZDI1NTE5AAAAIotherkeyblob"
 		fx.PutKey("PRIV", localPub)
 		writeFile(t, fx.Path(".ssh", "other_ed25519.pub"), "ssh-ed25519 "+other+" x@y\n", 0o644)

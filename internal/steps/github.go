@@ -115,7 +115,7 @@ func ghDecide(ctx context.Context, env *Env) ghPlan {
 	if def := filepath.Join(env.Home, ".ssh", "id_ed25519.pub"); fileExists(def) {
 		p.signPub = def
 	}
-	if env.ForceUpload { // B:436-438 ssh_force_upload (sshKeyAction=reupload): skip both "already set up" branches
+	if ghForceUpload(ctx, env) { // B:436-438 ssh_force_upload (sshKeyAction=reupload): skip both "already set up" branches
 		p.mode = ghUpload
 	} else if ghSSHAuthenticates(ctx, env) {
 		envLogf(env, "SSH already authenticates to GitHub, skipping key upload (already set up)\n")
@@ -136,6 +136,12 @@ func ghDecide(ctx context.Context, env *Env) ghPlan {
 		envLogf(env, "          upload it later with: gh ssh-key add %s\n", p.pub)
 	}
 	return p
+}
+
+// ghForceUpload: sshKeyAction=reupload on a key that already existed. A key
+// generated this run is not force-uploaded (B:436-438).
+func ghForceUpload(ctx context.Context, env *Env) bool {
+	return env.Cfg.Data["sshKeyAction"] == "reupload" && !env.KeyGenerated && fileExists(skKeyPath(ctx, env))
 }
 
 func fileExists(path string) bool {

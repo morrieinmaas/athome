@@ -224,7 +224,8 @@ Acceptance criteria:
 7. A second `athome init` with the same inputs, without `--ref`, applies no step. This
    excludes `sshKeyAction = "generate"`, which rotates the host's key on every run as
    `bootstrap.sh` does (the step prints a note saying so), `sshKeyAction = "reupload"`, or when a GitHub key
-   upload failed (a failed `gh ssh-key add` is retried). The manual-upload fallbacks (an env
+   upload failed, or while an unlocked `rbw` has no secrets restored and no `secrets-restore`
+   script (the follow-up note is written again each run) (a failed `gh ssh-key add` is retried). The manual-upload fallbacks (an env
    token without key scopes, a failed `gh auth refresh`) count as done once the run has
    printed the instructions.
 8. With `ATHOME_CI` set no GitHub key upload is attempted.

@@ -206,10 +206,8 @@ func (s *sudoRunner) warm(ctx context.Context) {
 }
 
 func prepChezmoiCheck(_ context.Context, env *Env) (bool, error) {
-	// A chezmoi a previous run put in ~/.local/bin counts, and must be findable.
-	local := filepath.Join(env.Home, ".local", "bin")
-	if fileExists(filepath.Join(local, "chezmoi")) {
-		prependPath(local)
+	// A chezmoi a previous run put in ~/.local/bin counts; Setup put it on PATH.
+	if fileExists(filepath.Join(env.Home, ".local", "bin", "chezmoi")) {
 		return true, nil
 	}
 	_, err := env.Run.LookPath("chezmoi")

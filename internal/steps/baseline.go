@@ -47,13 +47,17 @@ func baselineWarn(env *Env, format string, a ...any) {
 	envLogf(env, "warning: "+format+"\n", a...)
 }
 
+func followupHas(line string) bool {
+	b, err := os.ReadFile(FollowupLogPath())
+	return err == nil && strings.Contains(string(b), line)
+}
+
 // appendFollowup adds a bullet to the follow-up log unless it is already there.
 func appendFollowup(line string) {
-	path := FollowupLogPath()
-	if b, err := os.ReadFile(path); err == nil && strings.Contains(string(b), line) {
+	if followupHas(line) {
 		return
 	}
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	f, err := os.OpenFile(FollowupLogPath(), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
 		return
 	}
@@ -237,9 +241,6 @@ func installMise(ctx context.Context, env *Env) error {
 // and chezmoi.toml is current: verify exits 0 even when the config template
 // changed, so that warning, or a template newer than chezmoi.toml, is not done.
 func chezmoiApplyDone(ctx context.Context, env *Env) (bool, error) {
-	// B:770: notes from an earlier run must not bleed into this one, even when
-	// the apply is skipped.
-	os.WriteFile(FollowupLogPath(), nil, 0o644)
 	if env.DataChanged {
 		return false, nil
 	}
@@ -277,7 +278,6 @@ func nanobrewInstalled(env *Env) bool {
 // packageManagerDone: the OS's package manager is already set up, as far as the
 // pm script (run_once_before_01) sets it up.
 func packageManagerDone(ctx context.Context, env *Env) (bool, error) {
-	prependBaselinePath(env)
 	switch {
 	case env.OS == "darwin":
 		if !nanobrewInstalled(env) {
@@ -298,15 +298,4 @@ func packageManagerDone(ctx context.Context, env *Env) (bool, error) {
 	}
 	_, err := env.Run.LookPath("yay")
 	return err == nil, nil
-}
-
-// prependBaselinePath ports B:935: a just-installed nb (and mise) must be
-// findable by the rest of the run, so put their dirs first on PATH.
-func prependBaselinePath(env *Env) {
-	front := nanobrewBinDir + string(os.PathListSeparator) + filepath.Join(env.Home, ".local", "bin")
-	path := os.Getenv("PATH")
-	if path == front || strings.HasPrefix(path, front+string(os.PathListSeparator)) {
-		return
-	}
-	os.Setenv("PATH", front+string(os.PathListSeparator)+path)
 }

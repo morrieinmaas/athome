@@ -1,6 +1,8 @@
 package steps_test
 
 import (
+	"context"
+	"os"
 	"reflect"
 	"testing"
 
@@ -74,6 +76,9 @@ func TestAllTwiceAppliesNothing(t *testing.T) {
 	for _, d := range []string{"personal", "sidebiz"} {
 		writeFile(t, fx.Path(d, ".envrc"), "x", 0o644)
 	}
+	// Secrets already restored; without them an unlocked rbw and no restore
+	// script re-writes the follow-up note on every run.
+	writeFile(t, fx.Path(".secrets", "personal", ".env"), "x", 0o600)
 	if _, err := fx.Exec(steps.All()); err != nil {
 		t.Fatalf("first run: %v\n%s", err, fx.Log)
 	}
@@ -83,5 +88,51 @@ func TestAllTwiceAppliesNothing(t *testing.T) {
 	}
 	if len(rep.Applied) != 0 {
 		t.Errorf("second run applied %v, want nothing\n%s", rep.Applied, fx.Log)
+	}
+}
+
+// Checks only read: running every step's Check, on a machine set up to reach
+// the branches that used to write, leaves the Env, PATH and the follow-up log
+// as they were. The writes belong to Setup and the applies.
+func TestChecksArePure(t *testing.T) {
+	fx := newFixture(t)
+	t.Setenv("PATH", "/usr/bin")
+	t.Cleanup(steps.SetNanobrewBin(fx.Path("absent-nb")))
+	fx.Env.OS = "darwin"
+	fx.Fake.Have("rbw", "gh") // rbw unlocked, no secrets-restore script
+	fx.Env.Cfg = e2eConfig(t, fx.Home)
+	fx.Env.Cfg.Data["sshKeyAction"] = "reupload"
+	fx.PutKey("PRIVATE\n", "ssh-ed25519 AAAA testhost\n")
+	writeFile(t, fx.Path(".local", "bin", "chezmoi"), "#!/bin/sh\n", 0o755)
+	writeFile(t, steps.FollowupLogPath(), "  • earlier note\n", 0o644)
+
+	for _, s := range steps.All() {
+		envBefore, pathBefore := *fx.Env, os.Getenv("PATH")
+		logBefore := readFile(t, steps.FollowupLogPath())
+		s.Check(context.Background(), fx.Env)
+		if !reflect.DeepEqual(*fx.Env, envBefore) {
+			t.Errorf("%s: Check changed the Env: %+v -> %+v", s.Name, envBefore, *fx.Env)
+		}
+		if got := os.Getenv("PATH"); got != pathBefore {
+			t.Errorf("%s: Check changed PATH: %q -> %q", s.Name, pathBefore, got)
+		}
+		if got := readFile(t, steps.FollowupLogPath()); got != logBefore {
+			t.Errorf("%s: Check changed the follow-up log: %q -> %q", s.Name, logBefore, got)
+		}
+	}
+}
+
+func TestSetupEmptiesFollowupLogAndExtendsPath(t *testing.T) {
+	fx := newFixture(t)
+	t.Setenv("PATH", "/usr/bin")
+	writeFile(t, steps.FollowupLogPath(), "  • earlier note\n", 0o644)
+	steps.Setup(fx.Env)
+	steps.Setup(fx.Env) // idempotent
+	if got := readFile(t, steps.FollowupLogPath()); got != "" {
+		t.Errorf("follow-up log = %q, want empty", got)
+	}
+	want := "/opt/nanobrew/prefix/bin:" + fx.Path(".local", "bin") + ":/usr/bin"
+	if got := os.Getenv("PATH"); got != want {
+		t.Errorf("PATH = %q, want %q", got, want)
 	}
 }

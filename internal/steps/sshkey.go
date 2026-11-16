@@ -198,9 +198,6 @@ func skImportBWApply(ctx context.Context, env *Env) error {
 
 func skKeygenCheck(ctx context.Context, env *Env) (bool, error) {
 	if fileExists(skKeyPath(ctx, env)) {
-		if env.Cfg.Data["sshKeyAction"] == "reupload" {
-			env.ForceUpload = true
-		}
 		// ponytail: sshKeyAction=generate rotates the key on every run, as bash
 		// does, so the "second run applies nothing" criterion excludes it.
 		if env.Cfg.Data["sshKeyAction"] == "generate" {

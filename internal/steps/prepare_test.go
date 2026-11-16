@@ -234,8 +234,8 @@ func TestChezmoiInstalledInLocalBin(t *testing.T) {
 	if fx.mentions("get.chezmoi.io") {
 		t.Errorf("~/.local/bin/chezmoi exists, installer must not run:\n%s", fx.dump())
 	}
-	if got := os.Getenv("PATH"); !strings.HasPrefix(got, bin+":") {
-		t.Errorf("PATH = %q, want ~/.local/bin first", got)
+	if got := os.Getenv("PATH"); !strings.Contains(got, bin+":/usr/bin") {
+		t.Errorf("PATH = %q, want ~/.local/bin on it ahead of the old PATH", got)
 	}
 }
 

@@ -20,6 +20,7 @@ func Finish() []Step {
 		{Name: "git-hooks", Check: hooksDone, Apply: installHooks},
 		{Name: "secrets-dir", Check: secretsDirDone, Apply: makeSecretsDir},
 		{Name: "secrets-restore", Check: secretsRestoreDone, Apply: restoreSecrets},
+		{Name: "secrets-restore-hint", Check: secretsHintDone, Apply: secretsHint},
 		{Name: "checkout-main", Check: notDetached, Apply: checkoutMain},
 	}
 }
@@ -125,21 +126,45 @@ func restoreScript(env *Env) string {
 	return filepath.Join(env.Home, ".local", "bin", "secrets-restore")
 }
 
+type secretsState int
+
+const (
+	secretsNothing    secretsState = iota // rbw locked or missing, or the env files exist
+	secretsRestorable                     // the script can run
+	secretsNoScript                       // restorable, but the script is not there yet
+)
+
+const secretsFollowup = "Secrets: run `secrets-restore` to recover ~/.config env files from the encrypted vault. See docs/secrets.md."
+
 // B:1015-1030: restore only when rbw is unlocked, no ~/.secrets/*/.env exists
 // and the secrets-restore script is executable.
-func secretsRestoreDone(ctx context.Context, env *Env) (bool, error) {
+func secretsStateOf(ctx context.Context, env *Env) secretsState {
 	if !rbwUnlocked(ctx, env) {
-		return true, nil
+		return secretsNothing
 	}
 	if m, _ := filepath.Glob(filepath.Join(env.Home, ".secrets", "*", ".env")); len(m) > 0 {
-		return true, nil
+		return secretsNothing
 	}
 	fi, err := os.Stat(restoreScript(env))
 	if err != nil || fi.Mode().Perm()&0o111 == 0 {
-		appendFollowup("Secrets: run `secrets-restore` to recover ~/.config env files from the encrypted vault. See docs/secrets.md.")
-		return true, nil
+		return secretsNoScript
 	}
-	return false, nil
+	return secretsRestorable
+}
+
+func secretsRestoreDone(ctx context.Context, env *Env) (bool, error) {
+	return secretsStateOf(ctx, env) != secretsRestorable, nil
+}
+
+// secretsHintDone: the follow-up line is wanted only without the script, and
+// once per run (Setup empties the log).
+func secretsHintDone(ctx context.Context, env *Env) (bool, error) {
+	return secretsStateOf(ctx, env) != secretsNoScript || followupHas(secretsFollowup), nil
+}
+
+func secretsHint(context.Context, *Env) error {
+	appendFollowup(secretsFollowup)
+	return nil
 }
 
 func restoreSecrets(ctx context.Context, env *Env) error {

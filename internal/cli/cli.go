@@ -210,6 +210,7 @@ func runInitEnv(env *steps.Env, stdout, stderr io.Writer) int {
 	defer env.RunCleanup()
 	ctx, stop := signal.NotifyContext(context.Background(), stopSignals...)
 	defer stop()
+	steps.Setup(env)
 	rep, err := execute(ctx, env, steps.All())
 	if err != nil {
 		fmt.Fprintf(stderr, "athome init: %v\n", err)

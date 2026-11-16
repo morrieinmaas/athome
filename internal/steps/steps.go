@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 
 	"github.com/morrieinmaas/athome/internal/config"
@@ -27,7 +28,6 @@ type Env struct {
 	Opts         Opts
 	Log          io.Writer
 	Warnings     int
-	ForceUpload  bool     // set by SSHKey on sshKeyAction=reupload only (B:436-438); forces the GitHub upload
 	KeyGenerated bool     // set by SSHKey when it generated this run's key; ssh-bw-backup runs only then, and github adds a note
 	DataChanged  bool     // set by chezmoi-data when it wrote chezmoi.toml; chezmoi-apply must then run (bash always re-inits after seeding)
 	Cleanup      []func() // run in reverse order when the run ends, see RunCleanup
@@ -44,6 +44,16 @@ type Opts struct {
 type Report struct {
 	Applied []string
 	Skipped []string
+}
+
+// Setup does the run-wide writes the checks depend on, once, before Execute:
+// it empties the follow-up log, so notes from an earlier run do not bleed into
+// this one even when the apply is skipped (B:770), and puts the dirs a
+// just-installed chezmoi, mise and nb land in first on PATH (B:935).
+func Setup(env *Env) {
+	os.WriteFile(FollowupLogPath(), nil, 0o644)
+	prependPath(filepath.Join(env.Home, ".local", "bin"))
+	prependPath(nanobrewBinDir)
 }
 
 // Execute runs list in order. A step whose Check reports done is skipped;

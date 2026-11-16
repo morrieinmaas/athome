@@ -10,9 +10,8 @@
 # Only an interactive Claude owns the pane. A `claude -p` helper started from
 # inside it (a memory hook's, say) inherits GROFE_PANE too, and would
 # otherwise replace the pane's resume entry with its own session.
-case "${CLAUDE_CODE_ENTRYPOINT:-cli}" in
-  cli) ;;
-  *) exit 0 ;;
+case "${CLAUDE_CODE_ENTRYPOINT:-}" in
+  sdk*) exit 0 ;;
 esac
 id="$(jq -r '.session_id // empty' 2>/dev/null)"
 case "$id" in

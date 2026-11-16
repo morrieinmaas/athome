@@ -73,25 +73,34 @@ func GitHub() []Step {
 	}}
 }
 
-func ghDecide(ctx context.Context, env *Env) ghPlan {
-	var p ghPlan
+// ghPreconditions checks what an upload needs (not CI, a .pub, gh, gh authed).
+// It logs why and returns false when the step has nothing to do.
+func ghPreconditions(ctx context.Context, env *Env, p *ghPlan) bool {
 	if env.Opts.CI {
 		envLogf(env, "==> ATHOME_CI set, skipping GitHub SSH-key upload (test/headless; never touches a real account)\n")
-		return p
+		return false
 	}
 	p.sshHost = dataHostname(ctx, env)
 	p.pub = filepath.Join(env.Home, ".ssh", p.sshHost+"_ed25519.pub")
 	if _, err := os.Stat(p.pub); err != nil {
 		envLogf(env, "no %s, skipping ssh-key upload\n", p.pub)
-		return p
+		return false
 	}
 	if _, err := env.Run.LookPath("gh"); err != nil {
 		envLogf(env, "gh not installed, skipping ssh-key upload (run `gh ssh-key add` manually later)\n")
-		return p
+		return false
 	}
 	if r, err := env.Run.Run(ctx, dgCmd("gh", "auth", "status")); err != nil || r.Code != 0 {
 		envLogf(env, "gh not authed, skipping ssh-key upload (run `gh ssh-key add` manually later)\n")
-		return p
+		return false
+	}
+	return true
+}
+
+func ghDecide(ctx context.Context, env *Env) ghPlan {
+	var p ghPlan
+	if !ghPreconditions(ctx, env, &p) {
+		return ghPlan{} // ghSkip; no half-filled paths
 	}
 	p.host = shortHostname()
 	p.signPub = p.pub

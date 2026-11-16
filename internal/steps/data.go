@@ -34,20 +34,41 @@ type dataEntry struct {
 // config, else `gh api user`; id from config, else gh, else the public API via
 // curl), then write ~/.config/chezmoi/chezmoi.toml.
 func Data() []Step {
-	return []Step{{Name: "chezmoi-data", Check: dataDone, Apply: writeData}}
+	// Check computes the entries (one identity lookup) and Apply reuses them;
+	// Apply clears the cache, and every run starts with Check, so a run never
+	// sees the previous run's identity.
+	var cached []dataEntry
+	return []Step{{
+		Name: "chezmoi-data",
+		Check: func(ctx context.Context, env *Env) (bool, error) {
+			entries, err := dataEntries(ctx, env)
+			if err != nil {
+				return false, err
+			}
+			cached = entries
+			return dataDone(env, entries), nil
+		},
+		Apply: func(ctx context.Context, env *Env) error {
+			entries := cached
+			cached = nil
+			if entries == nil {
+				var err error
+				if entries, err = dataEntries(ctx, env); err != nil {
+					return err
+				}
+			}
+			return writeData(env, entries)
+		},
+	}}
 }
 
 // dataDone: chezmoi.toml already holds every seed key with the wanted value.
-func dataDone(ctx context.Context, env *Env) (bool, error) {
-	entries, err := dataEntries(ctx, env)
-	if err != nil {
-		return false, err
-	}
+func dataDone(env *Env, entries []dataEntry) bool {
 	var doc struct {
 		Data map[string]any `toml:"data"`
 	}
 	if _, err := toml.DecodeFile(chezmoiConfigPath(env), &doc); err != nil {
-		return false, nil // missing or unreadable: write it
+		return false // missing or unreadable: write it
 	}
 	// chezmoi init re-renders the file with more keys around the seed,
 	// so only the seed keys count.
@@ -57,18 +78,14 @@ func dataDone(ctx context.Context, env *Env) (bool, error) {
 			want = e.bool
 		}
 		if got, ok := doc.Data[e.key]; !ok || got != want {
-			return false, nil
+			return false
 		}
 	}
-	return true, nil
+	return true
 }
 
 // writeData writes the seeded [data] table to chezmoi.toml (B:875-900).
-func writeData(ctx context.Context, env *Env) error {
-	entries, err := dataEntries(ctx, env)
-	if err != nil {
-		return err
-	}
+func writeData(env *Env, entries []dataEntry) error {
 	var b strings.Builder
 	b.WriteString("[data]\n")
 	for _, e := range entries {

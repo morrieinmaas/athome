@@ -352,3 +352,27 @@ func TestShortHostnameOrder(t *testing.T) {
 		})
 	}
 }
+
+// C5: one run looks the identity up once, however many times Check and Apply
+// need it; a later run looks it up again.
+func TestDataIdentityLookedUpOncePerRun(t *testing.T) {
+	fx := newFixture(t)
+	fx.Fake.Have("gh")
+	fx.Fake.On("gh", "api", "user", "--jq", ".login").Return(run.Result{Stdout: "octo\n"})
+	fx.Fake.On("gh", "api", "users/octo", "--jq", ".id").Return(run.Result{Stdout: "7\n"})
+	list := steps.Data()
+	fx.MustExec(list)
+	if n := len(fx.callsTo("gh", "api", "user")); n != 1 {
+		t.Errorf("gh api user ran %d times in one run, want 1:\n%s", n, fx.dump())
+	}
+	if n := len(fx.callsTo("gh", "api", "users/octo")); n != 1 {
+		t.Errorf("gh api users/octo ran %d times in one run, want 1:\n%s", n, fx.dump())
+	}
+	if got := readChezmoiData(t, chezmoiTomlPath(fx)); got["githubHandle"] != "octo" || got["githubId"] != "7" {
+		t.Errorf("identity = %v/%v, want octo/7", got["githubHandle"], got["githubId"])
+	}
+	fx.MustRerun(list)
+	if n := len(fx.callsTo("gh", "api", "user")); n != 2 {
+		t.Errorf("the second run must look the identity up again, gh api user ran %d times in total, want 2", n)
+	}
+}

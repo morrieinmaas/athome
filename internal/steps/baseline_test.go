@@ -497,3 +497,20 @@ func TestBaselineScriptsAreInteractive(t *testing.T) {
 		t.Errorf("the mise installer must be interactive: %+v", mise)
 	}
 }
+
+// V3: same hole as the chezmoi installer: a failed download exits 0 through
+// the pipe, so a missing mise afterwards is a failed baseline dep (B:946-950).
+func TestMiseInstallMustLeaveABinary(t *testing.T) {
+	fx := newFixture(t)
+	fx.Env.Run = fx.Fake
+	if _, err := fx.Exec(steps.Baseline()); err != nil {
+		t.Fatalf("a failed mise install must not abort: %v", err)
+	}
+	if fx.Env.Warnings < 1 {
+		t.Errorf("Warnings = %d, want at least 1", fx.Env.Warnings)
+	}
+	got, _ := os.ReadFile(steps.FollowupLogPath())
+	if !strings.Contains(string(got), "a baseline dep (package manager / gh / rbw / project dirs / mise) failed") {
+		t.Errorf("want the baseline dep follow-up line, log: %q", got)
+	}
+}

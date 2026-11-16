@@ -71,7 +71,7 @@ func newFixture(t *testing.T) *fixture {
 		T: t, Home: home, Repo: repo, Fake: f, Log: log,
 		Env: &steps.Env{
 			Cfg:      config.Config{Machine: "personal", IncludeAgents: true, Data: map[string]string{}},
-			Run:      f,
+			Run:      installSim{f, home},
 			Home:     home,
 			RepoRoot: repo,
 			OS:       "linux",
@@ -79,6 +79,29 @@ func newFixture(t *testing.T) *fixture {
 			Log:      log,
 		},
 	}
+}
+
+// installSim is the Fake plus the one side effect real installers have: the
+// chezmoi and mise installers leave their binary in ~/.local/bin. A test that
+// wants a silently failing installer sets fx.Env.Run = fx.Fake.
+type installSim struct {
+	*run.Fake
+	home string
+}
+
+func (s installSim) Run(ctx context.Context, c run.Cmd) (run.Result, error) {
+	res, err := s.Fake.Run(ctx, c)
+	if c.Name == "sh" && err == nil && res.Code == 0 {
+		joined := strings.Join(c.Args, " ")
+		for url, bin := range map[string]string{"get.chezmoi.io": "chezmoi", "mise.run": "mise"} {
+			if strings.Contains(joined, url) {
+				path := filepath.Join(s.home, ".local", "bin", bin)
+				os.MkdirAll(filepath.Dir(path), 0o755)
+				os.WriteFile(path, []byte("#!/bin/sh\n"), 0o755)
+			}
+		}
+	}
+	return res, err
 }
 
 // Exec runs a step list against the fixture.

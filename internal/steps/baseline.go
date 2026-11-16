@@ -208,6 +208,14 @@ func installMise(ctx context.Context, env *Env) error {
 	})
 	if err != nil || res.Code != 0 {
 		baselineDepWarn(env, "mise install failed; re-run bootstrap")
+		return nil
+	}
+	// `curl | sh` exits with sh's status, so a failed download looks like success.
+	bin := filepath.Join(env.Home, ".local", "bin")
+	if !fileExists(filepath.Join(bin, "mise")) {
+		if _, err := env.Run.LookPath("mise"); err != nil {
+			baselineDepWarn(env, "mise install finished but mise is not in %s; re-run bootstrap", bin)
+		}
 	}
 	return nil
 }

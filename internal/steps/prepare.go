@@ -228,6 +228,12 @@ func prepInstallChezmoi(ctx context.Context, env *Env) error {
 		return fmt.Errorf("chezmoi installer failed: %s", strings.TrimSpace(res.Stderr))
 	}
 	prependPath(bin)
+	// `curl | sh` exits with sh's status, so a failed download looks like success.
+	if !fileExists(filepath.Join(bin, "chezmoi")) {
+		if _, err := env.Run.LookPath("chezmoi"); err != nil {
+			return fmt.Errorf("chezmoi installer finished but chezmoi is not in %s; check the network and re-run", bin)
+		}
+	}
 	return nil
 }
 

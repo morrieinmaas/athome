@@ -390,3 +390,17 @@ func TestWarmSudoForNeedsSudoCommands(t *testing.T) {
 		})
 	}
 }
+
+// V2: `curl | sh` hides a failed download, so the install is only trusted when
+// the binary exists afterwards (bash stops there, B:347).
+func TestChezmoiInstallMustLeaveABinary(t *testing.T) {
+	fx := newFixture(t)
+	fx.Env.Run = fx.Fake // an installer that exits 0 without installing anything
+	_, err := fx.Exec(steps.Prepare())
+	if err == nil {
+		t.Fatalf("a chezmoi install that left no binary must stop the run:\n%s", fx.Log)
+	}
+	if !strings.Contains(err.Error(), "chezmoi-install") {
+		t.Errorf("error %q does not name the step chezmoi-install", err)
+	}
+}

@@ -225,7 +225,7 @@ e.g. names of steps.All() start with "repo-check" and end with "checkout-main"
 **Produces:** cli.Main(args []string, stdout, stderr io.Writer) int · cli.Version, cli.Commit (set by -ldflags)
 e.g. Main(["version"]) -> 0, stdout "athome dev (none)\n"
 e.g. Main(["init","--bogus"]) -> 2
-**Review Focus:** `TestFlags` each of `--ref --machine --config --no-agents --import-from --import-ssh --import-ssh-bw --non-interactive -y --yes` sets its field; `TestUnknownFlag` exits 2; `TestUsageError` ErrUsage exits 2, other errors exit 1; `TestHelp` exits 0; `TestImportSSHAlone` `--import-ssh` without `--import-from` exits 2 with a message.
+**Review Focus:** `TestFlags` each of `--ref --machine --config --no-agents --import-from --import-ssh --import-ssh-bw --non-interactive -y --yes` sets its field; `TestUnknownFlag` exits 2; `TestUsageError` ErrUsage exits 2, other errors exit 1; `TestHelp` exits 0; `TestImportSSHAlone` `--import-ssh` without `--import-from` parses, prints a note and continues (bash parity).
 **Notes:** stdlib `flag`; repo root: nearest `.chezmoiroot` upward from the cwd.
 
 ### T10 e2e · Complexity 4 · Est. context 32k

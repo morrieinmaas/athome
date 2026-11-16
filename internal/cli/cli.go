@@ -130,9 +130,6 @@ func parseInit(args []string) (initOpts, error) {
 		return o, fmt.Errorf("unexpected argument %q", fs.Arg(0))
 	}
 	fs.Visit(func(f *flag.Flag) { o.MachineSet = o.MachineSet || f.Name == "machine" })
-	if o.ImportSSH && o.ImportFrom == "" {
-		return o, errors.New("--import-ssh needs --import-from <dir>")
-	}
 	if o.ImportFrom != "" {
 		if fi, err := os.Stat(o.ImportFrom); err != nil || !fi.IsDir() {
 			return o, fmt.Errorf("--import-from: directory not found: %s", o.ImportFrom)

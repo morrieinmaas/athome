@@ -230,7 +230,8 @@ Acceptance criteria:
 Edge cases: an empty config file; a config value with `=` or `#` inside quotes; an
 existing ssh key with no `.pub`; `~/.local/share/chezmoi` already a different symlink or a
 real directory; a detached HEAD; `gh` missing or not authenticated; a non-UTF-8 or
-space-containing `$HOME` path; `--import-ssh` without `--import-from`.
+space-containing `$HOME` path; `--import-ssh` without `--import-from` (prints a note, imports nothing, the run continues with a
+fresh key and exits 0, as bash does).
 
 Test list (unit unless marked):
 

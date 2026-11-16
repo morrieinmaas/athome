@@ -92,6 +92,9 @@ func skBackupKey(dir string) string {
 func skImportDirCheck(ctx context.Context, env *Env) (bool, error) {
 	from := env.Opts.ImportFrom
 	if from == "" {
+		if env.Opts.ImportSSH {
+			envLogln(env, "--import-ssh given without --import-from: nothing to import, a fresh SSH key is generated")
+		}
 		return true, nil
 	}
 	if fi, err := os.Stat(from); err != nil || !fi.IsDir() {

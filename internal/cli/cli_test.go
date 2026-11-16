@@ -270,15 +270,26 @@ func TestNotARepoIsExit1(t *testing.T) {
 	}
 }
 
+// V5: bash ignores --import-ssh without --import-from; the run continues.
 func TestImportSSHAlone(t *testing.T) {
 	sandbox(t)
-	inRepo(t)
-	code, _, errOut := runMain("init", "--import-ssh")
-	if code != 2 {
-		t.Errorf("exit = %d, want 2", code)
+	repo := inRepo(t)
+	_, sOpts, err := cli.OptionsFromArgs([]string{"--import-ssh"}, repo, t.TempDir(), nil, false)
+	if err != nil {
+		t.Fatalf("--import-ssh alone must not be a usage error: %v", err)
 	}
-	if !strings.Contains(errOut, "--import-from") {
-		t.Errorf("message %q must point at --import-from", errOut)
+	if !sOpts.ImportSSH || sOpts.ImportFrom != "" {
+		t.Errorf("opts = %+v, want ImportSSH set and no ImportFrom", sOpts)
+	}
+	f := run.NewFake()
+	defer cli.SetRunner(f)()
+	cfg := tmpFile(t, "a.toml", "machine = \"personal\"\nincludeAgents = false\n")
+	code, _, errOut := runMain("init", "--import-ssh", "--config", cfg, "--non-interactive")
+	if code == 2 || strings.Contains(errOut, "needs --import-from") {
+		t.Errorf("exit = %d, stderr %q: --import-ssh alone is not a usage error", code, errOut)
+	}
+	if len(f.Calls()) == 0 {
+		t.Errorf("exit %d: the run never reached the runner", code)
 	}
 }
 

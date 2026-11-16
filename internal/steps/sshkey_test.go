@@ -368,3 +368,17 @@ func TestKeyFlags(t *testing.T) {
 		}
 	})
 }
+
+// V5: --import-ssh without --import-from prints a note and the run continues
+// with the normal keygen flow (bash skips the import block silently).
+func TestImportSSHWithoutImportFromIsANote(t *testing.T) {
+	fx := newFixture(t)
+	fx.Env.Opts.ImportSSH = true
+	fx.MustExec(steps.SSHKey())
+	if !strings.Contains(fx.Log.String(), "--import-ssh given without --import-from") {
+		t.Errorf("want a note about --import-ssh without --import-from, log:\n%s", fx.Log)
+	}
+	if len(generateCalls(fx)) == 0 {
+		t.Errorf("a fresh key is generated instead:\n%s", fx.dump())
+	}
+}

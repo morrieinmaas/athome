@@ -141,7 +141,7 @@ func secretsStateOf(ctx context.Context, env *Env) secretsState {
 	if !rbwUnlocked(ctx, env) {
 		return secretsNothing
 	}
-	if m, _ := filepath.Glob(filepath.Join(env.Home, ".secrets", "*", ".env")); len(m) > 0 {
+	if hasSecretsEnv(env) {
 		return secretsNothing
 	}
 	fi, err := os.Stat(restoreScript(env))
@@ -151,7 +151,25 @@ func secretsStateOf(ctx context.Context, env *Env) secretsState {
 	return secretsRestorable
 }
 
+// restoreMarker records an attempted restore that left no ~/.secrets/*/.env, so
+// a rerun does not prompt for the vault again.
+func restoreMarker(env *Env) string {
+	return filepath.Join(env.Home, ".local", "state", "athome", "secrets-restore-attempted")
+}
+
+func hasSecretsEnv(env *Env) bool {
+	m, _ := filepath.Glob(filepath.Join(env.Home, ".secrets", "*", ".env"))
+	return len(m) > 0
+}
+
 func secretsRestoreDone(ctx context.Context, env *Env) (bool, error) {
+	if hasSecretsEnv(env) {
+		os.Remove(restoreMarker(env))
+		return true, nil
+	}
+	if fileExists(restoreMarker(env)) {
+		return true, nil
+	}
 	return secretsStateOf(ctx, env) != secretsRestorable, nil
 }
 
@@ -170,6 +188,18 @@ func restoreSecrets(ctx context.Context, env *Env) error {
 	r, err := env.Run.Run(ctx, run.Cmd{Name: restoreScript(env), Interactive: true})
 	if err != nil || r.Code != 0 {
 		envLogf(env, "  secrets-restore had issues; run it manually later.\n")
+	}
+	if hasSecretsEnv(env) {
+		os.Remove(restoreMarker(env))
+		return nil
+	}
+	marker := restoreMarker(env)
+	err = os.MkdirAll(filepath.Dir(marker), 0o755)
+	if err == nil {
+		err = os.WriteFile(marker, nil, 0o644)
+	}
+	if err != nil {
+		envLogf(env, "could not record the restore attempt in %s: %v\n", marker, err)
 	}
 	return nil
 }

@@ -1,6 +1,7 @@
 package steps_test
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"slices"
@@ -262,6 +263,61 @@ func TestSecretsRestoreSkip(t *testing.T) {
 		fx.MustExec(steps.Finish())
 		if got, _ := os.ReadFile(steps.FollowupLogPath()); len(got) != 0 {
 			t.Errorf("a locked rbw says nothing here (B:1017), log: %q", got)
+		}
+	})
+}
+
+// writesEnv stands in for a restore script that succeeds: running it leaves a .env.
+type writesEnv struct {
+	run.Runner
+	script, env string
+}
+
+func (w writesEnv) Run(ctx context.Context, c run.Cmd) (run.Result, error) {
+	if c.Name == w.script {
+		os.MkdirAll(filepath.Dir(w.env), 0o755)
+		os.WriteFile(w.env, []byte("A=1\n"), 0o600)
+	}
+	return w.Runner.Run(ctx, c)
+}
+
+func TestSecretsRestoreAttemptedMarker(t *testing.T) {
+	setup := func(t *testing.T) (*fixture, string) {
+		fx := newFixture(t)
+		fx.Fake.Have("rbw")
+		p := fx.Path(".local", "bin", "secrets-restore")
+		writeFile(t, p, "#!/bin/sh\nexit 0\n", 0o755)
+		return fx, p
+	}
+	marker := func(fx *fixture) string {
+		return fx.Path(".local", "state", "athome", "secrets-restore-attempted")
+	}
+	t.Run("a restore that leaves no .env is not retried on rerun", func(t *testing.T) {
+		fx, p := setup(t)
+		fx.MustExec(steps.Finish())
+		if !exists(marker(fx)) {
+			t.Fatalf("an attempt without .env must leave the marker")
+		}
+		rep := fx.MustRerun(steps.Finish())
+		if slices.Contains(rep.Applied, "secrets-restore") || len(fx.callsTo(p)) != 1 {
+			t.Errorf("rerun must not retry the restore: applied=%v calls=%d", rep.Applied, len(fx.callsTo(p)))
+		}
+	})
+	t.Run("a restore that leaves .env writes no marker", func(t *testing.T) {
+		fx, p := setup(t)
+		fx.Env.Run = writesEnv{fx.Env.Run, p, fx.Path(".secrets", "proj", ".env")}
+		fx.MustExec(steps.Finish())
+		if exists(marker(fx)) {
+			t.Errorf("secrets were restored, no marker wanted")
+		}
+	})
+	t.Run("the marker is removed once .env files exist", func(t *testing.T) {
+		fx, _ := setup(t)
+		writeFile(t, marker(fx), "", 0o644)
+		writeFile(t, fx.Path(".secrets", "proj", ".env"), "A=1\n", 0o600)
+		fx.MustExec(steps.Finish())
+		if exists(marker(fx)) {
+			t.Errorf("marker must go once .env exists")
 		}
 	})
 }

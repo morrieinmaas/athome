@@ -97,6 +97,8 @@ tier_state() {
   run rm -f "$HOME/.local/state/athome/github-manual-upload"
   # and the ssh-pub marker; left behind, a rebootstrap would not retry deriving the .pub.
   run rm -f "$HOME/.local/state/athome/ssh-pub-underivable"
+  # and the secrets-restore marker; left behind, a rebootstrap would not offer the restore again.
+  run rm -f "$HOME/.local/state/athome/secrets-restore-attempted"
 }
 
 tier_dotfiles() {

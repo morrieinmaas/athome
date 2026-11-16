@@ -1,5 +1,292 @@
 package steps
 
+import (
+	"context"
+	"fmt"
+	"os"
+	"os/user"
+	"path/filepath"
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/morrieinmaas/athome/internal/run"
+)
+
+func skLog(env *Env, format string, args ...any) {
+	if env.Log != nil {
+		fmt.Fprintf(env.Log, format+"\n", args...)
+	}
+}
+
+// skKeyHost ports B:352-354: chezmoi's hostname, else the short hostname.
+func skKeyHost(ctx context.Context, env *Env) string {
+	res, err := env.Run.Run(ctx, run.Cmd{Name: "chezmoi", Args: []string{"execute-template", "{{ .chezmoi.hostname }}"}})
+	if err == nil && res.Code == 0 {
+		if h := strings.TrimSpace(res.Stdout); h != "" {
+			return h
+		}
+	}
+	h, _ := os.Hostname()
+	if i := strings.IndexByte(h, '.'); i >= 0 {
+		h = h[:i]
+	}
+	return h
+}
+
+func skKeyPath(ctx context.Context, env *Env) string {
+	return filepath.Join(env.Home, ".ssh", skKeyHost(ctx, env)+"_ed25519")
+}
+
+func skFileExists(p string) bool {
+	fi, err := os.Stat(p)
+	return err == nil && fi.Mode().IsRegular()
+}
+
+func skEnsureDir(env *Env) error {
+	dir := filepath.Join(env.Home, ".ssh")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	return os.Chmod(dir, 0o700)
+}
+
+// skDerivePub writes <key>.pub from the private key with `ssh-keygen -y`.
+func skDerivePub(ctx context.Context, env *Env, key string) error {
+	res, err := env.Run.Run(ctx, run.Cmd{Name: "ssh-keygen", Args: []string{"-y", "-f", key}})
+	if err != nil {
+		return err
+	}
+	if res.Code != 0 {
+		return fmt.Errorf("ssh-keygen -y -f %s failed: %s", key, strings.TrimSpace(res.Stderr))
+	}
+	return os.WriteFile(key+".pub", []byte(res.Stdout), 0o644)
+}
+
+func skCopy(src, dst string, mode os.FileMode) error {
+	b, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(dst, b, mode); err != nil {
+		return err
+	}
+	return os.Chmod(dst, mode)
+}
+
+// SSHKey returns the ssh key steps: restore from a backup dir (B:363-388) or
+// Bitwarden (B:395-412), generate (B:422-453), regenerate a missing .pub, and
+// copy a freshly generated key to Bitwarden (B:464-496).
 func SSHKey() []Step {
-	panic("not implemented: T5")
+	fresh := false // set by ssh-keygen, read by ssh-bw-backup
+	return []Step{
+		{Name: "ssh-import-dir", Check: skImportDirCheck, Apply: skImportDirApply},
+		{Name: "ssh-import-bw", Check: skImportBWCheck, Apply: skImportBWApply},
+		{
+			Name:  "ssh-keygen",
+			Check: skKeygenCheck,
+			Apply: func(ctx context.Context, env *Env) error {
+				if err := skKeygenApply(ctx, env); err != nil {
+					return err
+				}
+				fresh = true
+				env.FreshKey = true
+				return nil
+			},
+		},
+		{Name: "ssh-pub", Check: skPubCheck, Apply: skPubApply},
+		{
+			Name:  "ssh-bw-backup",
+			Check: func(context.Context, *Env) (bool, error) { return !fresh, nil },
+			Apply: func(ctx context.Context, env *Env) error { return skBWBackup(ctx, env) },
+		},
+	}
+}
+
+// skBackupKey returns the first ssh/*_ed25519 (not .pub) in the import dir.
+func skBackupKey(dir string) string {
+	matches, _ := filepath.Glob(filepath.Join(dir, "ssh", "*_ed25519"))
+	sort.Strings(matches)
+	for _, m := range matches {
+		if !strings.HasSuffix(m, ".pub") {
+			return m
+		}
+	}
+	return ""
+}
+
+func skImportDirCheck(ctx context.Context, env *Env) (bool, error) {
+	from := env.Opts.ImportFrom
+	if from == "" {
+		return true, nil
+	}
+	if fi, err := os.Stat(from); err != nil || !fi.IsDir() {
+		return false, fmt.Errorf("--import-from: directory not found: %s", from)
+	}
+	if !env.Opts.ImportSSH {
+		skLog(env, "--import-from given without --import-ssh: nothing to import, a fresh SSH key is generated")
+		return true, nil
+	}
+	src := skBackupKey(from)
+	if src == "" {
+		skLog(env, "--import-from has no ssh/*_ed25519 key: nothing to import")
+		return true, nil
+	}
+	return skFileExists(skKeyPath(ctx, env)), nil
+}
+
+func skImportDirApply(ctx context.Context, env *Env) error {
+	key := skKeyPath(ctx, env)
+	src := skBackupKey(env.Opts.ImportFrom)
+	if err := skEnsureDir(env); err != nil {
+		return err
+	}
+	if err := skCopy(src, key, 0o600); err != nil {
+		return err
+	}
+	if skFileExists(src + ".pub") {
+		if err := skCopy(src+".pub", key+".pub", 0o644); err != nil {
+			return err
+		}
+	} else if err := skDerivePub(ctx, env, key); err != nil {
+		return err
+	}
+	skLog(env, "ssh key restored as %s", filepath.Base(key))
+	return nil
+}
+
+func skImportBWCheck(ctx context.Context, env *Env) (bool, error) {
+	item := env.Opts.ImportSSHBW
+	if item == "" {
+		return true, nil
+	}
+	if _, err := env.Run.LookPath("rbw"); err != nil {
+		skLog(env, "--import-ssh-bw: rbw not installed yet; install it, then re-run with --import-ssh-bw %s", item)
+		return true, nil
+	}
+	// An existing key is never overwritten.
+	return skFileExists(skKeyPath(ctx, env)), nil
+}
+
+func skImportBWApply(ctx context.Context, env *Env) error {
+	item := env.Opts.ImportSSHBW
+	key := skKeyPath(ctx, env)
+	if err := skEnsureDir(env); err != nil {
+		return err
+	}
+	skLog(env, "restoring SSH key from Bitwarden '%s' -> %s", item, filepath.Base(key))
+	env.Run.Run(ctx, run.Cmd{Name: "rbw", Args: []string{"unlock"}}) // best effort, as bash
+	res, err := env.Run.Run(ctx, run.Cmd{Name: "rbw", Args: []string{"get", "--field", "notes", item}})
+	if err != nil || res.Code != 0 || res.Stdout == "" {
+		skLog(env, "couldn't read '%s' (run `rbw unlock`, check the item name)", item)
+		env.Warnings++
+		return nil
+	}
+	if err := os.WriteFile(key, []byte(res.Stdout), 0o600); err != nil {
+		return err
+	}
+	if err := os.Chmod(key, 0o600); err != nil {
+		return err
+	}
+	return skDerivePub(ctx, env, key)
+}
+
+func skKeygenCheck(ctx context.Context, env *Env) (bool, error) {
+	if skFileExists(skKeyPath(ctx, env)) {
+		if env.Cfg.Data["sshKeyAction"] == "reupload" {
+			env.FreshKey = true
+		}
+		// ponytail: sshKeyAction=generate regenerates on every run, as bash does.
+		return env.Cfg.Data["sshKeyAction"] != "generate", nil
+	}
+	if env.Cfg.Data["generateSshKey"] == "false" {
+		skLog(env, "no ssh key generated: bring your own / use the agent")
+		return true, nil
+	}
+	return false, nil
+}
+
+func skKeygenApply(ctx context.Context, env *Env) error {
+	host := skKeyHost(ctx, env)
+	key := skKeyPath(ctx, env)
+	if err := skEnsureDir(env); err != nil {
+		return err
+	}
+	if skFileExists(key) {
+		ts := time.Now().Format("20060102150405")
+		skLog(env, "backing up existing key (-> *.%s.bak) and generating a fresh one", ts)
+		if err := os.Rename(key, key+"."+ts+".bak"); err != nil {
+			return err
+		}
+		if skFileExists(key + ".pub") {
+			if err := os.Rename(key+".pub", key+".pub."+ts+".old"); err != nil {
+				return err
+			}
+		}
+	}
+	handle := env.Cfg.Data["githubHandle"]
+	if handle == "" {
+		if u, err := user.Current(); err == nil {
+			handle = u.Username
+		}
+	}
+	skLog(env, "generating ssh key: %s", key)
+	res, err := env.Run.Run(ctx, run.Cmd{Name: "ssh-keygen", Args: []string{"-t", "ed25519", "-f", key, "-N", "", "-C", handle + "@" + host}})
+	if err != nil {
+		return err
+	}
+	if res.Code != 0 {
+		return fmt.Errorf("ssh-keygen failed: %s", strings.TrimSpace(res.Stderr))
+	}
+	return nil
+}
+
+// skPubCheck: a private key without .pub gets its .pub back.
+func skPubCheck(ctx context.Context, env *Env) (bool, error) {
+	key := skKeyPath(ctx, env)
+	return !skFileExists(key) || skFileExists(key+".pub"), nil
+}
+
+func skPubApply(ctx context.Context, env *Env) error {
+	return skDerivePub(ctx, env, skKeyPath(ctx, env))
+}
+
+func skShellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// skBWBackup ports B:464-496. It never fails: without an unlocked rbw it
+// prints the manual commands.
+func skBWBackup(ctx context.Context, env *Env) error {
+	key := skKeyPath(ctx, env)
+	item := "ssh/" + filepath.Base(key)
+	if _, err := env.Run.LookPath("rbw"); err == nil {
+		if res, err := env.Run.Run(ctx, run.Cmd{Name: "rbw", Args: []string{"unlocked"}}); err == nil && res.Code == 0 {
+			if skStoreInRBW(ctx, env, key, item) {
+				skLog(env, "stored in Bitwarden: %s", item)
+				return nil
+			}
+		}
+	}
+	skLog(env, "back up this machine's SSH key to Bitwarden (recommended): once rbw is unlocked run\n    rbw add '%s'   # line 1: ssh-key-backup, line 2+: paste %s\nRestore it elsewhere with: --import-ssh-bw %s", item, filepath.Base(key), item)
+	return nil
+}
+
+func skStoreInRBW(ctx context.Context, env *Env, key, item string) bool {
+	ed, err := os.CreateTemp("", "athome-editor-")
+	if err != nil {
+		return false
+	}
+	defer os.Remove(ed.Name())
+	script := "#!/usr/bin/env bash\nprintf 'ssh-key-backup\\n%s\\n' \"$(cat " + skShellQuote(key) + ")\" > \"$1\"\n"
+	_, werr := ed.WriteString(script)
+	ed.Close()
+	if werr != nil || os.Chmod(ed.Name(), 0o700) != nil {
+		return false
+	}
+	res, err := env.Run.Run(ctx, run.Cmd{
+		Name: "rbw", Args: []string{"add", item},
+		Env: []string{"EDITOR=" + ed.Name(), "VISUAL=" + ed.Name()},
+	})
+	return err == nil && res.Code == 0
 }

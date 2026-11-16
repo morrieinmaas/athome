@@ -25,6 +25,7 @@ type Env struct {
 	Opts     Opts
 	Log      io.Writer
 	Warnings int
+	FreshKey bool // set by SSHKey on generate or sshKeyAction=reupload; forces the GitHub upload
 }
 
 type Opts struct {

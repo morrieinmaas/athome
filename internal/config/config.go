@@ -19,6 +19,7 @@ type Options struct {
 	Home       string
 	Env        map[string]string
 	Machine    string
+	MachineSet bool // --machine was given, even as "": it is then validated, not defaulted
 	NoAgents   bool
 }
 
@@ -93,7 +94,7 @@ func Load(o Options) (Config, error) {
 		cfg.Data[a.key] = v
 	}
 
-	if o.Machine != "" {
+	if o.Machine != "" || o.MachineSet {
 		cfg.Machine = o.Machine
 	} else if m := cfgGet(text, "machine"); m != "" {
 		cfg.Machine = m

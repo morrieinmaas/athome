@@ -252,6 +252,7 @@ func TestBadValues(t *testing.T) {
 		want string
 	}{
 		{"machine flag", config.Options{Machine: "laptop", Home: dir}, "laptop"},
+		{"empty machine flag", config.Options{MachineSet: true, Home: dir}, "machine must be personal|work (got: )"},
 		{"machine in file", config.Options{ConfigPath: badMachine, Home: dir}, "laptop"},
 		{"includeAgents in file", config.Options{ConfigPath: badAgents, Home: dir}, "maybe"},
 		{"unreadable config", config.Options{ConfigPath: filepath.Join(dir, "missing.toml"), Home: dir}, "missing.toml"},

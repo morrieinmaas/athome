@@ -1,0 +1,241 @@
+package steps_test
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/BurntSushi/toml"
+
+	"github.com/morrieinmaas/athome/internal/config"
+	"github.com/morrieinmaas/athome/internal/run"
+	"github.com/morrieinmaas/athome/internal/steps"
+)
+
+// testdata/chezmoi-data.golden.toml is the ~/.config/chezmoi/chezmoi.toml that
+// scripts/bootstrap.sh writes for test/e2e/bootstrap.toml (lines 875-900). It was
+// captured, without running the bootstrap, from the repo root with:
+//
+//	H=$(mktemp -d) && HOME=$H HOSTNAME=athome-test bash -c '
+//	c_blue(){ :; }
+//	short_hostname() { printf "%s\n" "${HOSTNAME%%.*}"; }
+//	MACHINE=personal; INCLUDE_AGENTS=true; MACHINE_FROM_FLAG=false; AGENTS_FROM_FLAG=false
+//	eval "$(/usr/bin/sed -n "182,216p" scripts/bootstrap.sh)"
+//	load_config test/e2e/bootstrap.toml
+//	gh_handle=$ATHOME_GITHUB_HANDLE; gh_id=$ATHOME_GITHUB_ID
+//	eval "$(/usr/bin/sed -n "875,900p" scripts/bootstrap.sh)"
+//	cat "$chezmoi_config"' > internal/steps/testdata/chezmoi-data.golden.toml
+//
+// Lines 182-216 are cfg_get and load_config, 875-900 the [data] block. The only
+// machine-specific value is hostname (HOSTNAME=athome-test here), so the golden
+// comparison checks that key separately.
+
+func chezmoiTomlPath(fx *fixture) string { return fx.Path(".config", "chezmoi", "chezmoi.toml") }
+
+func readChezmoiData(t *testing.T, path string) map[string]any {
+	t.Helper()
+	var doc struct {
+		Data map[string]any `toml:"data"`
+	}
+	if _, err := toml.DecodeFile(path, &doc); err != nil {
+		t.Fatalf("parse %s: %v", path, err)
+	}
+	return doc.Data
+}
+
+func e2eConfig(t *testing.T, home string) config.Config {
+	t.Helper()
+	cfg, err := config.Load(config.Options{
+		ConfigPath: filepath.Join("..", "..", "test", "e2e", "bootstrap.toml"),
+		Home:       home,
+		Env:        map[string]string{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cfg
+}
+
+func TestDataGolden(t *testing.T) {
+	fx := newFixture(t)
+	fx.Env.Cfg = e2eConfig(t, fx.Home)
+	fx.MustExec(steps.Data())
+
+	got := readChezmoiData(t, chezmoiTomlPath(fx))
+	want := readChezmoiData(t, filepath.Join("testdata", "chezmoi-data.golden.toml"))
+
+	for k, w := range want {
+		g, ok := got[k]
+		if !ok {
+			t.Errorf("[data] lacks key %q", k)
+			continue
+		}
+		if k == "hostname" {
+			if s, _ := g.(string); s == "" || strings.Contains(s, ".") {
+				t.Errorf("hostname = %#v, want a non-empty short hostname", g)
+			}
+			continue
+		}
+		if g != w {
+			t.Errorf("[data] %s = %#v, golden has %#v", k, g, w)
+		}
+	}
+	for k := range got {
+		if _, ok := want[k]; !ok {
+			t.Errorf("[data] has extra key %q not in the golden", k)
+		}
+	}
+}
+
+func TestDataMachineAndAgents(t *testing.T) {
+	fx := newFixture(t)
+	fx.Env.Cfg = e2eConfig(t, fx.Home)
+	fx.Env.Cfg.Machine = "work"
+	fx.Env.Cfg.IncludeAgents = true
+	fx.MustExec(steps.Data())
+	got := readChezmoiData(t, chezmoiTomlPath(fx))
+	if got["machineType"] != "work" {
+		t.Errorf("machineType = %#v, want work", got["machineType"])
+	}
+	if got["includeAgents"] != true {
+		t.Errorf("includeAgents = %#v, want the TOML boolean true", got["includeAgents"])
+	}
+}
+
+func TestDataEscaping(t *testing.T) {
+	fx := newFixture(t)
+	fx.Env.Cfg.Data = map[string]string{
+		"githubHandle": "octo", "githubId": "1",
+		"personalName": `Zoë "Z" back\slash # not=comment`,
+		"workName":     "日本語 name",
+	}
+	fx.MustExec(steps.Data())
+	got := readChezmoiData(t, chezmoiTomlPath(fx))
+	for k, want := range map[string]string{"personalName": fx.Env.Cfg.Data["personalName"], "workName": "日本語 name"} {
+		if got[k] != want {
+			t.Errorf("%s round-trips to %#v, want %q", k, got[k], want)
+		}
+	}
+}
+
+func TestDataMeshDefault(t *testing.T) {
+	fx := newFixture(t)
+	fx.Env.Cfg.Data = map[string]string{"githubHandle": "octo", "githubId": "1"}
+	fx.MustExec(steps.Data())
+	if got := readChezmoiData(t, chezmoiTomlPath(fx)); got["meshProvider"] != "meshnet" {
+		t.Errorf("meshProvider = %#v, want the default meshnet", got["meshProvider"])
+	}
+}
+
+func TestIdentity(t *testing.T) {
+	data := func(extra map[string]string) map[string]string {
+		m := map[string]string{}
+		for k, v := range extra {
+			m[k] = v
+		}
+		return m
+	}
+
+	t.Run("handle from the config, no gh call for it", func(t *testing.T) {
+		fx := newFixture(t)
+		fx.Fake.Have("gh")
+		fx.Env.Cfg.Data = data(map[string]string{"githubHandle": "octo", "githubId": "5"})
+		fx.MustExec(steps.Data())
+		if fx.called("gh", "api", "user") {
+			t.Errorf("handle known, `gh api user` must not run:\n%s", fx.dump())
+		}
+		if fx.called("gh", "api", "users/octo") {
+			t.Errorf("id known, `gh api users/octo` must not run:\n%s", fx.dump())
+		}
+	})
+	t.Run("handle then id from gh", func(t *testing.T) {
+		fx := newFixture(t)
+		fx.Fake.Have("gh")
+		fx.Fake.On("gh", "api", "user", "--jq", ".login").Return(run.Result{Stdout: "octo\n"})
+		fx.Fake.On("gh", "api", "users/octo", "--jq", ".id").Return(run.Result{Stdout: "42\n"})
+		fx.Env.Cfg.Data = data(nil)
+		fx.MustExec(steps.Data())
+		got := readChezmoiData(t, chezmoiTomlPath(fx))
+		if got["githubHandle"] != "octo" || got["githubId"] != "42" {
+			t.Errorf("handle=%#v id=%#v, want octo and 42", got["githubHandle"], got["githubId"])
+		}
+	})
+	t.Run("id from gh when the handle is configured", func(t *testing.T) {
+		fx := newFixture(t)
+		fx.Fake.Have("gh")
+		fx.Fake.On("gh", "api", "users/octo", "--jq", ".id").Return(run.Result{Stdout: "42\n"})
+		fx.Env.Cfg.Data = data(map[string]string{"githubHandle": "octo"})
+		fx.MustExec(steps.Data())
+		if got := readChezmoiData(t, chezmoiTomlPath(fx)); got["githubId"] != "42" {
+			t.Errorf("githubId = %#v, want 42", got["githubId"])
+		}
+		if fx.called("gh", "api", "user") {
+			t.Errorf("handle configured, must not ask gh who is logged in")
+		}
+	})
+	t.Run("id from the public API via curl when gh is absent", func(t *testing.T) {
+		fx := newFixture(t)
+		fx.Fake.Have("curl")
+		fx.Fake.On("curl", "-fsSL", "https://api.github.com/users/octo").Return(run.Result{Stdout: "{\n  \"login\": \"octo\",\n  \"id\": 99,\n  \"node_id\": \"x\"\n}\n"})
+		fx.Env.Cfg.Data = data(map[string]string{"githubHandle": "octo"})
+		fx.MustExec(steps.Data())
+		if got := readChezmoiData(t, chezmoiTomlPath(fx)); got["githubId"] != "99" {
+			t.Errorf("githubId = %#v, want 99", got["githubId"])
+		}
+	})
+	t.Run("no handle and no gh: empty values, no error", func(t *testing.T) {
+		fx := newFixture(t)
+		fx.Env.Cfg.Data = data(nil)
+		fx.MustExec(steps.Data())
+		got := readChezmoiData(t, chezmoiTomlPath(fx))
+		if got["githubHandle"] != "" || got["githubId"] != "" {
+			t.Errorf("handle=%#v id=%#v, want both empty", got["githubHandle"], got["githubId"])
+		}
+	})
+}
+
+func TestDataIdempotent(t *testing.T) {
+	fx := newFixture(t)
+	fx.Env.Cfg = e2eConfig(t, fx.Home)
+	fx.MustExec(steps.Data())
+	before := readFile(t, chezmoiTomlPath(fx))
+
+	rep := fx.MustExec(steps.Data())
+	if len(rep.Applied) != 0 {
+		t.Errorf("second run applied %v, want nothing", rep.Applied)
+	}
+	if after := readFile(t, chezmoiTomlPath(fx)); after != before {
+		t.Errorf("second run changed the file")
+	}
+}
+
+func TestDataRewrittenWhenAnswersChange(t *testing.T) {
+	fx := newFixture(t)
+	fx.Env.Cfg = e2eConfig(t, fx.Home)
+	fx.MustExec(steps.Data())
+
+	fx.Env.Cfg.Data["personalName"] = "someone else"
+	rep := fx.MustExec(steps.Data())
+	if len(rep.Applied) == 0 {
+		t.Errorf("a changed answer must be written")
+	}
+	if got := readChezmoiData(t, chezmoiTomlPath(fx)); got["personalName"] != "someone else" {
+		t.Errorf("personalName = %#v, want someone else", got["personalName"])
+	}
+}
+
+func TestDataKeepsSourceDirPin(t *testing.T) {
+	fx := newFixture(t)
+	fx.Env.Cfg = e2eConfig(t, fx.Home)
+	fx.MustExec(steps.Data())
+	path := chezmoiTomlPath(fx)
+	pinned := "sourceDir = \"" + filepath.Join(fx.Repo, "home") + "\"\n" + readFile(t, path)
+	if err := os.WriteFile(path, []byte(pinned), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	rep := fx.MustExec(steps.Data())
+	if len(rep.Applied) != 0 {
+		t.Errorf("a sourceDir pin ahead of an unchanged [data] must not trigger a rewrite, applied %v", rep.Applied)
+	}
+}

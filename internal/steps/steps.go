@@ -52,8 +52,7 @@ type Report struct {
 // just-installed chezmoi, mise and nb land in first on PATH (B:935).
 func Setup(env *Env) {
 	os.WriteFile(FollowupLogPath(), nil, 0o644)
-	prependPath(filepath.Join(env.Home, ".local", "bin"))
-	prependPath(nanobrewBinDir)
+	prependPath(nanobrewBinDir + string(os.PathListSeparator) + filepath.Join(env.Home, ".local", "bin"))
 }
 
 // Execute runs list in order. A step whose Check reports done is skipped;

@@ -331,3 +331,28 @@ func TestCheckoutMainIsLast(t *testing.T) {
 		t.Fatalf("last Finish step must be checkout-main, got %v", names(list))
 	}
 }
+
+// C3: a non-UTF-8 home with a UTF-8 repo path still gets a parseable chezmoi.toml.
+func TestNonUTF8HomeUTF8Repo(t *testing.T) {
+	fx := newFixture(t)
+	home := filepath.Join(filepath.Dir(fx.Home), "bad\xffhome")
+	if err := os.MkdirAll(home, 0o755); err != nil {
+		t.Skipf("this filesystem refuses a non-UTF-8 name: %v", err)
+	}
+	fx.Env.Home = home
+	fx.Env.Cfg.Data = map[string]string{"githubHandle": "octo", "githubId": "1"}
+	list := append(steps.Data(), steps.Finish()[0])
+	if _, err := fx.Exec(list); err != nil {
+		t.Fatalf("a non-UTF-8 home must not fail the run: %v\n%s", err, fx.Log)
+	}
+	var doc struct {
+		SourceDir string `toml:"sourceDir"`
+	}
+	cfg := filepath.Join(home, ".config", "chezmoi", "chezmoi.toml")
+	if _, err := toml.DecodeFile(cfg, &doc); err != nil {
+		t.Fatalf("chezmoi.toml does not parse: %v\n%s", err, readFile(t, cfg))
+	}
+	if want := filepath.Join(fx.Repo, "home"); doc.SourceDir != want {
+		t.Errorf("sourceDir = %q, want %q", doc.SourceDir, want)
+	}
+}

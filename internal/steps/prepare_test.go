@@ -172,6 +172,32 @@ func TestRefWorktree(t *testing.T) {
 	})
 }
 
+// A failing `git rev-parse` is an error for --ref, not an empty branch name.
+func TestGitBranchFailure(t *testing.T) {
+	fail := func(fx *fixture) {
+		fx.Fake.On("git", "-C", fx.Repo, "rev-parse", "--abbrev-ref", "HEAD").Return(run.Result{Code: 128, Stderr: "fatal: not a git repository"})
+	}
+	t.Run("with --ref the run fails and adds no worktree", func(t *testing.T) {
+		fx := newFixture(t)
+		fx.Env.Opts.Ref = "v1.2.3"
+		fail(fx)
+		if _, err := fx.Exec(steps.Prepare()); err == nil {
+			t.Errorf("want an error when the current branch cannot be read")
+		}
+		if fx.called("git", "worktree", "add") {
+			t.Errorf("no worktree without knowing HEAD:\n%s", fx.dump())
+		}
+	})
+	t.Run("without --ref the announcement is skipped", func(t *testing.T) {
+		fx := newFixture(t)
+		fail(fx)
+		fx.Exec(steps.Prepare())
+		if strings.Contains(fx.Log.String(), "bootstrapping from") {
+			t.Errorf("no ref known, nothing to announce:\n%s", fx.Log)
+		}
+	})
+}
+
 // B:240: leaked worktrees of killed runs are pruned first, ref or not.
 func TestWorktreePrunedFirst(t *testing.T) {
 	fx := newFixture(t)

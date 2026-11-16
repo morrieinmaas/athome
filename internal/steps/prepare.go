@@ -99,6 +99,9 @@ func prepGitBranch(ctx context.Context, env *Env) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if res.Code != 0 {
+		return "", fmt.Errorf("git rev-parse --abbrev-ref HEAD in %s failed: %s", env.RepoRoot, strings.TrimSpace(res.Stderr))
+	}
 	return strings.TrimSpace(res.Stdout), nil
 }
 

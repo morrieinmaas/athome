@@ -206,6 +206,8 @@ Decisions:
   of the run.
 - `--import-ssh-bw` never overwrites an existing host key (bash did); it logs that the key
   was kept and how to restore over it.
+- When the GitHub handle or id cannot be derived (offline, rate limit), athome keeps the
+  value already in `[data]`; `bootstrap.sh` wrote an empty string.
 
 Acceptance criteria:
 
@@ -225,9 +227,10 @@ Acceptance criteria:
    excludes `sshKeyAction = "generate"`, which rotates the host's key on every run as
    `bootstrap.sh` does (the step prints a note saying so), `sshKeyAction = "reupload"`, or when a GitHub key
    upload failed, or while an unlocked `rbw` has no secrets restored and no `secrets-restore`
-   script (the follow-up note is written again each run) (a failed `gh ssh-key add` is retried). The manual-upload fallbacks (an env
-   token without key scopes, a failed `gh auth refresh`) count as done once the run has
-   printed the instructions.
+   script (the follow-up note is written again each run), or when the repo is on a detached HEAD
+   that cannot be checked out to main (a failed `gh ssh-key add` is retried). The manual-upload
+   fallbacks (an env token without key scopes, a failed `gh auth refresh`) count as done once
+   a run has printed the instructions and written the marker; the first run still applies.
 8. With `ATHOME_CI` set no GitHub key upload is attempted.
 9. The e2e containers (arch, fedora) pass `verify-baseline.sh`, `verify.sh` and
    `verify-teardown.sh` unchanged with `ATHOME_E2E_RUNNER=binary`; CI runs both runners.

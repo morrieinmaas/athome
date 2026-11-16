@@ -3,6 +3,7 @@ package steps_test
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -286,6 +287,18 @@ func TestDetachedHead(t *testing.T) {
 		}
 		if fx.Log.Len() == 0 {
 			t.Errorf("want a log line telling the user to check git status")
+		}
+	})
+	// Spec Build 1 criterion 7 excludes this: HEAD stays detached, so a rerun retries.
+	t.Run("both fail: a rerun retries the checkout", func(t *testing.T) {
+		fx := newFixture(t)
+		headStub(fx, "HEAD")
+		fx.Fake.On("git", "-C", fx.Repo, "checkout", "main").Return(run.Result{Code: 1})
+		fx.Fake.On("git", "-C", fx.Repo, "checkout", "-B", "main", "origin/main").Return(run.Result{Code: 1})
+		fx.MustExec(steps.Finish())
+		rep := fx.MustExec(steps.Finish())
+		if !slices.Contains(rep.Applied, "checkout-main") {
+			t.Errorf("a still-detached HEAD must retry checkout-main, applied=%v", rep.Applied)
 		}
 	})
 	t.Run("on a branch: no checkout", func(t *testing.T) {

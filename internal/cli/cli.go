@@ -165,8 +165,13 @@ func runInit(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "athome init: %v\n", err)
 		return exitError
 	}
-	fmt.Fprintf(stdout, "athome init: %d applied, %d skipped, %d warnings\n", len(rep.Applied), len(rep.Skipped), env.Warnings)
+	printSummary(stdout, rep)
 	return exitOK
+}
+
+// printSummary is the one final line of a successful run.
+func printSummary(w io.Writer, rep steps.Report) {
+	fmt.Fprintf(w, "athome: applied %d, skipped %d\n", len(rep.Applied), len(rep.Skipped))
 }
 
 // findRepoRoot is the nearest directory at or above the cwd with a .chezmoiroot.

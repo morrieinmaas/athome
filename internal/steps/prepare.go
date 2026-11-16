@@ -12,14 +12,13 @@ import (
 )
 
 // Prepare returns the steps that ready the checkout and the tools:
-// repo check (B:155-167), chezmoi source link, --ref worktree (B:267-324),
-// sudo cache (B:326-338) and chezmoi install (B:340-347).
+// repo check (B:155-167), chezmoi source link, --ref worktree (B:267-324) and
+// chezmoi install (B:340-347). The sudo cache (B:326-338) is StartSudo, not a step.
 func Prepare() []Step {
 	return []Step{
 		{Name: "repo-check", Check: prepRepoCheck, Apply: prepNoApply},
 		{Name: "chezmoi-link", Check: prepLinkCheck, Apply: prepLinkApply},
 		{Name: "ref-worktree", Check: prepWorktreeCheck, Apply: prepWorktreeApply},
-		{Name: "sudo-cache", Check: prepSudoCheck, Apply: prepSudoApply},
 		{Name: "chezmoi-install", Check: prepChezmoiCheck, Apply: prepInstallChezmoi},
 	}
 }
@@ -141,40 +140,39 @@ func prepWorktreeApply(ctx context.Context, env *Env) error {
 	return nil
 }
 
-// prepSudoCheck: done when the credentials are already cached (`sudo -n true`
-// succeeds, which also covers NOPASSWD). The keep-warm loop still has to run.
-func prepSudoCheck(ctx context.Context, env *Env) (bool, error) {
-	res, err := env.Run.Run(ctx, run.Cmd{Name: "sudo", Args: []string{"-n", "true"}})
-	if err != nil || res.Code != 0 {
-		return false, nil
-	}
-	sudoKeepWarm(ctx, env)
-	return true, nil
-}
+var sudoInterval = 60 * time.Second
 
-// prepSudoApply ports B:332-338: one prompt, then a keep-warm loop until ctx ends.
-func prepSudoApply(ctx context.Context, env *Env) error {
+// StartSudo ports B:326-338: one `sudo -v`, then a loop that keeps the
+// credentials warm until the returned stop func is called. It does nothing on a
+// darwin machine that installs with nanobrew, which needs no sudo. This is not a
+// step: it has no state to check, and a refused sudo is a note, not a warning.
+func StartSudo(ctx context.Context, env *Env) (stop func()) {
+	if env.OS == "darwin" && nanobrewInstalled(env) {
+		return func() {}
+	}
+	envLogln(env, "==> caching sudo credentials (one prompt, kept warm for the whole run)")
 	res, err := env.Run.Run(ctx, run.Cmd{Name: "sudo", Args: []string{"-v"}})
 	if err != nil || res.Code != 0 {
 		envLogln(env, "sudo refused: package install and systemd-enable steps may prompt repeatedly")
-		env.Warnings++
-		return nil
+		return func() {}
 	}
-	sudoKeepWarm(ctx, env)
-	return nil
-}
-
-func sudoKeepWarm(ctx context.Context, env *Env) {
+	ctx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
 	go func() {
+		defer close(done)
 		for {
 			select {
 			case <-ctx.Done():
 				return
-			case <-time.After(60 * time.Second):
+			case <-time.After(sudoInterval):
 				env.Run.Run(ctx, run.Cmd{Name: "sudo", Args: []string{"-n", "true"}})
 			}
 		}
 	}()
+	return func() {
+		cancel()
+		<-done
+	}
 }
 
 func prepChezmoiCheck(_ context.Context, env *Env) (bool, error) {

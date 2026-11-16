@@ -1,11 +1,13 @@
 package steps_test
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/morrieinmaas/athome/internal/run"
 	"github.com/morrieinmaas/athome/internal/steps"
@@ -221,32 +223,75 @@ func TestChezmoiInstall(t *testing.T) {
 	})
 }
 
-func TestSudoCache(t *testing.T) {
-	t.Run("caches credentials once", func(t *testing.T) {
+// The sudo keep-alive is not a step (B:326-338): the CLI starts it before the run.
+func TestSudoIsNotAStep(t *testing.T) {
+	for _, s := range steps.All() {
+		if strings.Contains(s.Name, "sudo") {
+			t.Errorf("step %q: the sudo keep-alive is not a step", s.Name)
+		}
+	}
+}
+
+func TestStartSudo(t *testing.T) {
+	t.Run("linux: one sudo -v, then kept warm until stopped", func(t *testing.T) {
 		fx := newFixture(t)
-		fx.Fake.Have("chezmoi")
-		fx.Fake.On("sudo", "-n", "true").Return(run.Result{Code: 1})
-		fx.MustExec(steps.Prepare())
+		t.Cleanup(steps.SetSudoInterval(5 * time.Millisecond))
+		stop := steps.StartSudo(context.Background(), fx.Env)
+		if n := len(fx.callsTo("sudo", "-v")); n != 1 {
+			t.Fatalf("want one `sudo -v`, got %d:\n%s", n, fx.dump())
+		}
+		deadline := time.Now().Add(2 * time.Second)
+		for len(fx.callsTo("sudo", "-n", "true")) == 0 && time.Now().Before(deadline) {
+			time.Sleep(time.Millisecond)
+		}
+		stop()
+		n := len(fx.callsTo("sudo", "-n", "true"))
+		if n == 0 {
+			t.Fatalf("the keep-warm loop never ran:\n%s", fx.dump())
+		}
+		time.Sleep(30 * time.Millisecond)
+		if after := len(fx.callsTo("sudo", "-n", "true")); after != n {
+			t.Errorf("keep-warm kept running after stop: %d -> %d calls", n, after)
+		}
+	})
+	t.Run("a warm cache is still asked once, as bash does", func(t *testing.T) {
+		fx := newFixture(t)
+		fx.Fake.On("sudo", "-n", "true").Return(run.Result{Code: 0})
+		steps.StartSudo(context.Background(), fx.Env)()
 		if !fx.called("sudo", "-v") {
 			t.Errorf("`sudo -v` not recorded:\n%s", fx.dump())
 		}
 	})
-	t.Run("already cached credentials are not asked for again", func(t *testing.T) {
+	t.Run("a refused sudo is a note, not a warning", func(t *testing.T) {
 		fx := newFixture(t)
-		fx.Fake.Have("chezmoi")
-		fx.Fake.On("sudo", "-n", "true").Return(run.Result{Code: 0})
-		rep := fx.MustExec(steps.Prepare())
-		if appliedSet(rep)["sudo-cache"] || fx.called("sudo", "-v") {
-			t.Errorf("a warm sudo cache is done, no prompt:\n%s", fx.dump())
+		fx.Fake.On("sudo", "-v").Return(run.Result{Code: 1})
+		steps.StartSudo(context.Background(), fx.Env)()
+		if fx.Env.Warnings != 0 {
+			t.Errorf("Warnings = %d, a refused sudo -v is only a note (B:337)", fx.Env.Warnings)
+		}
+		if !strings.Contains(fx.Log.String(), "sudo refused") {
+			t.Errorf("want a note in the log, got %q", fx.Log)
+		}
+		if fx.called("sudo", "-n", "true") {
+			t.Errorf("no keep-warm after a refusal:\n%s", fx.dump())
 		}
 	})
-	t.Run("a refused sudo is a warning, not an error", func(t *testing.T) {
+	t.Run("darwin with nanobrew needs no sudo", func(t *testing.T) {
 		fx := newFixture(t)
-		fx.Fake.Have("chezmoi")
-		fx.Fake.On("sudo", "-n", "true").Return(run.Result{Code: 1})
-		fx.Fake.On("sudo", "-v").Return(run.Result{Code: 1})
-		if _, err := fx.Exec(steps.Prepare()); err != nil {
-			t.Fatalf("sudo refusal must not fail the run: %v", err)
+		fx.Env.OS = "darwin"
+		fx.Fake.Have("nb")
+		steps.StartSudo(context.Background(), fx.Env)()
+		if fx.called("sudo") {
+			t.Errorf("nb installs without sudo:\n%s", fx.dump())
+		}
+	})
+	t.Run("darwin without nanobrew needs sudo", func(t *testing.T) {
+		fx := newFixture(t)
+		fx.Env.OS = "darwin"
+		t.Cleanup(steps.SetNanobrewBin(fx.Path("absent-nb")))
+		steps.StartSudo(context.Background(), fx.Env)()
+		if !fx.called("sudo", "-v") {
+			t.Errorf("the nanobrew install links /opt/nb with sudo:\n%s", fx.dump())
 		}
 	})
 }

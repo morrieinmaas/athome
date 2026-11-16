@@ -179,9 +179,16 @@ func hasSecretsEnv(env *Env) bool {
 	return false
 }
 
-func secretsRestoreDone(ctx context.Context, env *Env) (bool, error) {
+// secretsMarkerTidy drops the restore marker once a ~/.secrets/*/.env exists.
+// Setup runs it, so the check only reads.
+func secretsMarkerTidy(env *Env) {
 	if hasSecretsEnv(env) {
 		os.Remove(restoreMarker(env))
+	}
+}
+
+func secretsRestoreDone(ctx context.Context, env *Env) (bool, error) {
+	if hasSecretsEnv(env) {
 		return true, nil
 	}
 	if fileExists(restoreMarker(env)) {

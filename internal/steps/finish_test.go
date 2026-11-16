@@ -315,9 +315,11 @@ func TestSecretsRestoreAttemptedMarker(t *testing.T) {
 		fx, _ := setup(t)
 		writeFile(t, marker(fx), "", 0o644)
 		writeFile(t, fx.Path(".secrets", "proj", ".env"), "A=1\n", 0o600)
-		fx.MustExec(steps.Finish())
+		if err := steps.Setup(context.Background(), fx.Env); err != nil {
+			t.Fatal(err)
+		}
 		if exists(marker(fx)) {
-			t.Errorf("marker must go once .env exists")
+			t.Errorf("Setup must drop the marker once .env exists")
 		}
 	})
 }

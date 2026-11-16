@@ -2,7 +2,9 @@ package steps_test
 
 import (
 	"context"
+	"io/fs"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -106,8 +108,12 @@ func TestChecksArePure(t *testing.T) {
 	fx.PutKey("PRIVATE\n", "ssh-ed25519 AAAA testhost\n")
 	writeFile(t, fx.Path(".local", "bin", "chezmoi"), "#!/bin/sh\n", 0o755)
 	writeFile(t, steps.FollowupLogPath(), "  • earlier note\n", 0o644)
+	// A restore marker next to a ~/.secrets/*/.env is what secrets-restore's check must not tidy.
+	writeFile(t, fx.Path(".local", "state", "athome", "secrets-restore-attempted"), "", 0o644)
+	writeFile(t, fx.Path(".secrets", "proj", ".env"), "A=1\n", 0o600)
 
 	for _, s := range steps.All() {
+		filesBefore := homeFiles(t, fx.Home)
 		envBefore, pathBefore, callsBefore := *fx.Env, os.Getenv("PATH"), len(fx.Fake.Calls())
 		logBefore := readFile(t, steps.FollowupLogPath())
 		s.Check(context.Background(), fx.Env)
@@ -120,12 +126,31 @@ func TestChecksArePure(t *testing.T) {
 		if got := readFile(t, steps.FollowupLogPath()); got != logBefore {
 			t.Errorf("%s: Check changed the follow-up log: %q -> %q", s.Name, logBefore, got)
 		}
+		if got := homeFiles(t, fx.Home); !reflect.DeepEqual(got, filesBefore) {
+			t.Errorf("%s: Check changed files under HOME: %v -> %v", s.Name, filesBefore, got)
+		}
 		for _, c := range fx.Fake.Calls()[callsBefore:] {
 			if mutatingCall(c) {
 				t.Errorf("%s: Check ran a mutating command: %s %q", s.Name, c.Name, c.Args)
 			}
 		}
 	}
+}
+
+// homeFiles lists every file under home, so a Check that removes or adds one shows.
+func homeFiles(t *testing.T, home string) []string {
+	t.Helper()
+	var files []string
+	err := filepath.WalkDir(home, func(p string, d fs.DirEntry, err error) error {
+		if err == nil && !d.IsDir() {
+			files = append(files, p)
+		}
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return files
 }
 
 // mutatingCall reports a command that changes state, which no Check may run.

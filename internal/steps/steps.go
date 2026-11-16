@@ -60,6 +60,7 @@ func Setup(ctx context.Context, env *Env) error {
 	prependPath(nanobrewBinDir + string(os.PathListSeparator) + filepath.Join(env.Home, ".local", "bin"))
 	env.Run.Run(ctx, run.Cmd{Name: "git", Args: []string{"-C", env.RepoRoot, "worktree", "prune"}})
 	skPubMarkerTidy(env)
+	secretsMarkerTidy(env)
 	announceRef(ctx, env)
 	return nil
 }

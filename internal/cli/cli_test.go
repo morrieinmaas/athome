@@ -460,37 +460,72 @@ func TestNonUTF8RepoIsUsageError(t *testing.T) {
 	}
 }
 
-// R7: the sudo keep-alive starts before the first step and is not a step.
-func TestSudoStartsBeforeTheSteps(t *testing.T) {
+// U13: sudo is requested only when a step first runs a sudo command, and it
+// is not a step.
+func TestSudoStartsWhenAStepNeedsIt(t *testing.T) {
 	f := run.NewFake()
 	env := &steps.Env{Run: f, OS: "linux"}
-	var seenSudo bool
-	list := []steps.Step{{
-		Name: "probe",
-		Check: func(context.Context, *steps.Env) (bool, error) {
-			for _, c := range f.Calls() {
-				seenSudo = seenSudo || (c.Name == "sudo" && len(c.Args) == 1 && c.Args[0] == "-v")
-			}
-			return true, nil
+	list := []steps.Step{
+		{
+			Name:  "quiet",
+			Check: func(context.Context, *steps.Env) (bool, error) { return false, nil },
+			Apply: func(ctx context.Context, e *steps.Env) error {
+				if n := len(f.Calls()); n != 0 {
+					t.Errorf("a step without sudo must not trigger sudo -v: %v", f.Calls())
+				}
+				return nil
+			},
 		},
-		Apply: func(context.Context, *steps.Env) error { return nil },
-	}}
+		{
+			Name:  "needs-sudo",
+			Check: func(context.Context, *steps.Env) (bool, error) { return false, nil },
+			Apply: func(ctx context.Context, e *steps.Env) error {
+				e.Run.Run(ctx, run.Cmd{Name: "sudo", Args: []string{"true"}})
+				e.Run.Run(ctx, run.Cmd{Name: "sudo", Args: []string{"true"}})
+				return nil
+			},
+		},
+	}
 	rep, err := cli.Execute(context.Background(), env, list)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !seenSudo {
-		t.Errorf("`sudo -v` must have run before the first step: %v", f.Calls())
+	var names []string
+	for _, c := range f.Calls() {
+		names = append(names, c.Name+" "+strings.Join(c.Args, " "))
 	}
-	if len(rep.Applied)+len(rep.Skipped) != 1 {
+	want := []string{"sudo -v", "sudo true", "sudo true"}
+	if !reflect.DeepEqual(names, want) {
+		t.Errorf("calls = %q, want %q", names, want)
+	}
+	if len(rep.Applied) != 2 {
 		t.Errorf("sudo must not add a step: %+v", rep)
+	}
+	if env.Run != run.Runner(f) {
+		t.Errorf("Execute must leave env.Run as it found it")
+	}
+}
+
+func TestNoSudoWhenNoStepNeedsIt(t *testing.T) {
+	f := run.NewFake()
+	env := &steps.Env{Run: f, OS: "linux"}
+	list := []steps.Step{{
+		Name:  "plain",
+		Check: func(context.Context, *steps.Env) (bool, error) { return true, nil },
+		Apply: func(context.Context, *steps.Env) error { return nil },
+	}}
+	if _, err := cli.Execute(context.Background(), env, list); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(f.Calls()); n != 0 {
+		t.Errorf("no step ran sudo, but the runner saw %v", f.Calls())
 	}
 }
 
 // Safety net: init with valid args in a repo fixture goes through the Fake, never
 // a binary on PATH. PATH is an empty directory (see TestMain).
 func TestInitWithValidArgsOnlyTouchesTheFake(t *testing.T) {
-	home := sandbox(t)
+	sandbox(t)
 	inRepo(t)
 	if cli.RealRunnerInstalled() {
 		t.Fatal("the real runner is installed in a test")
@@ -505,10 +540,4 @@ func TestInitWithValidArgsOnlyTouchesTheFake(t *testing.T) {
 	if len(f.Calls()) == 0 {
 		t.Errorf("exit %d: the run never reached the runner; the fixture is not a valid init", code)
 	}
-	for _, c := range f.Calls() {
-		if c.Name == "sudo" && len(c.Args) == 1 && c.Args[0] == "-v" {
-			return
-		}
-	}
-	t.Errorf("no `sudo -v` recorded, so the keep-alive did not go through the runner: %v (home %s)", f.Calls(), home)
 }

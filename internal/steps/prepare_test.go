@@ -238,7 +238,8 @@ func TestChezmoiInstalledInLocalBin(t *testing.T) {
 	}
 }
 
-// The sudo keep-alive is not a step (B:326-338): the CLI starts it before the run.
+// The sudo keep-alive is not a step (B:326-338): the runner wrapper starts it
+// when a step first runs a sudo command.
 func TestSudoIsNotAStep(t *testing.T) {
 	for _, s := range steps.All() {
 		if strings.Contains(s.Name, "sudo") {
@@ -247,13 +248,37 @@ func TestSudoIsNotAStep(t *testing.T) {
 	}
 }
 
-func TestStartSudo(t *testing.T) {
-	t.Run("linux: one sudo -v, then kept warm until stopped", func(t *testing.T) {
+func sudoVCount(f *run.Fake) int {
+	n := 0
+	for _, c := range f.Calls() {
+		if c.Name == "sudo" && len(c.Args) == 1 && c.Args[0] == "-v" {
+			n++
+		}
+	}
+	return n
+}
+
+func TestWarmSudo(t *testing.T) {
+	ctx := context.Background()
+	t.Run("no sudo command, no sudo -v", func(t *testing.T) {
+		fx := newFixture(t)
+		r, stop := steps.WarmSudo(fx.Fake, fx.Log)
+		r.Run(ctx, run.Cmd{Name: "git", Args: []string{"status"}})
+		r.Run(ctx, run.Cmd{Name: "sudo", Args: []string{"-n", "true"}})
+		stop()
+		if n := sudoVCount(fx.Fake); n != 0 {
+			t.Errorf("sudo -v ran %d times with no sudo step:\n%s", n, fx.dump())
+		}
+	})
+	t.Run("two sudo commands: one sudo -v before the first, then kept warm until stopped", func(t *testing.T) {
 		fx := newFixture(t)
 		t.Cleanup(steps.SetSudoInterval(5 * time.Millisecond))
-		stop := steps.StartSudo(context.Background(), fx.Env)
-		if n := len(fx.callsTo("sudo", "-v")); n != 1 {
-			t.Fatalf("want one `sudo -v`, got %d:\n%s", n, fx.dump())
+		r, stop := steps.WarmSudo(fx.Fake, fx.Log)
+		r.Run(ctx, run.Cmd{Name: "sudo", Args: []string{"pacman", "-S", "x"}})
+		r.Run(ctx, run.Cmd{Name: "sudo", Args: []string{"systemctl", "enable", "y"}})
+		calls := fx.Fake.Calls()
+		if sudoVCount(fx.Fake) != 1 || calls[0].Name != "sudo" || calls[0].Args[0] != "-v" || !calls[0].Interactive {
+			t.Fatalf("want exactly one interactive `sudo -v` before the first sudo command:\n%s", fx.dump())
 		}
 		deadline := time.Now().Add(2 * time.Second)
 		for len(fx.callsTo("sudo", "-n", "true")) == 0 && time.Now().Before(deadline) {
@@ -269,44 +294,20 @@ func TestStartSudo(t *testing.T) {
 			t.Errorf("keep-warm kept running after stop: %d -> %d calls", n, after)
 		}
 	})
-	t.Run("a warm cache is still asked once, as bash does", func(t *testing.T) {
-		fx := newFixture(t)
-		fx.Fake.On("sudo", "-n", "true").Return(run.Result{Code: 0})
-		steps.StartSudo(context.Background(), fx.Env)()
-		if !fx.called("sudo", "-v") {
-			t.Errorf("`sudo -v` not recorded:\n%s", fx.dump())
-		}
-	})
-	t.Run("a refused sudo is a note, not a warning", func(t *testing.T) {
+	t.Run("a refused sudo is a note, the command still runs, no keep-warm", func(t *testing.T) {
 		fx := newFixture(t)
 		fx.Fake.On("sudo", "-v").Return(run.Result{Code: 1})
-		steps.StartSudo(context.Background(), fx.Env)()
+		r, stop := steps.WarmSudo(fx.Fake, fx.Log)
+		r.Run(ctx, run.Cmd{Name: "sudo", Args: []string{"true"}})
+		stop()
 		if fx.Env.Warnings != 0 {
 			t.Errorf("Warnings = %d, a refused sudo -v is only a note (B:337)", fx.Env.Warnings)
 		}
 		if !strings.Contains(fx.Log.String(), "sudo refused") {
 			t.Errorf("want a note in the log, got %q", fx.Log)
 		}
-		if fx.called("sudo", "-n", "true") {
-			t.Errorf("no keep-warm after a refusal:\n%s", fx.dump())
-		}
-	})
-	t.Run("darwin with nanobrew still asks, as bash does", func(t *testing.T) {
-		fx := newFixture(t)
-		fx.Env.OS = "darwin"
-		fx.Fake.Have("nb")
-		steps.StartSudo(context.Background(), fx.Env)()
-		if !fx.called("sudo", "-v") {
-			t.Errorf("bash runs sudo -v on every OS (B:333):\n%s", fx.dump())
-		}
-	})
-	t.Run("darwin without nanobrew needs sudo", func(t *testing.T) {
-		fx := newFixture(t)
-		fx.Env.OS = "darwin"
-		t.Cleanup(steps.SetNanobrewBin(fx.Path("absent-nb")))
-		steps.StartSudo(context.Background(), fx.Env)()
-		if !fx.called("sudo", "-v") {
-			t.Errorf("the nanobrew install links /opt/nb with sudo:\n%s", fx.dump())
+		if !fx.called("sudo", "true") || fx.called("sudo", "-n", "true") {
+			t.Errorf("the command must run, without keep-warm:\n%s", fx.dump())
 		}
 	})
 }

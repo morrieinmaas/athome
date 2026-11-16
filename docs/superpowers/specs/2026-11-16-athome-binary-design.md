@@ -202,6 +202,8 @@ Decisions:
   file or default, as with `--non-interactive` today. Plain prompts arrive with step 2.
 - Teardown stays `teardown.sh`; `scenario.sh` picks the bootstrap runner from
   `ATHOME_E2E_RUNNER` (`bash`, the default, or `binary`).
+- sudo is requested only when a step first runs a sudo command, then kept warm for the rest
+  of the run.
 
 Acceptance criteria:
 

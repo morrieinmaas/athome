@@ -3,9 +3,11 @@ package steps
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/morrieinmaas/athome/internal/run"
@@ -13,7 +15,7 @@ import (
 
 // Prepare returns the steps that ready the checkout and the tools:
 // repo check (B:155-167), chezmoi source link, --ref worktree (B:267-324) and
-// chezmoi install (B:340-347). The sudo cache (B:326-338) is StartSudo, not a step.
+// chezmoi install (B:340-347). The sudo cache (B:326-338) is WarmSudo, not a step.
 func Prepare() []Step {
 	return []Step{
 		{Name: "repo-check", Check: prepRepoCheck, Apply: prepNoApply},
@@ -142,34 +144,62 @@ func prepWorktreeApply(ctx context.Context, env *Env) error {
 
 var sudoInterval = 60 * time.Second
 
-// StartSudo ports B:326-338: one `sudo -v`, then a loop that keeps the
-// credentials warm until the returned stop func is called, on every OS like
-// bash. This is not a step: it has no state to check, and a refused sudo is a
-// note, not a warning.
-func StartSudo(ctx context.Context, env *Env) (stop func()) {
-	envLogln(env, "==> caching sudo credentials (one prompt, kept warm for the whole run)")
-	res, err := env.Run.Run(ctx, run.Cmd{Name: "sudo", Args: []string{"-v"}})
-	if err != nil || res.Code != 0 {
-		envLogln(env, "sudo refused: package install and systemd-enable steps may prompt repeatedly")
-		return func() {}
+// sudoRunner asks for sudo credentials only when a step first runs a sudo
+// command (B:326-338 asks up front), then keeps them warm until stop is called.
+type sudoRunner struct {
+	run.Runner
+	log    io.Writer
+	once   sync.Once
+	cancel context.CancelFunc
+	done   chan struct{}
+}
+
+// WarmSudo wraps r: the first `sudo ...` command (other than `sudo -n ...`)
+// runs one interactive `sudo -v` and then starts a `sudo -n true` loop every
+// sudoInterval. A refused `sudo -v` is a note, not a warning, and the command
+// then runs as it would. stop ends the loop; it is safe when sudo never ran.
+func WarmSudo(r run.Runner, log io.Writer) (run.Runner, func()) {
+	s := &sudoRunner{Runner: r, log: log}
+	return s, func() {
+		s.once.Do(func() {}) // nothing may start after stop
+		if s.cancel != nil {
+			s.cancel()
+			<-s.done
+		}
 	}
-	ctx, cancel := context.WithCancel(ctx)
-	done := make(chan struct{})
+}
+
+func (s *sudoRunner) Run(ctx context.Context, c run.Cmd) (run.Result, error) {
+	if c.Name == "sudo" && (len(c.Args) == 0 || c.Args[0] != "-n") {
+		s.once.Do(func() { s.warm(ctx) })
+	}
+	return s.Runner.Run(ctx, c)
+}
+
+func (s *sudoRunner) warm(ctx context.Context) {
+	if s.log != nil {
+		fmt.Fprintln(s.log, "==> caching sudo credentials (one prompt, kept warm for the rest of the run)")
+	}
+	res, err := s.Runner.Run(ctx, run.Cmd{Name: "sudo", Args: []string{"-v"}, Interactive: true})
+	if err != nil || res.Code != 0 {
+		if s.log != nil {
+			fmt.Fprintln(s.log, "sudo refused: package install and systemd-enable steps may prompt repeatedly")
+		}
+		return
+	}
+	ctx, s.cancel = context.WithCancel(ctx)
+	s.done = make(chan struct{})
 	go func() {
-		defer close(done)
+		defer close(s.done)
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-time.After(sudoInterval):
-				env.Run.Run(ctx, run.Cmd{Name: "sudo", Args: []string{"-n", "true"}})
+				s.Runner.Run(ctx, run.Cmd{Name: "sudo", Args: []string{"-n", "true"}})
 			}
 		}
 	}()
-	return func() {
-		cancel()
-		<-done
-	}
 }
 
 func prepChezmoiCheck(_ context.Context, env *Env) (bool, error) {

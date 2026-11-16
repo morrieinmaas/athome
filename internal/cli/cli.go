@@ -249,9 +249,16 @@ func checkRepoPath(repo string) error {
 	return nil
 }
 
-// execute starts the sudo keep-alive (not a step), then runs the steps.
+// execute runs the steps with a runner that asks for sudo only when a step
+// first runs a sudo command (not a step itself).
 func execute(ctx context.Context, env *steps.Env, list []steps.Step) (steps.Report, error) {
-	defer steps.StartSudo(ctx, env)()
+	inner := env.Run
+	var stop func()
+	env.Run, stop = steps.WarmSudo(inner, env.Log)
+	defer func() {
+		stop()
+		env.Run = inner
+	}()
 	return steps.Execute(ctx, env, list)
 }
 
@@ -317,7 +324,6 @@ func printSummary(w io.Writer, rep steps.Report) {
 	fmt.Fprintf(w, "athome: applied %d, skipped %d\n", len(rep.Applied), len(rep.Skipped))
 }
 
-// findRepoRoot is the nearest directory at or above the cwd with a .chezmoiroot.
 // findRepoRoot looks for .chezmoiroot at or above the working directory, then
 // falls back to the parent of the sourceDir pinned in chezmoi's config.
 func findRepoRoot(home string) (string, error) {

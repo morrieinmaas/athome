@@ -96,7 +96,7 @@ func renderAndRun(ctx context.Context, env *Env, name string) error {
 	if rendered.Stdout == "" {
 		return nil
 	}
-	res, err := env.Run.Run(ctx, run.Cmd{Name: "bash", Stdin: rendered.Stdout})
+	res, err := env.Run.Run(ctx, run.Cmd{Name: "bash", Stdin: rendered.Stdout, Interactive: true})
 	if err != nil || res.Code != 0 {
 		return fmt.Errorf("%s exited non-zero", name)
 	}
@@ -179,8 +179,9 @@ func miseDone(_ context.Context, env *Env) (bool, error) {
 
 func installMise(ctx context.Context, env *Env) error {
 	res, err := env.Run.Run(ctx, run.Cmd{
-		Name: "sh",
-		Args: []string{"-c", "curl -fsSL https://mise.run | MISE_INSTALL_HELP=0 sh"},
+		Name:        "sh",
+		Args:        []string{"-c", "curl -fsSL https://mise.run | MISE_INSTALL_HELP=0 sh"},
+		Interactive: true,
 	})
 	if err != nil || res.Code != 0 {
 		baselineWarn(env, "mise install failed; re-run bootstrap")
@@ -188,7 +189,9 @@ func installMise(ctx context.Context, env *Env) error {
 	return nil
 }
 
-// chezmoiApplyDone: the home dir already matches the source (exit 0 of verify).
+// chezmoiApplyDone: the home dir already matches the source (exit 0 of verify)
+// and chezmoi.toml is current: verify exits 0 even when the config template
+// changed, so that warning, or a template newer than chezmoi.toml, is not done.
 func chezmoiApplyDone(ctx context.Context, env *Env) (bool, error) {
 	// B:770: notes from an earlier run must not bleed into this one, even when
 	// the apply is skipped.
@@ -197,7 +200,22 @@ func chezmoiApplyDone(ctx context.Context, env *Env) (bool, error) {
 		Name: "chezmoi",
 		Args: []string{"verify", "--source=" + sourceDir(env), "--exclude=scripts"},
 	})
-	return err == nil && res.Code == 0, nil
+	if err != nil || res.Code != 0 {
+		return false, nil
+	}
+	if strings.Contains(res.Stdout+res.Stderr, "config file template has changed") {
+		return false, nil
+	}
+	return !configTemplateNewer(env), nil
+}
+
+func configTemplateNewer(env *Env) bool {
+	tmpl, err := os.Stat(filepath.Join(sourceDir(env), ".chezmoi.toml.tmpl"))
+	if err != nil {
+		return false
+	}
+	cfg, err := os.Stat(filepath.Join(env.Home, ".config", "chezmoi", "chezmoi.toml"))
+	return err != nil || tmpl.ModTime().After(cfg.ModTime())
 }
 
 // nanobrewInstalled: nb is on PATH or in nanobrew's own bin dir.

@@ -200,6 +200,15 @@ func TestSecretsRestoreSkip(t *testing.T) {
 			t.Errorf("rbw locked, restore can never work:\n%s", fx.dump())
 		}
 	})
+	t.Run("restore is interactive", func(t *testing.T) {
+		fx := newFixture(t)
+		fx.Fake.Have("rbw")
+		p := restore(fx)
+		fx.MustExec(steps.Finish())
+		if c := fx.callsTo(p); len(c) != 1 || !c[0].Interactive {
+			t.Errorf("secrets-restore prompts, it must be interactive: %+v", c)
+		}
+	})
 	t.Run("a failing restore is not an error", func(t *testing.T) {
 		fx := newFixture(t)
 		fx.Fake.Have("rbw")

@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/morrieinmaas/athome/internal/run"
 	"github.com/morrieinmaas/athome/internal/steps"
@@ -399,5 +400,83 @@ func TestProjectDirsRendersTheRepoScript(t *testing.T) {
 	}
 	if !piped || exists(fx.Path("personal", ".envrc")) {
 		t.Errorf("the rendered script must run via bash, and Go must not seed dirs itself (piped=%v):\n%s", piped, fx.dump())
+	}
+}
+
+const templateChanged = "config file template has changed, run chezmoi init to regenerate config file\n"
+
+// S1: chezmoi verify exits 0 even when the config template changed; the apply
+// must not be skipped then.
+func TestChezmoiApplyCheckConfigTemplate(t *testing.T) {
+	for _, stream := range []string{"stdout", "stderr"} {
+		t.Run("warning on "+stream, func(t *testing.T) {
+			fx := newFixture(t)
+			res := run.Result{Code: 0}
+			if stream == "stdout" {
+				res.Stdout = templateChanged
+			} else {
+				res.Stderr = templateChanged
+			}
+			fx.Fake.On("chezmoi", chezmoiVerify(fx)...).Return(res)
+			if !appliedSet(fx.MustExec(steps.Baseline()))["chezmoi-apply"] {
+				t.Errorf("a changed config template must be applied:\n%s", fx.dump())
+			}
+		})
+	}
+	setup := func(t *testing.T, tmplAge time.Duration) *fixture {
+		fx := newFixture(t)
+		fx.Fake.On("chezmoi", chezmoiVerify(fx)...).Return(run.Result{Code: 0})
+		tmpl := filepath.Join(fx.Repo, "home", ".chezmoi.toml.tmpl")
+		cfg := fx.Path(".config", "chezmoi", "chezmoi.toml")
+		writeFile(t, tmpl, "x", 0o644)
+		writeFile(t, cfg, "x", 0o644)
+		base := time.Now().Add(-time.Hour)
+		if err := os.Chtimes(cfg, base, base); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(tmpl, base.Add(tmplAge), base.Add(tmplAge)); err != nil {
+			t.Fatal(err)
+		}
+		return fx
+	}
+	t.Run("template newer than chezmoi.toml: applied", func(t *testing.T) {
+		fx := setup(t, time.Minute)
+		if !appliedSet(fx.MustExec(steps.Baseline()))["chezmoi-apply"] {
+			t.Errorf("a template newer than chezmoi.toml must be applied:\n%s", fx.dump())
+		}
+	})
+	t.Run("template older than chezmoi.toml: skipped", func(t *testing.T) {
+		fx := setup(t, -time.Minute)
+		if appliedSet(fx.MustExec(steps.Baseline()))["chezmoi-apply"] {
+			t.Errorf("an up-to-date config must not be applied again:\n%s", fx.dump())
+		}
+	})
+}
+
+// S2/S4: the scripts read their prompts from the terminal, so they run interactive.
+func TestBaselineScriptsAreInteractive(t *testing.T) {
+	fx := newFixture(t)
+	fx.Fake.On("chezmoi", "execute-template").Return(run.Result{Stdout: "echo rendered\n"})
+	fx.MustExec(steps.Baseline())
+	bashes := 0
+	for _, c := range fx.Fake.Calls() {
+		if c.Name == "bash" && c.Stdin == "echo rendered\n" {
+			bashes++
+			if !c.Interactive {
+				t.Errorf("a rendered script must run interactive: %+v", c)
+			}
+		}
+	}
+	if bashes != 2 {
+		t.Errorf("want 2 rendered scripts run, got %d:\n%s", bashes, fx.dump())
+	}
+	var mise []run.Cmd
+	for _, c := range fx.Fake.Calls() {
+		if c.Name == "sh" && strings.Contains(strings.Join(c.Args, " "), "mise.run") {
+			mise = append(mise, c)
+		}
+	}
+	if len(mise) != 1 || !mise[0].Interactive {
+		t.Errorf("the mise installer must be interactive: %+v", mise)
 	}
 }

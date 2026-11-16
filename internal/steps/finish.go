@@ -140,7 +140,7 @@ func secretsRestoreDone(ctx context.Context, env *Env) (bool, error) {
 }
 
 func restoreSecrets(ctx context.Context, env *Env) error {
-	r, err := env.Run.Run(ctx, run.Cmd{Name: restoreScript(env)})
+	r, err := env.Run.Run(ctx, run.Cmd{Name: restoreScript(env), Interactive: true})
 	if err != nil || r.Code != 0 {
 		envLogf(env, "  secrets-restore had issues; run it manually later.\n")
 		env.Warnings++

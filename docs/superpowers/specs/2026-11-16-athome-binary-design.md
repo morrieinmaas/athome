@@ -188,3 +188,62 @@ Each migration step updates the docs it changes, in the same PR:
 ## Open questions
 
 None at this stage.
+
+## Build 1: `init --config` beside the bash (migration step 1)
+
+Goal: an `athome` binary whose `init` does everything `bootstrap.sh` does today, proven by
+the unchanged e2e verify scripts, while `bootstrap.sh` stays the installed path.
+
+Decisions:
+
+- Go 1.27, module `github.com/morrieinmaas/athome`, `go test ./...`. Dependencies: stdlib
+  plus `github.com/BurntSushi/toml`. Charm libraries arrive with the TUI (step 3).
+- Build 1 has no prompts. Every question `bootstrap.sh` asks is answered from flags, env,
+  file or default, as with `--non-interactive` today. Plain prompts arrive with step 2.
+- Teardown stays `teardown.sh`; `scenario.sh` picks the bootstrap runner from
+  `ATHOME_E2E_RUNNER` (`bash`, the default, or `binary`).
+
+Acceptance criteria:
+
+1. `athome init` accepts `--ref`, `--machine`, `--config`, `--no-agents`, `--import-from`,
+   `--import-ssh`, `--import-ssh-bw`, `--non-interactive`, `-y`, `--yes`, `-h`, `--help`;
+   any other flag exits 2.
+2. Config discovery and precedence match `bootstrap.sh`: `--config`, then
+   `$repo_root/bootstrap.local.toml`, then `~/.config/athome/bootstrap.toml`; `ATHOME_*`
+   env over file over default; `--machine` and `--no-agents` over the file.
+3. An unreadable `--config`, `machine` not `personal|work`, or `includeAgents` not
+   `true|false` exits 2 with a message naming the value.
+4. `~/.config/chezmoi/chezmoi.toml` `[data]` written by `athome init` equals the one
+   `bootstrap.sh` writes for the same inputs, key for key.
+5. Each step is a name, a check and an apply; a step whose check passes is skipped.
+6. A run that fails at step N, rerun, skips steps before N and resumes at N.
+7. A second `athome init` with the same inputs applies no step.
+8. With `ATHOME_CI` set no GitHub key upload is attempted.
+9. The e2e containers (arch, fedora) pass `verify-baseline.sh`, `verify.sh` and
+   `verify-teardown.sh` unchanged with `ATHOME_E2E_RUNNER=binary`; CI runs both runners.
+10. `athome version` prints the version and commit set at build time.
+
+Edge cases: an empty config file; a config value with `=` or `#` inside quotes; an
+existing ssh key with no `.pub`; `~/.local/share/chezmoi` already a different symlink or a
+real directory; a detached HEAD; `gh` missing or not authenticated; a non-UTF-8 or
+space-containing `$HOME` path; `--import-ssh` without `--import-from`.
+
+Test list (unit unless marked):
+
+- config: flag over env over file over default, per key; discovery order with all three
+  files present; each validation error above exits 2; the empty file gives defaults;
+  `a = "x=y # z"` reads `x=y # z`; `test/e2e/bootstrap.toml` loads to its known values.
+- chezmoi data: for `test/e2e/bootstrap.toml`, the written `[data]` equals a golden file
+  captured from `bootstrap.sh`.
+- steps core: a passing check skips apply; a failing apply stops the run and names the
+  step; rerun resumes at it; two full runs, the second applies nothing.
+- each step: check and apply against a temp home with external tools faked; recorded
+  commands match the bash per OS (darwin `nb`, fedora `dnf`, arch `yay`, `gh` as
+  `github-cli` on arch).
+- github: `ATHOME_CI` set records no `gh ssh-key add`; an already-registered key records
+  only the signing-key check.
+- cli: every flag above parses with its effect; an unknown flag exits 2; `version` output.
+- e2e: arch and fedora with `ATHOME_E2E_RUNNER=binary`, unchanged verify scripts.
+
+Out of scope for build 1: the installer switch, release builds, prompts, the TUI,
+`teardown`, `secrets`, `update`, `status`, `machine`, `keys`.

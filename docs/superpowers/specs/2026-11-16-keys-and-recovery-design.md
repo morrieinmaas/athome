@@ -1,7 +1,7 @@
 # Keys, secrets and recovery: design
 
 **Date:** 2026-11-16
-**Status:** Draft, awaiting review
+**Status:** Approved 2026-11-16, pre-implementation
 **Repo:** athome
 **Build order:** 2 of 4. Needs `2026-11-16-athome-binary-design.md` (these are its
 subcommands). `2026-11-16-remote-machines-design.md` needs this spec, because

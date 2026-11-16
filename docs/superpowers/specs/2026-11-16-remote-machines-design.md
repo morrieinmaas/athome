@@ -1,7 +1,7 @@
 # Remote dev machines: design
 
 **Date:** 2026-11-16
-**Status:** Draft, awaiting review
+**Status:** Approved 2026-11-16, pre-implementation
 **Repo:** athome
 **Build order:** 3 of 4. Needs `2026-11-16-athome-binary-design.md` (the commands are its
 subcommands) and `2026-11-16-keys-and-recovery-design.md` (box keys, break-glass keys).

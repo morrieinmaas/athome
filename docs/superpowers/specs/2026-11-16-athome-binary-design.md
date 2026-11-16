@@ -1,7 +1,7 @@
 # The athome binary: design
 
 **Date:** 2026-11-16
-**Status:** Draft, awaiting review
+**Status:** Approved 2026-11-16, pre-implementation
 **Repo:** athome
 **Build order:** 1 of 4. Then `2026-11-16-keys-and-recovery-design.md`, then
 `2026-11-16-remote-machines-design.md`, then canopy's `2026-11-16-remote-awareness-design.md`.

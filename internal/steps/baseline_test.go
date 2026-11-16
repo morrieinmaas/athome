@@ -185,20 +185,43 @@ func TestChezmoiApplyCheck(t *testing.T) {
 	})
 }
 
+// nanobrewReady points the nanobrew paths at a temp /opt/nb link and a
+// user-writable prefix, the state the package-manager script leaves behind.
+func nanobrewReady(fx *fixture) (link, prefix string) {
+	fx.T.Helper()
+	prefix = fx.Path("nanobrew-prefix")
+	mustMkdir(fx.T, prefix)
+	link = fx.Path("opt-nb")
+	if err := os.Symlink(prefix, link); err != nil {
+		fx.T.Fatal(err)
+	}
+	fx.T.Cleanup(steps.SetNanobrewPaths(link, prefix))
+	return link, prefix
+}
+
+func rpmHave(fx *fixture, missing string) {
+	for _, p := range []string{"dnf-plugins-core", "rpmfusion-free-release", "rpmfusion-nonfree-release"} {
+		code := 0
+		if p == missing {
+			code = 1
+		}
+		fx.Fake.On("rpm", "-q", p).Return(run.Result{Code: code})
+	}
+}
+
 func TestPackageManagerCheck(t *testing.T) {
 	cases := []struct {
 		name, os, distro string
 		setup            func(fx *fixture)
 	}{
-		{"darwin nb on PATH", "darwin", "", func(fx *fixture) { fx.Fake.Have("nb") }},
+		{"darwin nb on PATH", "darwin", "", func(fx *fixture) { fx.Fake.Have("nb"); nanobrewReady(fx) }},
 		{"darwin nb installed", "darwin", "", func(fx *fixture) {
 			nb := fx.Path("nb")
 			writeFile(fx.T, nb, "#!/bin/sh\n", 0o755)
 			fx.T.Cleanup(steps.SetNanobrewBin(nb))
+			nanobrewReady(fx)
 		}},
-		{"fedora rpmfusion", "linux", "fedora", func(fx *fixture) {
-			fx.Fake.On("rpm", "-q", "rpmfusion-free-release").Return(run.Result{Code: 0})
-		}},
+		{"fedora plugins and rpmfusion", "linux", "fedora", func(fx *fixture) { rpmHave(fx, "") }},
 		{"arch yay", "linux", "arch", func(fx *fixture) { fx.Fake.Have("yay") }},
 	}
 	for _, c := range cases {
@@ -219,9 +242,57 @@ func TestPackageManagerCheck(t *testing.T) {
 			fx := newFixture(t)
 			fx.Env.OS, fx.Env.Distro = c.os, c.distro
 			t.Cleanup(steps.SetNanobrewBin(fx.Path("absent-nb")))
+			t.Cleanup(steps.SetNanobrewPaths(fx.Path("absent-link"), fx.Path("absent-prefix")))
+			rpmHave(fx, "dnf-plugins-core")
 			fx.Fake.On("rpm", "-q", "rpmfusion-free-release").Return(run.Result{Code: 1})
 			if !appliedSet(fx.MustExec(steps.Baseline()))["baseline-package-manager"] {
 				t.Errorf("package manager missing, must be applied:\n%s", fx.dump())
+			}
+		})
+	}
+}
+
+// The script also links /opt/nb and keeps the prefix user-writable (B:938, the
+// template), so nb on PATH alone is not "done".
+func TestPackageManagerCheckDarwinNeedsLinkAndWritablePrefix(t *testing.T) {
+	t.Run("no /opt/nb link", func(t *testing.T) {
+		fx := newFixture(t)
+		fx.Env.OS = "darwin"
+		fx.Fake.Have("nb")
+		_, prefix := nanobrewReady(fx)
+		t.Cleanup(steps.SetNanobrewPaths(fx.Path("no-such-link"), prefix))
+		if !appliedSet(fx.MustExec(steps.Baseline()))["baseline-package-manager"] {
+			t.Errorf("a missing /opt/nb link must re-run the script:\n%s", fx.dump())
+		}
+	})
+	t.Run("prefix not writable", func(t *testing.T) {
+		if os.Getuid() == 0 {
+			t.Skip("root can write anywhere")
+		}
+		fx := newFixture(t)
+		fx.Env.OS = "darwin"
+		fx.Fake.Have("nb")
+		_, prefix := nanobrewReady(fx)
+		if err := os.Chmod(prefix, 0o500); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { os.Chmod(prefix, 0o700) })
+		if !appliedSet(fx.MustExec(steps.Baseline()))["baseline-package-manager"] {
+			t.Errorf("a root-owned prefix must re-run the script:\n%s", fx.dump())
+		}
+	})
+}
+
+// The script installs dnf-plugins-core and both RPM Fusion releases; all three
+// must be present for the step to be done.
+func TestPackageManagerCheckFedoraNeedsAllThree(t *testing.T) {
+	for _, missing := range []string{"dnf-plugins-core", "rpmfusion-free-release", "rpmfusion-nonfree-release"} {
+		t.Run("missing "+missing, func(t *testing.T) {
+			fx := newFixture(t)
+			fx.Env.OS, fx.Env.Distro = "linux", "fedora"
+			rpmHave(fx, missing)
+			if !appliedSet(fx.MustExec(steps.Baseline()))["baseline-package-manager"] {
+				t.Errorf("without %s the script must run:\n%s", missing, fx.dump())
 			}
 		})
 	}

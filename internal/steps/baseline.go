@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/morrieinmaas/athome/internal/run"
 )
@@ -17,7 +18,11 @@ const (
 	nanobrewBinDir    = "/opt/nanobrew/prefix/bin"
 )
 
-var nanobrewBin = filepath.Join(nanobrewBinDir, "nb")
+var (
+	nanobrewBin    = filepath.Join(nanobrewBinDir, "nb")
+	nanobrewLink   = "/opt/nb" // the short prefix nb relocates binaries to
+	nanobrewPrefix = "/opt/nanobrew/prefix"
+)
 
 // Baseline ports B:758-951: chezmoi init --apply (config files only), then the
 // baseline deps bootstrap's own later steps need. Failures here are warnings.
@@ -195,19 +200,37 @@ func chezmoiApplyDone(ctx context.Context, env *Env) (bool, error) {
 	return err == nil && res.Code == 0, nil
 }
 
-// packageManagerDone: the OS's package manager is already set up.
+// nanobrewInstalled: nb is on PATH or in nanobrew's own bin dir.
+func nanobrewInstalled(env *Env) bool {
+	if _, err := env.Run.LookPath("nb"); err == nil {
+		return true
+	}
+	_, err := os.Stat(nanobrewBin)
+	return err == nil
+}
+
+// packageManagerDone: the OS's package manager is already set up, as far as the
+// pm script (run_once_before_01) sets it up.
 func packageManagerDone(ctx context.Context, env *Env) (bool, error) {
 	prependBaselinePath(env)
 	switch {
 	case env.OS == "darwin":
-		if _, err := env.Run.LookPath("nb"); err == nil {
-			return true, nil
+		if !nanobrewInstalled(env) {
+			return false, nil
 		}
-		_, err := os.Stat(nanobrewBin)
-		return err == nil, nil
+		// The script also links /opt/nb and keeps the prefix user-writable.
+		if _, err := os.Stat(nanobrewLink); err != nil {
+			return false, nil
+		}
+		return syscall.Access(nanobrewPrefix, 2) == nil, nil // 2 = W_OK
 	case env.Distro == "fedora":
-		res, err := env.Run.Run(ctx, run.Cmd{Name: "rpm", Args: []string{"-q", "rpmfusion-free-release"}})
-		return err == nil && res.Code == 0, nil
+		for _, pkg := range []string{"dnf-plugins-core", "rpmfusion-free-release", "rpmfusion-nonfree-release"} {
+			res, err := env.Run.Run(ctx, run.Cmd{Name: "rpm", Args: []string{"-q", pkg}})
+			if err != nil || res.Code != 0 {
+				return false, nil
+			}
+		}
+		return true, nil
 	}
 	_, err := env.Run.LookPath("yay")
 	return err == nil, nil

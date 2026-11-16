@@ -13,3 +13,9 @@ func SetHostnameSources(osHost func() (string, error), etcPath string) (restore 
 	osHostname, etcHostname = osHost, etcPath
 	return func() { osHostname, etcHostname = oldOS, oldEtc }
 }
+
+func SetNanobrewPaths(link, prefix string) (restore func()) {
+	oldLink, oldPrefix := nanobrewLink, nanobrewPrefix
+	nanobrewLink, nanobrewPrefix = link, prefix
+	return func() { nanobrewLink, nanobrewPrefix = oldLink, oldPrefix }
+}

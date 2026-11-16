@@ -30,6 +30,12 @@ func Baseline() []Step {
 	}
 }
 
+// FollowupLogPath is where chezmoi's scripts append manual-step notes (B:769).
+// Like bash it lives in $TMPDIR, so home does not enter the path.
+func FollowupLogPath(_ string) string {
+	return filepath.Join(tmpDir(), "athome-bootstrap-followup.log")
+}
+
 func baselineLog(env *Env, format string, a ...any) {
 	if env.Log != nil {
 		fmt.Fprintf(env.Log, format, a...)
@@ -44,7 +50,7 @@ func baselineWarn(env *Env, format string, a ...any) {
 // chezmoiApply is B:769-922: a failed init is a warning, never an error.
 func chezmoiApply(ctx context.Context, env *Env) error {
 	environ := append(os.Environ(),
-		"ATHOME_FOLLOWUP_LOG="+filepath.Join(tmpDir(), "athome-bootstrap-followup.log"),
+		"ATHOME_FOLLOWUP_LOG="+FollowupLogPath(env.Home),
 		"ATHOME_BOOTSTRAP=1",
 		"PATH="+nanobrewBinDir+":"+os.Getenv("PATH"),
 	)
@@ -57,9 +63,10 @@ func chezmoiApply(ctx context.Context, env *Env) error {
 	}
 	source := filepath.Join(env.RepoRoot, "home")
 	res, err := env.Run.Run(ctx, run.Cmd{
-		Name: "chezmoi",
-		Args: []string{"init", "--apply", "--force", "--exclude=scripts", "--source=" + source},
-		Env:  environ,
+		Name:        "chezmoi",
+		Args:        []string{"init", "--apply", "--force", "--exclude=scripts", "--source=" + source},
+		Env:         environ,
+		Interactive: true,
 	})
 	if err != nil {
 		baselineWarn(env, "chezmoi init could not run: %v; re-run `mise run apply` to finish", err)
@@ -132,7 +139,9 @@ func packagesDone(_ context.Context, env *Env) (bool, error) {
 }
 
 func installPackages(ctx context.Context, env *Env) error {
-	res, err := env.Run.Run(ctx, pmInstallCmd(env, strings.Fields(baselinePkgs)...))
+	install := pmInstallCmd(env, strings.Fields(baselinePkgs)...)
+	install.Interactive = true
+	res, err := env.Run.Run(ctx, install)
 	if err != nil || res.Code != 0 {
 		baselineWarn(env, "baseline packages (%s) failed; re-run bootstrap", baselinePkgs)
 	}
@@ -196,6 +205,9 @@ func installMise(ctx context.Context, env *Env) error {
 
 // chezmoiApplyDone: the home dir already matches the source (exit 0 of verify).
 func chezmoiApplyDone(ctx context.Context, env *Env) (bool, error) {
+	// B:770: notes from an earlier run must not bleed into this one, even when
+	// the apply is skipped.
+	os.WriteFile(FollowupLogPath(env.Home), nil, 0o644)
 	res, err := env.Run.Run(ctx, run.Cmd{
 		Name: "chezmoi",
 		Args: []string{"verify", "--source=" + filepath.Join(env.RepoRoot, "home"), "--exclude=scripts"},

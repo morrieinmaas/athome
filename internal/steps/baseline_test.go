@@ -250,3 +250,43 @@ func TestPackageManagerCheck(t *testing.T) {
 		})
 	}
 }
+
+func TestChezmoiInitAndInstallsAreInteractive(t *testing.T) {
+	fx := newFixture(t)
+	fx.Env.OS, fx.Env.Distro = "darwin", ""
+	t.Cleanup(steps.SetNanobrewBin(fx.Path("absent-nb")))
+	fx.MustExec(steps.Baseline())
+	if c := fx.callsTo("chezmoi", chezmoiInit(fx)...); len(c) != 1 || !c[0].Interactive {
+		t.Errorf("chezmoi init --apply must be interactive: %+v", c)
+	}
+	if c := fx.callsTo("nb", "install"); len(c) != 1 || !c[0].Interactive {
+		t.Errorf("the package install must be interactive: %+v", c)
+	}
+}
+
+// B:769-770: the follow-up log is truncated before chezmoi-apply, even when the
+// apply itself is skipped, so notes from an old run never show up again.
+func TestFollowupLogTruncated(t *testing.T) {
+	fx := newFixture(t)
+	t.Setenv("TMPDIR", t.TempDir())
+	log := steps.FollowupLogPath(fx.Home)
+	writeFile(t, log, "  * stale note\n", 0o644)
+	fx.Fake.On("chezmoi", chezmoiVerify(fx)...).Return(run.Result{Code: 0})
+	fx.MustExec(steps.Baseline())
+	if got := readFile(t, log); got != "" {
+		t.Errorf("follow-up log = %q, want it truncated", got)
+	}
+	if !strings.HasSuffix(log, "athome-bootstrap-followup.log") {
+		t.Errorf("log path %q", log)
+	}
+}
+
+func TestChezmoiApplyPassesFollowupLog(t *testing.T) {
+	fx := newFixture(t)
+	t.Setenv("TMPDIR", t.TempDir())
+	fx.MustExec(steps.Baseline())
+	calls := fx.callsTo("chezmoi", chezmoiInit(fx)...)
+	if len(calls) != 1 || !strings.Contains(strings.Join(calls[0].Env, "\n"), "ATHOME_FOLLOWUP_LOG="+steps.FollowupLogPath(fx.Home)) {
+		t.Errorf("chezmoi init env lacks the follow-up log: %+v", calls)
+	}
+}

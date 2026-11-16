@@ -203,5 +203,10 @@ go build -o ~/.local/bin/athome ./cmd/athome
 athome init --config <file> --machine personal
 ```
 
+Run `athome init` from the clone. It also finds the repo through the
+`sourceDir` pinned in `~/.config/chezmoi/chezmoi.toml`, or at
+`~/.local/share/chezmoi`, so it works from any directory once chezmoi has
+the clone.
+
 `scripts/bootstrap.sh` stays the supported install path for now; the binary is
 exercised in CI next to it (the e2e `binary` runner) but is not yet the default.

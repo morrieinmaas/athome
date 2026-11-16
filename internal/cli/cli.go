@@ -326,7 +326,8 @@ func printSummary(w io.Writer, rep steps.Report) {
 }
 
 // findRepoRoot looks for .chezmoiroot at or above the working directory, then
-// falls back to the parent of the sourceDir pinned in chezmoi's config.
+// falls back to the parent of the sourceDir pinned in chezmoi's config, then to
+// chezmoi's own clone at ~/.local/share/chezmoi.
 func findRepoRoot(home string) (string, error) {
 	dir, err := os.Getwd()
 	if err != nil {
@@ -345,7 +346,10 @@ func findRepoRoot(home string) (string, error) {
 	if root := pinnedRepoRoot(home); root != "" {
 		return root, nil
 	}
-	return "", errors.New("athome repo not found: no .chezmoiroot at or above the current directory, and no sourceDir pinned in chezmoi's config")
+	if root := chezmoiCloneRoot(home); root != "" {
+		return root, nil
+	}
+	return "", errors.New("athome repo not found: no .chezmoiroot at or above the current directory, no sourceDir pinned in chezmoi's config, and none in ~/.local/share/chezmoi")
 }
 
 func pinnedRepoRoot(home string) string {
@@ -360,6 +364,19 @@ func pinnedRepoRoot(home string) string {
 		src = filepath.Join(home, rest)
 	}
 	root := filepath.Dir(filepath.Clean(src))
+	if _, err := os.Stat(filepath.Join(root, ".chezmoiroot")); err != nil {
+		return ""
+	}
+	return root
+}
+
+// chezmoiCloneRoot returns ~/.local/share/chezmoi, with a symlink resolved,
+// when it holds .chezmoiroot.
+func chezmoiCloneRoot(home string) string {
+	root, err := filepath.EvalSymlinks(filepath.Join(home, ".local", "share", "chezmoi"))
+	if err != nil {
+		return ""
+	}
 	if _, err := os.Stat(filepath.Join(root, ".chezmoiroot")); err != nil {
 		return ""
 	}

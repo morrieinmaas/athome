@@ -63,6 +63,54 @@ func TestRepoRootFromPinnedSourceDir(t *testing.T) {
 	}
 }
 
+// With no cwd repo and no pin, the clone chezmoi keeps at ~/.local/share/chezmoi
+// is the repo, whether it is a directory or a symlink to one.
+func TestRepoRootFromChezmoiClone(t *testing.T) {
+	mkRepo := func(t *testing.T, dir string) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Join(dir, "home"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, ".chezmoiroot"), []byte("home\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Run("directory", func(t *testing.T) {
+		home := sandbox(t)
+		mkRepo(t, filepath.Join(home, ".local", "share", "chezmoi"))
+		inNoRepo(t)
+		if code, _, errOut := runMain("init", "--machine", "laptop"); code != 2 {
+			t.Errorf("exit = %d stderr %q, want 2 (repo found at ~/.local/share/chezmoi)", code, errOut)
+		}
+	})
+	t.Run("symlink", func(t *testing.T) {
+		home := sandbox(t)
+		target := t.TempDir()
+		mkRepo(t, target)
+		link := filepath.Join(home, ".local", "share", "chezmoi")
+		if err := os.MkdirAll(filepath.Dir(link), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(target, link); err != nil {
+			t.Fatal(err)
+		}
+		inNoRepo(t)
+		if code, _, errOut := runMain("init", "--machine", "laptop"); code != 2 {
+			t.Errorf("exit = %d stderr %q, want 2 (repo found via the symlink)", code, errOut)
+		}
+	})
+	t.Run("no .chezmoiroot there", func(t *testing.T) {
+		home := sandbox(t)
+		if err := os.MkdirAll(filepath.Join(home, ".local", "share", "chezmoi"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		inNoRepo(t)
+		if code, _, _ := runMain("init", "--machine", "laptop"); code != 1 {
+			t.Errorf("exit = %d, want 1 (not a repo)", code)
+		}
+	})
+}
+
 // R5: a repo path chezmoi.toml cannot pin is rejected before any step.
 func TestRepoPathMustBeUTF8(t *testing.T) {
 	if err := cli.CheckRepoPath("/ok/repo"); err != nil {

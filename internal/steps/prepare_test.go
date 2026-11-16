@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/morrieinmaas/athome/internal/run"
+	"github.com/morrieinmaas/athome/internal/run/runtest"
 	"github.com/morrieinmaas/athome/internal/steps"
 )
 
@@ -248,7 +249,7 @@ func TestSudoIsNotAStep(t *testing.T) {
 	}
 }
 
-func sudoVCount(f *run.Fake) int {
+func sudoVCount(f *runtest.Fake) int {
 	n := 0
 	for _, c := range f.Calls() {
 		if c.Name == "sudo" && len(c.Args) == 1 && c.Args[0] == "-v" {

@@ -13,6 +13,7 @@ import (
 	"github.com/morrieinmaas/athome/internal/cli"
 	"github.com/morrieinmaas/athome/internal/config"
 	"github.com/morrieinmaas/athome/internal/run"
+	"github.com/morrieinmaas/athome/internal/run/runtest"
 	"github.com/morrieinmaas/athome/internal/steps"
 )
 
@@ -281,7 +282,7 @@ func TestImportSSHAlone(t *testing.T) {
 	if !sOpts.ImportSSH || sOpts.ImportFrom != "" {
 		t.Errorf("opts = %+v, want ImportSSH set and no ImportFrom", sOpts)
 	}
-	f := run.NewFake()
+	f := runtest.NewFake()
 	defer cli.SetRunner(f)()
 	cfg := tmpFile(t, "a.toml", "machine = \"personal\"\nincludeAgents = false\n")
 	code, _, errOut := runMain("init", "--import-ssh", "--config", cfg, "--non-interactive")
@@ -474,7 +475,7 @@ func TestNonUTF8RepoIsUsageError(t *testing.T) {
 // U13: sudo is requested only when a step first runs a sudo command, and it
 // is not a step.
 func TestSudoStartsWhenAStepNeedsIt(t *testing.T) {
-	f := run.NewFake()
+	f := runtest.NewFake()
 	env := &steps.Env{Run: f, OS: "linux"}
 	list := []steps.Step{
 		{
@@ -518,7 +519,7 @@ func TestSudoStartsWhenAStepNeedsIt(t *testing.T) {
 }
 
 func TestNoSudoWhenNoStepNeedsIt(t *testing.T) {
-	f := run.NewFake()
+	f := runtest.NewFake()
 	env := &steps.Env{Run: f, OS: "linux"}
 	list := []steps.Step{{
 		Name:  "plain",
@@ -544,7 +545,7 @@ func TestInitWithValidArgsOnlyTouchesTheFake(t *testing.T) {
 	if p, err := exec.LookPath("sh"); err == nil {
 		t.Fatalf("PATH reaches real binaries (%s); TestMain must empty it", p)
 	}
-	f := run.NewFake()
+	f := runtest.NewFake()
 	defer cli.SetRunner(f)()
 	cfg := tmpFile(t, "a.toml", "machine = \"personal\"\nincludeAgents = false\n")
 	code, _, _ := runMain("init", "--config", cfg, "--non-interactive")

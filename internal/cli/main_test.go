@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/morrieinmaas/athome/internal/cli"
-	"github.com/morrieinmaas/athome/internal/run"
+	"github.com/morrieinmaas/athome/internal/run/runtest"
 )
 
 // TestMain makes it impossible for a test in this package to run a real tool:
@@ -26,7 +26,7 @@ func TestMain(m *testing.M) {
 	}
 	os.Setenv("PATH", dir)
 	os.Setenv("TMPDIR", tmp)
-	cli.SetRunner(run.NewFake())
+	cli.SetRunner(runtest.NewFake())
 	code := m.Run()
 	if cli.RealRunnerInstalled() {
 		fmt.Fprintln(os.Stderr, "cli tests: a test left the real runner installed; use cli.SetRunner and restore it")

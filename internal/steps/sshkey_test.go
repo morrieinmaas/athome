@@ -366,8 +366,8 @@ func TestKeyFlags(t *testing.T) {
 	t.Run("generate does not force the upload", func(t *testing.T) {
 		fx := newFixture(t)
 		fx.MustExec(steps.SSHKey())
-		if fx.Env.FreshKey || !fx.Env.KeyGenerated {
-			t.Errorf("FreshKey=%v KeyGenerated=%v, want false and true", fx.Env.FreshKey, fx.Env.KeyGenerated)
+		if fx.Env.ForceUpload || !fx.Env.KeyGenerated {
+			t.Errorf("ForceUpload=%v KeyGenerated=%v, want false and true", fx.Env.ForceUpload, fx.Env.KeyGenerated)
 		}
 	})
 	t.Run("reupload forces the upload", func(t *testing.T) {
@@ -375,8 +375,8 @@ func TestKeyFlags(t *testing.T) {
 		fx.PutKey("PRIV", "ssh-ed25519 AAAA x\n")
 		fx.Env.Cfg.Data["sshKeyAction"] = "reupload"
 		fx.MustExec(steps.SSHKey())
-		if !fx.Env.FreshKey || fx.Env.KeyGenerated {
-			t.Errorf("FreshKey=%v KeyGenerated=%v, want true and false", fx.Env.FreshKey, fx.Env.KeyGenerated)
+		if !fx.Env.ForceUpload || fx.Env.KeyGenerated {
+			t.Errorf("ForceUpload=%v KeyGenerated=%v, want true and false", fx.Env.ForceUpload, fx.Env.KeyGenerated)
 		}
 	})
 }

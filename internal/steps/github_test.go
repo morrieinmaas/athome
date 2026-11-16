@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/morrieinmaas/athome/internal/run"
+	"github.com/morrieinmaas/athome/internal/run/runtest"
 	"github.com/morrieinmaas/athome/internal/steps"
 )
 
@@ -77,7 +78,7 @@ func TestCISkipsUpload(t *testing.T) {
 func TestNoGh(t *testing.T) {
 	t.Run("gh missing", func(t *testing.T) {
 		fx := ghFixture(t)
-		fx.Fake = run.NewFake()
+		fx.Fake = runtest.NewFake()
 		fx.Env.Run = fx.Fake
 		fx.Fake.On("chezmoi", "execute-template", "{{ .chezmoi.hostname }}").Return(run.Result{Stdout: testHost + "\n"})
 		if _, err := fx.Exec(steps.GitHub()); err != nil {
@@ -332,7 +333,7 @@ func TestRemoteToSSH(t *testing.T) {
 func TestFreshKeyForcesUpload(t *testing.T) {
 	t.Run("ssh already authenticates", func(t *testing.T) {
 		fx := ghFixture(t)
-		fx.Env.FreshKey = true
+		fx.Env.ForceUpload = true
 		fx.Fake.On("ssh", sshProbe...).Return(run.Result{Stderr: "Hi athome! You've successfully authenticated, but GitHub does not provide shell access.\n", Code: 1})
 		fx.MustExec(steps.GitHub())
 		if len(fx.authAdds()) != 1 || len(fx.signingAdds()) != 1 {
@@ -341,7 +342,7 @@ func TestFreshKeyForcesUpload(t *testing.T) {
 	})
 	t.Run("another local key is registered", func(t *testing.T) {
 		fx := ghFixture(t)
-		fx.Env.FreshKey = true
+		fx.Env.ForceUpload = true
 		other := "AAAAC3NzaC1lZDI1NTE5AAAAIotherkeyblob"
 		fx.PutKey("PRIV", localPub)
 		writeFile(t, fx.Path(".ssh", "other_ed25519.pub"), "ssh-ed25519 "+other+" x@y\n", 0o644)

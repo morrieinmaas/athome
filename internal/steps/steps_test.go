@@ -12,6 +12,7 @@ import (
 
 	"github.com/morrieinmaas/athome/internal/config"
 	"github.com/morrieinmaas/athome/internal/run"
+	"github.com/morrieinmaas/athome/internal/run/runtest"
 	"github.com/morrieinmaas/athome/internal/steps"
 )
 
@@ -29,7 +30,7 @@ type fixture struct {
 	T    *testing.T
 	Home string
 	Repo string
-	Fake *run.Fake
+	Fake *runtest.Fake
 	Log  *bytes.Buffer
 	Env  *steps.Env
 }
@@ -61,7 +62,7 @@ func newFixture(t *testing.T) *fixture {
 	writeFile(t, filepath.Join(repo, "home", "dot_config", "git", "hooks", "executable_pre-commit"), "#!/bin/sh\n# pre-commit\n", 0o644)
 	writeFile(t, filepath.Join(repo, "home", "dot_config", "git", "hooks", "executable_commit-msg"), "#!/bin/sh\n# commit-msg\n", 0o644)
 
-	f := run.NewFake()
+	f := runtest.NewFake()
 	f.On("chezmoi", "execute-template", "{{ .chezmoi.hostname }}").Return(run.Result{Stdout: testHost + "\n"})
 	f.On("chezmoi", "verify", "--source="+filepath.Join(repo, "home"), "--exclude=scripts").Return(run.Result{Code: 1}) // a fresh home differs from the source
 	f.On("git", "-C", repo, "rev-parse", "--abbrev-ref", "HEAD").Return(run.Result{Stdout: "main\n"})
@@ -85,7 +86,7 @@ func newFixture(t *testing.T) *fixture {
 // chezmoi and mise installers leave their binary in ~/.local/bin. A test that
 // wants a silently failing installer sets fx.Env.Run = fx.Fake.
 type installSim struct {
-	*run.Fake
+	*runtest.Fake
 	home string
 }
 
@@ -240,7 +241,7 @@ func mk(r *recorder, done map[string]bool, name string, applyErr error) steps.St
 }
 
 func coreEnv() *steps.Env {
-	return &steps.Env{Run: run.NewFake(), Log: &bytes.Buffer{}}
+	return &steps.Env{Run: runtest.NewFake(), Log: &bytes.Buffer{}}
 }
 
 func TestSkipDone(t *testing.T) {

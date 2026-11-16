@@ -27,8 +27,8 @@ type Env struct {
 	Opts         Opts
 	Log          io.Writer
 	Warnings     int
-	FreshKey     bool     // set by SSHKey on sshKeyAction=reupload only (B:436-438); forces the GitHub upload
-	KeyGenerated bool     // set by SSHKey when it generated this run's key; only adds a note
+	ForceUpload  bool     // set by SSHKey on sshKeyAction=reupload only (B:436-438); forces the GitHub upload
+	KeyGenerated bool     // set by SSHKey when it generated this run's key; ssh-bw-backup runs only then, and github adds a note
 	DataChanged  bool     // set by chezmoi-data when it wrote chezmoi.toml; chezmoi-apply must then run (bash always re-inits after seeding)
 	Cleanup      []func() // run in reverse order when the run ends, see RunCleanup
 }

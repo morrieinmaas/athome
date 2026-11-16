@@ -52,7 +52,6 @@ func skCopy(src, dst string, mode os.FileMode) error {
 // Bitwarden (B:395-412), generate (B:422-453), regenerate a missing .pub, and
 // copy a freshly generated key to Bitwarden (B:464-496).
 func SSHKey() []Step {
-	fresh := false // set by ssh-keygen, read by ssh-bw-backup
 	return []Step{
 		{Name: "ssh-import-dir", Check: skImportDirCheck, Apply: skImportDirApply},
 		{Name: "ssh-import-bw", Check: skImportBWCheck, Apply: skImportBWApply},
@@ -63,7 +62,6 @@ func SSHKey() []Step {
 				if err := skKeygenApply(ctx, env); err != nil {
 					return err
 				}
-				fresh = true
 				env.KeyGenerated = true
 				return nil
 			},
@@ -71,7 +69,7 @@ func SSHKey() []Step {
 		{Name: "ssh-pub", Check: skPubCheck, Apply: skPubApply},
 		{
 			Name:  "ssh-bw-backup",
-			Check: func(context.Context, *Env) (bool, error) { return !fresh, nil },
+			Check: func(_ context.Context, env *Env) (bool, error) { return !env.KeyGenerated, nil },
 			Apply: func(ctx context.Context, env *Env) error { return skBWBackup(ctx, env) },
 		},
 	}
@@ -175,7 +173,7 @@ func skImportBWApply(ctx context.Context, env *Env) error {
 func skKeygenCheck(ctx context.Context, env *Env) (bool, error) {
 	if fileExists(skKeyPath(ctx, env)) {
 		if env.Cfg.Data["sshKeyAction"] == "reupload" {
-			env.FreshKey = true
+			env.ForceUpload = true
 		}
 		// ponytail: sshKeyAction=generate rotates the key on every run, as bash
 		// does, so the "second run applies nothing" criterion excludes it.

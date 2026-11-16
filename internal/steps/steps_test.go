@@ -56,6 +56,7 @@ func newFixture(t *testing.T) *fixture {
 
 	f := run.NewFake()
 	f.On("chezmoi", "execute-template", "{{ .chezmoi.hostname }}").Return(run.Result{Stdout: testHost + "\n"})
+	f.On("chezmoi", "verify", "--source="+filepath.Join(repo, "home"), "--exclude=scripts").Return(run.Result{Code: 1}) // a fresh home differs from the source
 	f.On("git", "-C", repo, "rev-parse", "--abbrev-ref", "HEAD").Return(run.Result{Stdout: "main\n"})
 
 	log := &bytes.Buffer{}

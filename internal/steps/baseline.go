@@ -16,13 +16,14 @@ const (
 	nanobrewBinDir = "/opt/nanobrew/prefix/bin"
 )
 
+var nanobrewBin = filepath.Join(nanobrewBinDir, "nb")
+
 // Baseline ports B:758-951: chezmoi init --apply (config files only), then the
 // baseline deps bootstrap's own later steps need. Failures here are warnings.
 func Baseline() []Step {
-	never := func(context.Context, *Env) (bool, error) { return false, nil }
 	return []Step{
-		{Name: "chezmoi-apply", Check: never, Apply: chezmoiApply},
-		{Name: "baseline-package-manager", Check: never, Apply: packageManager},
+		{Name: "chezmoi-apply", Check: chezmoiApplyDone, Apply: chezmoiApply},
+		{Name: "baseline-package-manager", Check: packageManagerDone, Apply: packageManager},
 		{Name: "baseline-packages", Check: packagesDone, Apply: installPackages},
 		{Name: "baseline-project-dirs", Check: projectDirsDone, Apply: projectDirs},
 		{Name: "baseline-mise", Check: miseDone, Apply: installMise},
@@ -191,4 +192,30 @@ func installMise(ctx context.Context, env *Env) error {
 		baselineWarn(env, "mise install failed; re-run bootstrap")
 	}
 	return nil
+}
+
+// chezmoiApplyDone: the home dir already matches the source (exit 0 of verify).
+func chezmoiApplyDone(ctx context.Context, env *Env) (bool, error) {
+	res, err := env.Run.Run(ctx, run.Cmd{
+		Name: "chezmoi",
+		Args: []string{"verify", "--source=" + filepath.Join(env.RepoRoot, "home"), "--exclude=scripts"},
+	})
+	return err == nil && res.Code == 0, nil
+}
+
+// packageManagerDone: the OS's package manager is already set up.
+func packageManagerDone(ctx context.Context, env *Env) (bool, error) {
+	switch {
+	case env.OS == "darwin":
+		if _, err := env.Run.LookPath("nb"); err == nil {
+			return true, nil
+		}
+		_, err := os.Stat(nanobrewBin)
+		return err == nil, nil
+	case env.Distro == "fedora":
+		res, err := env.Run.Run(ctx, run.Cmd{Name: "rpm", Args: []string{"-q", "rpmfusion-free-release"}})
+		return err == nil && res.Code == 0, nil
+	}
+	_, err := env.Run.LookPath("yay")
+	return err == nil, nil
 }

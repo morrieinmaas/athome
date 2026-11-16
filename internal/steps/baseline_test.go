@@ -175,3 +175,78 @@ func TestMiseBinary(t *testing.T) {
 		}
 	})
 }
+
+func chezmoiVerify(fx *fixture) []string {
+	return []string{"verify", "--source=" + filepath.Join(fx.Repo, "home"), "--exclude=scripts"}
+}
+
+func appliedSet(rep steps.Report) map[string]bool {
+	m := map[string]bool{}
+	for _, n := range rep.Applied {
+		m[n] = true
+	}
+	return m
+}
+
+// Criterion 7: a second run applies neither chezmoi-apply nor the package manager
+// once they are in place.
+func TestChezmoiApplyCheck(t *testing.T) {
+	t.Run("verify passes: skipped, no init", func(t *testing.T) {
+		fx := newFixture(t)
+		fx.Fake.On("chezmoi", chezmoiVerify(fx)...).Return(run.Result{Code: 0})
+		rep := fx.MustExec(steps.Baseline())
+		if appliedSet(rep)["chezmoi-apply"] || fx.called("chezmoi", "init") {
+			t.Errorf("a verified home must not be applied again:\n%s", fx.dump())
+		}
+	})
+	t.Run("verify fails: applied", func(t *testing.T) {
+		fx := newFixture(t)
+		fx.Fake.On("chezmoi", chezmoiVerify(fx)...).Return(run.Result{Code: 1})
+		rep := fx.MustExec(steps.Baseline())
+		if !appliedSet(rep)["chezmoi-apply"] {
+			t.Errorf("a differing home must be applied:\n%s", fx.dump())
+		}
+	})
+}
+
+func TestPackageManagerCheck(t *testing.T) {
+	cases := []struct {
+		name, os, distro string
+		setup            func(fx *fixture)
+	}{
+		{"darwin nb on PATH", "darwin", "", func(fx *fixture) { fx.Fake.Have("nb") }},
+		{"darwin nb installed", "darwin", "", func(fx *fixture) {
+			nb := fx.Path("nb")
+			writeFile(fx.T, nb, "#!/bin/sh\n", 0o755)
+			fx.T.Cleanup(steps.SetNanobrewBin(nb))
+		}},
+		{"fedora rpmfusion", "linux", "fedora", func(fx *fixture) {
+			fx.Fake.On("rpm", "-q", "rpmfusion-free-release").Return(run.Result{Code: 0})
+		}},
+		{"arch yay", "linux", "arch", func(fx *fixture) { fx.Fake.Have("yay") }},
+	}
+	for _, c := range cases {
+		t.Run(c.name+" is done", func(t *testing.T) {
+			fx := newFixture(t)
+			fx.Env.OS, fx.Env.Distro = c.os, c.distro
+			if c.os == "darwin" {
+				t.Cleanup(steps.SetNanobrewBin(fx.Path("absent-nb")))
+			}
+			c.setup(fx)
+			if appliedSet(fx.MustExec(steps.Baseline()))["baseline-package-manager"] {
+				t.Errorf("package manager already set up, must be skipped:\n%s", fx.dump())
+			}
+		})
+	}
+	for _, c := range cases {
+		t.Run(c.name+" missing is applied", func(t *testing.T) {
+			fx := newFixture(t)
+			fx.Env.OS, fx.Env.Distro = c.os, c.distro
+			t.Cleanup(steps.SetNanobrewBin(fx.Path("absent-nb")))
+			fx.Fake.On("rpm", "-q", "rpmfusion-free-release").Return(run.Result{Code: 1})
+			if !appliedSet(fx.MustExec(steps.Baseline()))["baseline-package-manager"] {
+				t.Errorf("package manager missing, must be applied:\n%s", fx.dump())
+			}
+		})
+	}
+}

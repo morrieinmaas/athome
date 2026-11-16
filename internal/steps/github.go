@@ -58,10 +58,11 @@ func GitHub() []Step {
 				}
 				return false, nil
 			case ghUpload:
-				// An earlier run seeded ~/.ssh/config and still no key scope: the
-				// upload fell back to manual, which the user finishes by hand. A
-				// failed `gh ssh-key add` (scopes present) is not done and retries.
-				if len(ghMissingScopes(ctx, env)) > 0 && ghSSHConfigSeeded(env, p) {
+				// No key scope and the refresh cannot help (an env token) or was
+				// refused earlier (the marker): the upload is manual, which the
+				// user finishes by hand. A failed `gh ssh-key add` (scopes
+				// present) is not done and retries.
+				if len(ghMissingScopes(ctx, env)) > 0 && (os.Getenv("GITHUB_TOKEN") != "" || fileExists(ghManualMarker(env))) {
 					ghManualUpload(env, p)
 					return true, nil
 				}
@@ -250,8 +251,8 @@ func ghSigningHint(env *Env, p ghPlan) {
 	envLogf(env, "      gh ssh-key add %s --title \"%s-sign\" --type signing\n", p.signPub, p.host)
 }
 
-// ghAdd ports add_gh_ssh_key (B:533-544). A failure is logged, never returned.
-func ghAdd(ctx context.Context, env *Env, pub, title string, signing bool) {
+// ghAdd ports add_gh_ssh_key (B:533-544). A failure is logged, and reported as false.
+func ghAdd(ctx context.Context, env *Env, pub, title string, signing bool) bool {
 	args := []string{"ssh-key", "add", pub, "--title", title}
 	if signing {
 		args = append(args, "--type", "signing")
@@ -259,7 +260,7 @@ func ghAdd(ctx context.Context, env *Env, pub, title string, signing bool) {
 	r, err := env.Run.Run(ctx, dgCmd("gh", args...))
 	if err == nil && r.Code == 0 {
 		envLogf(env, "  uploaded: %s\n", title)
-		return
+		return true
 	}
 	envLogf(env, "  %s: upload failed\n", title)
 	for _, line := range strings.Split(strings.TrimSpace(r.Stdout+r.Stderr), "\n") {
@@ -267,13 +268,23 @@ func ghAdd(ctx context.Context, env *Env, pub, title string, signing bool) {
 			envLogf(env, "    gh said: %s\n", line)
 		}
 	}
+	return false
+}
+
+// ghManualMarker records that the upload fell back to manual (the scope
+// refresh was refused or failed), so a rerun does not ask again.
+func ghManualMarker(env *Env) string {
+	return filepath.Join(env.Home, ".local", "state", "athome", "github-manual-upload")
 }
 
 // ghUploadAll ports B:633-747.
 func ghUploadAll(ctx context.Context, env *Env, p ghPlan) {
 	if ghEnsureScopes(ctx, env) {
-		ghUploadKeys(ctx, env, p)
+		if ghUploadKeys(ctx, env, p) {
+			os.Remove(ghManualMarker(env))
+		}
 	} else {
+		ghWriteManualMarker(env)
 		ghManualUpload(env, p)
 	}
 	ghPostUpload(ctx, env, p)
@@ -289,10 +300,11 @@ func ghMissingScopes(ctx context.Context, env *Env) []string {
 	return missing
 }
 
-// ghSSHConfigSeeded: ghPostUpload already pinned this host's key in ~/.ssh/config.
-func ghSSHConfigSeeded(env *Env, p ghPlan) bool {
-	b, err := os.ReadFile(filepath.Join(env.Home, ".ssh", "config"))
-	return err == nil && strings.Contains(string(b), p.sshHost+"_ed25519")
+func ghWriteManualMarker(env *Env) {
+	path := ghManualMarker(env)
+	if os.MkdirAll(filepath.Dir(path), 0o755) == nil {
+		os.WriteFile(path, nil, 0o644)
+	}
 }
 
 // ghEnsureScopes refreshes missing token scopes. It reports false when the
@@ -317,17 +329,20 @@ func ghEnsureScopes(ctx context.Context, env *Env) bool {
 	return true
 }
 
-func ghUploadKeys(ctx context.Context, env *Env, p ghPlan) {
+// ghUploadKeys reports whether both keys are on GitHub afterwards.
+func ghUploadKeys(ctx context.Context, env *Env, p ghPlan) bool {
+	ok := true
 	if ghKeyRegistered(ctx, env, "user/keys", p.pub) {
 		envLogf(env, "  auth key already on GitHub: matching %s\n", p.host)
 	} else {
-		ghAdd(ctx, env, p.pub, p.host, false)
+		ok = ghAdd(ctx, env, p.pub, p.host, false) && ok
 	}
 	if ghKeyRegistered(ctx, env, "user/ssh_signing_keys", p.signPub) {
 		envLogf(env, "  signing key already on GitHub: matching %s-sign\n", p.host)
 	} else {
-		ghAdd(ctx, env, p.signPub, p.host+"-sign", true)
+		ok = ghAdd(ctx, env, p.signPub, p.host+"-sign", true) && ok
 	}
+	return ok
 }
 
 func ghManualUpload(env *Env, p ghPlan) {

@@ -547,3 +547,57 @@ func TestManualUploadFallbackConverges(t *testing.T) {
 		}
 	})
 }
+
+// Y1: chezmoi's private_config.tmpl writes `<host>_ed25519` into ~/.ssh/config
+// on every machine, so that line proves nothing about an earlier manual
+// fallback. Only GITHUB_TOKEN or the marker file does.
+func TestManualFallbackNeedsMarkerOrToken(t *testing.T) {
+	marker := func(fx *fixture) string {
+		return fx.Path(".local", "state", "athome", "github-manual-upload")
+	}
+	seedConfig := func(t *testing.T, fx *fixture) {
+		writeFile(t, fx.Path(".ssh", "config"), "Host github.com\n    IdentityFile ~/.ssh/"+testHost+"_ed25519\n", 0o600)
+	}
+	t.Run("seeded ssh config alone still tries the refresh", func(t *testing.T) {
+		fx := ghFixture(t)
+		seedConfig(t, fx)
+		fx.Fake.On("gh", "auth", "status").Return(run.Result{Stdout: noScopes, Stderr: noScopes})
+		fx.Fake.On("gh", "auth", "refresh", "-h", "github.com", "-s", "admin:public_key,admin:ssh_signing_key").Return(run.Result{Code: 1})
+		rep := fx.MustExec(steps.GitHub())
+		if len(rep.Applied) != 1 || !fx.called("gh", "auth", "refresh") {
+			t.Errorf("want the refresh attempted, applied=%v:\n%s", rep.Applied, fx.dump())
+		}
+		if !exists(marker(fx)) {
+			t.Errorf("a refused refresh must write the marker")
+		}
+	})
+	t.Run("marker means done", func(t *testing.T) {
+		fx := ghFixture(t)
+		writeFile(t, marker(fx), "", 0o644)
+		fx.Fake.On("gh", "auth", "status").Return(run.Result{Stdout: noScopes, Stderr: noScopes})
+		rep := fx.MustExec(steps.GitHub())
+		if len(rep.Applied) != 0 || fx.called("gh", "auth", "refresh") {
+			t.Errorf("marker present, want nothing applied, applied=%v:\n%s", rep.Applied, fx.dump())
+		}
+	})
+	t.Run("GITHUB_TOKEN means done", func(t *testing.T) {
+		fx := ghFixture(t)
+		t.Setenv("GITHUB_TOKEN", "ghp_dummy")
+		fx.Fake.On("gh", "auth", "status").Return(run.Result{Stdout: noScopes, Stderr: noScopes})
+		rep := fx.MustExec(steps.GitHub())
+		if len(rep.Applied) != 0 {
+			t.Errorf("env token, want nothing applied, applied=%v", rep.Applied)
+		}
+	})
+	t.Run("successful upload removes the marker", func(t *testing.T) {
+		fx := ghFixture(t)
+		writeFile(t, marker(fx), "", 0o644)
+		fx.MustExec(steps.GitHub()) // all scopes: the marker is stale, the upload runs
+		if len(fx.addCalls()) != 2 {
+			t.Fatalf("want the upload to run:\n%s", fx.dump())
+		}
+		if exists(marker(fx)) {
+			t.Errorf("marker must be removed after a successful upload")
+		}
+	})
+}

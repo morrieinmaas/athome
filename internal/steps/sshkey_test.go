@@ -1,6 +1,7 @@
 package steps_test
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -27,6 +28,20 @@ func keyPath(fx *fixture) string { return fx.Path(".ssh", testHost+"_ed25519") }
 
 func stubDerive(fx *fixture) {
 	fx.Fake.On("ssh-keygen", "-y", "-f", keyPath(fx)).Return(run.Result{Stdout: pubLine})
+}
+
+// flakyDerive fails every `ssh-keygen -y` while fail is set.
+type flakyDerive struct {
+	run.Runner
+	fail *bool
+}
+
+func (f flakyDerive) Run(ctx context.Context, c run.Cmd) (run.Result, error) {
+	res, err := f.Runner.Run(ctx, c)
+	if c.Name == "ssh-keygen" && containsSeq(c.Args, "-y") && *f.fail {
+		return run.Result{Code: 1, Stderr: "invalid format"}, nil
+	}
+	return res, err
 }
 
 func generateCalls(fx *fixture) []run.Cmd { return fx.callsTo("ssh-keygen", "-t", "ed25519") }
@@ -149,7 +164,7 @@ func TestImportBW(t *testing.T) {
 	t.Run("restores the key from the notes field", func(t *testing.T) {
 		fx := newFixture(t)
 		fx.Fake.Have("rbw")
-		stubDerive(fx)
+		fx.Fake.On("ssh-keygen", "-y", "-f", keyPath(fx)+".import-tmp").Return(run.Result{Stdout: pubLine})
 		fx.Fake.On("rbw", "get", "--field", "notes", item).Return(run.Result{Stdout: "BW-PRIVATE\n"})
 		fx.Env.Opts.ImportSSHBW = item
 		fx.MustExec(steps.SSHKey())
@@ -162,8 +177,11 @@ func TestImportBW(t *testing.T) {
 		if fi, _ := os.Stat(keyPath(fx)); fi.Mode().Perm() != 0o600 {
 			t.Errorf("key mode = %v, want 0600", fi.Mode().Perm())
 		}
-		if !fx.called("ssh-keygen", "-y", "-f", keyPath(fx)) {
-			t.Errorf("pub must be derived:\n%s", fx.dump())
+		if !fx.called("ssh-keygen", "-y", "-f", keyPath(fx)+".import-tmp") {
+			t.Errorf("pub must be derived from the not yet installed key:\n%s", fx.dump())
+		}
+		if got := readFile(t, keyPath(fx)+".pub"); got != pubLine {
+			t.Errorf(".pub = %q, want the derived key", got)
 		}
 		if len(generateCalls(fx)) != 0 {
 			t.Errorf("no keygen after a successful restore:\n%s", fx.dump())
@@ -191,6 +209,29 @@ func TestImportBW(t *testing.T) {
 		want := "existing key kept at " + keyPath(fx) + "; move it away and rerun to restore from Bitwarden"
 		if !strings.Contains(fx.Log.String(), want) {
 			t.Errorf("log lacks %q:\n%s", want, fx.Log)
+		}
+	})
+	t.Run("a note that is no key leaves nothing behind and a rerun retries", func(t *testing.T) {
+		fx := newFixture(t)
+		fx.Fake.Have("rbw")
+		fx.Fake.On("rbw", "get", "--field", "notes", item).Return(run.Result{Stdout: "NOT A KEY\n"})
+		fail := true
+		fx.Env.Run = flakyDerive{fx.Env.Run, &fail}
+		fx.Env.Opts.ImportSSHBW = item
+		if _, err := fx.Exec(steps.SSHKey()); err == nil {
+			t.Fatalf("an unreadable key must fail the import:\n%s", fx.Log)
+		}
+		if left, _ := filepath.Glob(fx.Path(".ssh", "*")); len(left) != 0 {
+			t.Errorf("a failed import left %v in ~/.ssh", left)
+		}
+		fail = false
+		fx.Fake.On("ssh-keygen", "-y", "-f", keyPath(fx)+".import-tmp").Return(run.Result{Stdout: pubLine})
+		fx.MustExec(steps.SSHKey())
+		if got := readFile(t, keyPath(fx)); !strings.HasPrefix(got, "NOT A KEY") {
+			t.Errorf("rerun did not retry the import, key = %q", got)
+		}
+		if exists(keyPath(fx) + ".import-tmp") {
+			t.Errorf("temp file left behind")
 		}
 	})
 	t.Run("empty note leaves no key behind", func(t *testing.T) {

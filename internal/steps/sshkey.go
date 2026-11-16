@@ -25,16 +25,25 @@ func skEnsureDir(env *Env) error {
 	return os.Chmod(dir, 0o700)
 }
 
+// skDerive returns the public key of a private key file, from `ssh-keygen -y`.
+func skDerive(ctx context.Context, env *Env, key string) (string, error) {
+	res, err := env.Run.Run(ctx, run.Cmd{Name: "ssh-keygen", Args: []string{"-y", "-f", key}})
+	if err != nil {
+		return "", err
+	}
+	if res.Code != 0 {
+		return "", fmt.Errorf("ssh-keygen -y -f %s failed: %s", key, strings.TrimSpace(res.Stderr))
+	}
+	return res.Stdout, nil
+}
+
 // skDerivePub writes <key>.pub from the private key with `ssh-keygen -y`.
 func skDerivePub(ctx context.Context, env *Env, key string) error {
-	res, err := env.Run.Run(ctx, run.Cmd{Name: "ssh-keygen", Args: []string{"-y", "-f", key}})
+	pub, err := skDerive(ctx, env, key)
 	if err != nil {
 		return err
 	}
-	if res.Code != 0 {
-		return fmt.Errorf("ssh-keygen -y -f %s failed: %s", key, strings.TrimSpace(res.Stderr))
-	}
-	return os.WriteFile(key+".pub", []byte(res.Stdout), 0o644)
+	return os.WriteFile(key+".pub", []byte(pub), 0o644)
 }
 
 func skCopy(src, dst string, mode os.FileMode) error {
@@ -161,13 +170,30 @@ func skImportBWApply(ctx context.Context, env *Env) error {
 		envLogln(env, "couldn't read '%s' (run `rbw unlock`, check the item name)", item)
 		return nil
 	}
-	if err := os.WriteFile(key, []byte(res.Stdout), 0o600); err != nil {
+	// The note only becomes the key once ssh-keygen accepts it, so a bad note
+	// leaves nothing behind and a rerun retries the import.
+	tmp := key + ".import-tmp"
+	os.Remove(tmp)
+	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
 		return err
 	}
-	if err := os.Chmod(key, 0o600); err != nil {
+	defer os.Remove(tmp)
+	_, werr := f.WriteString(res.Stdout)
+	if cerr := f.Close(); werr == nil {
+		werr = cerr
+	}
+	if werr != nil {
+		return werr
+	}
+	pub, err := skDerive(ctx, env, tmp)
+	if err != nil {
 		return err
 	}
-	return skDerivePub(ctx, env, key)
+	if err := os.Rename(tmp, key); err != nil {
+		return err
+	}
+	return os.WriteFile(key+".pub", []byte(pub), 0o644)
 }
 
 func skKeygenCheck(ctx context.Context, env *Env) (bool, error) {

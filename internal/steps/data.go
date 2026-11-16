@@ -34,57 +34,59 @@ type dataEntry struct {
 // config, else `gh api user`; id from config, else gh, else the public API via
 // curl), then write ~/.config/chezmoi/chezmoi.toml.
 func Data() []Step {
-	return []Step{{
-		Name: "chezmoi-data",
-		Check: func(ctx context.Context, env *Env) (bool, error) {
-			entries, err := dataEntries(ctx, env)
-			if err != nil {
-				return false, err
-			}
-			var doc struct {
-				Data map[string]any `toml:"data"`
-			}
-			if _, err := toml.DecodeFile(chezmoiConfigPath(env), &doc); err != nil {
-				return false, nil // missing or unreadable: write it
-			}
-			// chezmoi init re-renders the file with more keys around the seed,
-			// so only the seed keys count.
-			for _, e := range entries {
-				var want any = e.val
-				if e.isB {
-					want = e.bool
-				}
-				if got, ok := doc.Data[e.key]; !ok || got != want {
-					return false, nil
-				}
-			}
-			return true, nil
-		},
-		Apply: func(ctx context.Context, env *Env) error {
-			entries, err := dataEntries(ctx, env)
-			if err != nil {
-				return err
-			}
-			var b strings.Builder
-			b.WriteString("[data]\n")
-			for _, e := range entries {
-				if e.isB {
-					fmt.Fprintf(&b, "    %-20s = %t\n", e.key, e.bool)
-				} else {
-					fmt.Fprintf(&b, "    %-20s = \"%s\"\n", e.key, tomlStr(e.val))
-				}
-			}
-			path := chezmoiConfigPath(env)
-			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-				return err
-			}
-			if err := os.WriteFile(path, []byte(b.String()), 0o600); err != nil {
-				return err
-			}
-			env.DataChanged = true
-			return nil
-		},
-	}}
+	return []Step{{Name: "chezmoi-data", Check: dataDone, Apply: writeData}}
+}
+
+// dataDone: chezmoi.toml already holds every seed key with the wanted value.
+func dataDone(ctx context.Context, env *Env) (bool, error) {
+	entries, err := dataEntries(ctx, env)
+	if err != nil {
+		return false, err
+	}
+	var doc struct {
+		Data map[string]any `toml:"data"`
+	}
+	if _, err := toml.DecodeFile(chezmoiConfigPath(env), &doc); err != nil {
+		return false, nil // missing or unreadable: write it
+	}
+	// chezmoi init re-renders the file with more keys around the seed,
+	// so only the seed keys count.
+	for _, e := range entries {
+		var want any = e.val
+		if e.isB {
+			want = e.bool
+		}
+		if got, ok := doc.Data[e.key]; !ok || got != want {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+// writeData writes the seeded [data] table to chezmoi.toml (B:875-900).
+func writeData(ctx context.Context, env *Env) error {
+	entries, err := dataEntries(ctx, env)
+	if err != nil {
+		return err
+	}
+	var b strings.Builder
+	b.WriteString("[data]\n")
+	for _, e := range entries {
+		if e.isB {
+			fmt.Fprintf(&b, "    %-20s = %t\n", e.key, e.bool)
+		} else {
+			fmt.Fprintf(&b, "    %-20s = \"%s\"\n", e.key, tomlStr(e.val))
+		}
+	}
+	path := chezmoiConfigPath(env)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(path, []byte(b.String()), 0o600); err != nil {
+		return err
+	}
+	env.DataChanged = true
+	return nil
 }
 
 // tomlStr escapes a value for a TOML basic string. bootstrap.sh escapes only

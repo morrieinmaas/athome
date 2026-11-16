@@ -11,7 +11,9 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 
+	"github.com/BurntSushi/toml"
 	"github.com/morrieinmaas/athome/internal/config"
 	"github.com/morrieinmaas/athome/internal/run"
 	"github.com/morrieinmaas/athome/internal/steps"
@@ -89,8 +91,16 @@ func parseInit(args []string) (initOpts, error) {
 	if err := fs.Parse(args); err != nil {
 		return o, err
 	}
+	if fs.NArg() > 0 {
+		return o, fmt.Errorf("unexpected argument %q", fs.Arg(0))
+	}
 	if o.ImportSSH && o.ImportFrom == "" {
 		return o, errors.New("--import-ssh needs --import-from <dir>")
+	}
+	if o.ImportFrom != "" {
+		if fi, err := os.Stat(o.ImportFrom); err != nil || !fi.IsDir() {
+			return o, fmt.Errorf("--import-from: directory not found: %s", o.ImportFrom)
+		}
 	}
 	return o, nil
 }
@@ -119,7 +129,7 @@ func runInit(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "athome init: %v\n", err)
 		return exitError
 	}
-	repo, err := findRepoRoot()
+	repo, err := findRepoRoot(home)
 	if err != nil {
 		fmt.Fprintf(stderr, "athome init: %v\n", err)
 		return exitError
@@ -158,15 +168,33 @@ func runInit(args []string, stdout, stderr io.Writer) int {
 		Log: stdout,
 	}
 	defer env.RunCleanup()
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	ctx, stop := signal.NotifyContext(context.Background(), stopSignals...)
 	defer stop()
 	rep, err := steps.Execute(ctx, env, steps.All())
 	if err != nil {
 		fmt.Fprintf(stderr, "athome init: %v\n", err)
 		return exitError
 	}
-	printSummary(stdout, rep)
+	printFinish(stdout, rep, env.Warnings, steps.FollowupLogPath(home))
 	return exitOK
+}
+
+// stopSignals cancel the run; the deferred cleanup (the --ref worktree) still runs.
+var stopSignals = []os.Signal{os.Interrupt, syscall.SIGTERM}
+
+// printFinish ports B:1051-1068: the warnings count and the follow-up log, then
+// the summary line, which stays last.
+func printFinish(w io.Writer, rep steps.Report, warnings int, followupLog string) {
+	if warnings > 0 {
+		fmt.Fprintf(w, "athome: finished with %d warning(s), not fully ready; see the notes above\n", warnings)
+	}
+	if b, err := os.ReadFile(followupLog); err == nil && len(b) > 0 {
+		fmt.Fprintf(w, "\nFollow-up actions you (or the system) need to do:\n%s", b)
+		if b[len(b)-1] != '\n' {
+			fmt.Fprintln(w)
+		}
+	}
+	printSummary(w, rep)
 }
 
 // printSummary is the one final line of a successful run.
@@ -175,7 +203,9 @@ func printSummary(w io.Writer, rep steps.Report) {
 }
 
 // findRepoRoot is the nearest directory at or above the cwd with a .chezmoiroot.
-func findRepoRoot() (string, error) {
+// findRepoRoot looks for .chezmoiroot at or above the working directory, then
+// falls back to the parent of the sourceDir pinned in chezmoi's config.
+func findRepoRoot(home string) (string, error) {
 	dir, err := os.Getwd()
 	if err != nil {
 		return "", err
@@ -186,10 +216,32 @@ func findRepoRoot() (string, error) {
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			return "", errors.New("athome repo not found: no .chezmoiroot at or above the current directory")
+			break
 		}
 		dir = parent
 	}
+	if root := pinnedRepoRoot(home); root != "" {
+		return root, nil
+	}
+	return "", errors.New("athome repo not found: no .chezmoiroot at or above the current directory, and no sourceDir pinned in chezmoi's config")
+}
+
+func pinnedRepoRoot(home string) string {
+	var c struct {
+		SourceDir string `toml:"sourceDir"`
+	}
+	if _, err := toml.DecodeFile(filepath.Join(home, ".config", "chezmoi", "chezmoi.toml"), &c); err != nil || c.SourceDir == "" {
+		return ""
+	}
+	src := c.SourceDir
+	if rest, ok := strings.CutPrefix(src, "~/"); ok {
+		src = filepath.Join(home, rest)
+	}
+	root := filepath.Dir(filepath.Clean(src))
+	if _, err := os.Stat(filepath.Join(root, ".chezmoiroot")); err != nil {
+		return ""
+	}
+	return root
 }
 
 func environMap() map[string]string {

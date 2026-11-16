@@ -257,3 +257,55 @@ func TestRepoRootFromSubdirectory(t *testing.T) {
 		t.Errorf("exit = %d, want 2", code)
 	}
 }
+
+func TestLeftoverArgsAreUsageErrors(t *testing.T) {
+	for _, args := range [][]string{
+		{"init", "foo"},
+		{"init", "foo", "--bogus"},
+		{"init", "--machine", "work", "foo"},
+	} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			sandbox(t)
+			inRepo(t)
+			code, _, errOut := runMain(args...)
+			if code != 2 || errOut == "" {
+				t.Errorf("exit = %d stderr %q, want 2 with a message", code, errOut)
+			}
+		})
+	}
+}
+
+func TestImportFromMissingDirIsUsageError(t *testing.T) {
+	sandbox(t)
+	inRepo(t)
+	code, _, errOut := runMain("init", "--import-from", filepath.Join(t.TempDir(), "nope"))
+	if code != 2 || !strings.Contains(errOut, "nope") {
+		t.Errorf("exit = %d stderr %q, want 2 naming the directory", code, errOut)
+	}
+}
+
+// With no .chezmoiroot above the cwd, the repo comes from the sourceDir pinned
+// in chezmoi's config; the bad machine then ends the run with 2, not 1.
+func TestRepoRootFromPinnedSourceDir(t *testing.T) {
+	home := sandbox(t)
+	repo := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(repo, "home"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, ".chezmoiroot"), []byte("home\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfgDir := filepath.Join(home, ".config", "chezmoi")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	pin := "sourceDir = \"" + filepath.Join(repo, "home") + "\"\n"
+	if err := os.WriteFile(filepath.Join(cfgDir, "chezmoi.toml"), []byte(pin), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	inNoRepo(t)
+	code, _, errOut := runMain("init", "--machine", "laptop")
+	if code != 2 {
+		t.Errorf("exit = %d stderr %q, want 2 (repo found via sourceDir, then the bad machine)", code, errOut)
+	}
+}

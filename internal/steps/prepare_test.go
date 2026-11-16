@@ -3,6 +3,7 @@ package steps_test
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -203,4 +204,40 @@ func TestSudoCache(t *testing.T) {
 			t.Fatalf("sudo refusal must not fail the run: %v", err)
 		}
 	})
+}
+
+// The --ref worktree is removed when the run ends (bash's EXIT trap, B:290-300),
+// also when a later check failed.
+func TestRefWorktreeCleanup(t *testing.T) {
+	fx := newFixture(t)
+	fx.Env.Opts.Ref = "v1.2.3"
+	fx.Exec(steps.Prepare()) // the Fake creates no home/, so this errors after the add
+	adds := fx.callsTo("git", "worktree", "add", "--detach")
+	if len(adds) == 0 {
+		t.Fatalf("no worktree add recorded:\n%s", fx.dump())
+	}
+	wt := adds[0].Args[len(adds[0].Args)-2]
+	if len(fx.Env.Cleanup) != 1 {
+		t.Fatalf("want one cleanup registered, got %d", len(fx.Env.Cleanup))
+	}
+	if fx.called("git", "worktree", "remove") {
+		t.Fatalf("worktree removed before cleanup ran:\n%s", fx.dump())
+	}
+	fx.Env.RunCleanup()
+	rm := fx.callsTo("git", "worktree", "remove", "--force")
+	if len(rm) != 1 || rm[0].Args[len(rm[0].Args)-1] != wt || !containsSeq(rm[0].Args, "-C", fx.Repo) {
+		t.Errorf("want `git -C %s worktree remove --force %s`, got %+v", fx.Repo, wt, rm)
+	}
+}
+
+func TestRunCleanupReverseOrder(t *testing.T) {
+	var got []int
+	env := &steps.Env{}
+	for i := 1; i <= 3; i++ {
+		env.Cleanup = append(env.Cleanup, func() { got = append(got, i) })
+	}
+	env.RunCleanup()
+	if !reflect.DeepEqual(got, []int{3, 2, 1}) {
+		t.Errorf("cleanup order = %v, want [3 2 1]", got)
+	}
 }

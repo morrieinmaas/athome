@@ -119,8 +119,8 @@ func prepWorktreeCheck(ctx context.Context, env *Env) (bool, error) {
 	return env.Opts.Ref == branch, nil
 }
 
-// prepWorktreeApply ports B:302-324. The worktree is left for the OS temp cleaner;
-// build 1 has no end-of-run hook.
+// prepWorktreeApply ports B:302-324. The worktree is removed by env.Cleanup,
+// like bash's EXIT trap.
 func prepWorktreeApply(ctx context.Context, env *Env) error {
 	wt, err := os.MkdirTemp("", "athome-bootstrap-")
 	if err != nil {
@@ -137,6 +137,10 @@ func prepWorktreeApply(ctx context.Context, env *Env) error {
 	if res.Code != 0 {
 		return fmt.Errorf("git worktree add %s: %s", env.Opts.Ref, strings.TrimSpace(res.Stderr))
 	}
+	env.Cleanup = append(env.Cleanup, func() {
+		env.Run.Run(context.Background(), run.Cmd{Name: "git", Args: []string{"-C", env.RepoRoot, "worktree", "remove", "--force", wt}})
+		os.RemoveAll(wt)
+	})
 	if fi, err := os.Stat(filepath.Join(wt, "home")); err != nil || !fi.IsDir() {
 		return fmt.Errorf("%s doesn't exist at ref %s: this ref has no chezmoi sources under home/", filepath.Join(wt, "home"), env.Opts.Ref)
 	}

@@ -25,7 +25,8 @@ type Env struct {
 	Opts     Opts
 	Log      io.Writer
 	Warnings int
-	FreshKey bool // set by SSHKey on generate or sshKeyAction=reupload; forces the GitHub upload
+	FreshKey bool     // set by SSHKey on generate or sshKeyAction=reupload; forces the GitHub upload
+	Cleanup  []func() // run in reverse order when the run ends, see RunCleanup
 }
 
 type Opts struct {
@@ -72,4 +73,12 @@ func envLogf(env *Env, format string, a ...any) {
 	if env.Log != nil {
 		fmt.Fprintf(env.Log, format, a...)
 	}
+}
+
+// RunCleanup runs the registered cleanups, last registered first.
+func (e *Env) RunCleanup() {
+	for i := len(e.Cleanup) - 1; i >= 0; i-- {
+		e.Cleanup[i]()
+	}
+	e.Cleanup = nil
 }

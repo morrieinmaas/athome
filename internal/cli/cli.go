@@ -157,6 +157,7 @@ func runInit(args []string, stdout, stderr io.Writer) int {
 		},
 		Log: stdout,
 	}
+	defer env.RunCleanup()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 	rep, err := steps.Execute(ctx, env, steps.All())

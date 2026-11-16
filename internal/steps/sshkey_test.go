@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -150,13 +151,58 @@ func TestKeyNoPubDeriveFailureOnlyLogs(t *testing.T) {
 	if n := strings.Count(fx.Log.String(), "could not derive the public key"); n != 1 {
 		t.Errorf("the failure is logged %d times, want once:\n%s", n, fx.Log)
 	}
-	rep, err := fx.Exec(steps.SSHKey())
+	rep, err := fx.Rerun(steps.SSHKey())
 	if err != nil {
 		t.Fatalf("second run: %v", err)
 	}
 	if len(rep.Applied) != 0 {
 		t.Errorf("second run applied %v, want nothing", rep.Applied)
 	}
+}
+
+func pubMarker(fx *fixture) string {
+	return fx.Path(".local", "state", "athome", "ssh-pub-underivable")
+}
+
+// The underivable verdict outlives the process, via a marker naming the key.
+func TestUnderivablePubMarker(t *testing.T) {
+	t.Run("written with the key path, kept by a rerun", func(t *testing.T) {
+		fx := newFixture(t)
+		fx.PutKey("PRIV", "")
+		fx.Fake.On("ssh-keygen", "-y", "-f", keyPath(fx)).Return(run.Result{Code: 1, Stderr: "incorrect passphrase"})
+		fx.MustExec(steps.SSHKey())
+		if got := strings.TrimSpace(readFile(t, pubMarker(fx))); got != keyPath(fx) {
+			t.Errorf("marker = %q, want the key path %q", got, keyPath(fx))
+		}
+		fx.MustRerun(steps.SSHKey())
+		if !exists(pubMarker(fx)) {
+			t.Errorf("the marker must survive a rerun while the .pub stays underivable")
+		}
+	})
+	t.Run("removed once a .pub exists", func(t *testing.T) {
+		fx := newFixture(t)
+		fx.PutKey("PRIV", "")
+		writeFile(t, pubMarker(fx), keyPath(fx)+"\n", 0o644)
+		fx.MustExec(steps.SSHKey())
+		writeFile(t, keyPath(fx)+".pub", pubLine, 0o644)
+		fx.MustRerun(steps.SSHKey())
+		if exists(pubMarker(fx)) {
+			t.Errorf("a .pub exists, the marker must go")
+		}
+	})
+	t.Run("a marker naming another key does not count", func(t *testing.T) {
+		fx := newFixture(t)
+		fx.PutKey("PRIV", "")
+		stubDerive(fx)
+		writeFile(t, pubMarker(fx), fx.Path(".ssh", "other_ed25519")+"\n", 0o644)
+		rep := fx.MustExec(steps.SSHKey())
+		if !slices.Contains(rep.Applied, "ssh-pub") {
+			t.Errorf("a marker for another key must not skip ssh-pub, applied=%v", rep.Applied)
+		}
+		if exists(pubMarker(fx)) {
+			t.Errorf("a derived .pub must remove the marker")
+		}
+	})
 }
 
 func TestImportBW(t *testing.T) {

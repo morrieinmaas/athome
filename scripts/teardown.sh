@@ -95,6 +95,8 @@ tier_state() {
   run rm -rf "$HOME/.cache/chezmoi"
   # athome's manual-upload marker; left behind, a rebootstrap would skip the GitHub key step.
   run rm -f "$HOME/.local/state/athome/github-manual-upload"
+  # and the ssh-pub marker; left behind, a rebootstrap would not retry deriving the .pub.
+  run rm -f "$HOME/.local/state/athome/ssh-pub-underivable"
 }
 
 tier_dotfiles() {

@@ -202,7 +202,7 @@ func TestDataIdempotent(t *testing.T) {
 	fx.MustExec(steps.Data())
 	before := readFile(t, chezmoiTomlPath(fx))
 
-	rep := fx.MustExec(steps.Data())
+	rep := fx.MustRerun(steps.Data())
 	if len(rep.Applied) != 0 {
 		t.Errorf("second run applied %v, want nothing", rep.Applied)
 	}
@@ -232,7 +232,7 @@ func TestDataKeepsStoredIdentityWhenOffline(t *testing.T) {
 
 			fx.Fake.On("gh", "api", "user", "--jq", ".login").Return(run.Result{Code: 1})
 			fx.Fake.On("gh", "api", "users/octo", "--jq", ".id").Return(run.Result{Code: 1})
-			rep := fx.MustExec(steps.Data())
+			rep := fx.MustRerun(steps.Data())
 			if len(rep.Applied) != 0 {
 				t.Errorf("offline rerun applied %v, want nothing", rep.Applied)
 			}
@@ -253,7 +253,7 @@ func TestDataRewrittenWhenAnswersChange(t *testing.T) {
 	fx.MustExec(steps.Data())
 
 	fx.Env.Cfg.Data["personalName"] = "someone else"
-	rep := fx.MustExec(steps.Data())
+	rep := fx.MustRerun(steps.Data())
 	if len(rep.Applied) == 0 {
 		t.Errorf("a changed answer must be written")
 	}
@@ -271,7 +271,7 @@ func TestDataKeepsSourceDirPin(t *testing.T) {
 	if err := os.WriteFile(path, []byte(pinned), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	rep := fx.MustExec(steps.Data())
+	rep := fx.MustRerun(steps.Data())
 	if len(rep.Applied) != 0 {
 		t.Errorf("a sourceDir pin ahead of an unchanged [data] must not trigger a rewrite, applied %v", rep.Applied)
 	}
@@ -288,7 +288,7 @@ func TestDataIgnoresExtraKeys(t *testing.T) {
 	if err := os.WriteFile(path, []byte(rendered), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if rep := fx.MustExec(steps.Data()); len(rep.Applied) != 0 {
+	if rep := fx.MustRerun(steps.Data()); len(rep.Applied) != 0 {
 		t.Errorf("extra keys must not trigger a rewrite, applied %v", rep.Applied)
 	}
 	if got := readFile(t, path); got != rendered {

@@ -114,6 +114,41 @@ func (fx *fixture) Exec(list []steps.Step) (steps.Report, error) {
 	return steps.Execute(context.Background(), fx.Env, list)
 }
 
+// Rerun is a second `athome init` on the same machine: a fresh Env carrying
+// only the configuration (zero values for every run-scoped field), Setup, then
+// Execute, exactly as the CLI's runInitEnv does. Config changed on fx.Env since
+// the last run carries over.
+func (fx *fixture) Rerun(list []steps.Step) (steps.Report, error) {
+	fx.T.Helper()
+	old := fx.Env
+	data := map[string]string{}
+	for k, v := range old.Cfg.Data {
+		data[k] = v
+	}
+	cfg := old.Cfg
+	cfg.Data = data
+	fx.Env = &steps.Env{
+		Cfg:      cfg,
+		Run:      old.Run,
+		Home:     old.Home,
+		RepoRoot: old.RepoRoot,
+		OS:       old.OS,
+		Distro:   old.Distro,
+		Opts:     old.Opts,
+		Log:      old.Log,
+	}
+	return fx.Exec(list)
+}
+
+func (fx *fixture) MustRerun(list []steps.Step) steps.Report {
+	fx.T.Helper()
+	rep, err := fx.Rerun(list)
+	if err != nil {
+		fx.T.Fatalf("Rerun: %v\nlog:\n%s", err, fx.Log)
+	}
+	return rep
+}
+
 func (fx *fixture) MustExec(list []steps.Step) steps.Report {
 	fx.T.Helper()
 	rep, err := fx.Exec(list)

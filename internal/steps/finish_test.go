@@ -47,7 +47,7 @@ func TestSourceDirPin(t *testing.T) {
 		writeFile(t, chezmoiConfig(fx), seed, 0o600)
 		fx.MustExec(steps.Finish())
 		first := readFile(t, chezmoiConfig(fx))
-		fx.MustExec(steps.Finish())
+		fx.MustRerun(steps.Finish())
 		if got := readFile(t, chezmoiConfig(fx)); got != first || strings.Count(got, "sourceDir") != 1 {
 			t.Errorf("the pin must appear exactly once:\n%s", got)
 		}
@@ -296,7 +296,7 @@ func TestDetachedHead(t *testing.T) {
 		fx.Fake.On("git", "-C", fx.Repo, "checkout", "main").Return(run.Result{Code: 1})
 		fx.Fake.On("git", "-C", fx.Repo, "checkout", "-B", "main", "origin/main").Return(run.Result{Code: 1})
 		fx.MustExec(steps.Finish())
-		rep := fx.MustExec(steps.Finish())
+		rep := fx.MustRerun(steps.Finish())
 		if !slices.Contains(rep.Applied, "checkout-main") {
 			t.Errorf("a still-detached HEAD must retry checkout-main, applied=%v", rep.Applied)
 		}

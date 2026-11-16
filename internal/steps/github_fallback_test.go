@@ -70,7 +70,7 @@ func TestManualUploadFallbackConverges(t *testing.T) {
 		t.Setenv("GITHUB_TOKEN", "ghp_dummy")
 		fx.Fake.On("gh", "auth", "status").Return(run.Result{Stdout: noScopes, Stderr: noScopes})
 		fx.MustExec(steps.GitHub())
-		rep := fx.MustExec(steps.GitHub())
+		rep := fx.MustRerun(steps.GitHub())
 		if len(rep.Applied) != 0 {
 			t.Errorf("second run applied %v, want nothing:\n%s", rep.Applied, fx.Log)
 		}
@@ -83,7 +83,7 @@ func TestManualUploadFallbackConverges(t *testing.T) {
 		fx.Fake.On("gh", "auth", "status").Return(run.Result{Stdout: noScopes, Stderr: noScopes})
 		fx.Fake.On("gh", "auth", "refresh", "-h", "github.com", "-s", "admin:public_key,admin:ssh_signing_key").Return(run.Result{Code: 1})
 		fx.MustExec(steps.GitHub())
-		rep := fx.MustExec(steps.GitHub())
+		rep := fx.MustRerun(steps.GitHub())
 		if len(rep.Applied) != 0 {
 			t.Errorf("second run applied %v, want nothing:\n%s", rep.Applied, fx.Log)
 		}
@@ -95,7 +95,7 @@ func TestManualUploadFallbackConverges(t *testing.T) {
 		fx := ghFixture(t)
 		fx.Env.Run = failAdds{fx.Env.Run}
 		fx.MustExec(steps.GitHub())
-		rep := fx.MustExec(steps.GitHub())
+		rep := fx.MustRerun(steps.GitHub())
 		if len(rep.Applied) != 1 {
 			t.Errorf("second run applied %v, want the upload retried:\n%s", rep.Applied, fx.Log)
 		}
@@ -157,7 +157,7 @@ func TestManualFallbackNeedsMarker(t *testing.T) {
 		if !exists(marker(fx)) {
 			t.Errorf("the first run must write the marker")
 		}
-		rep = fx.MustExec(steps.GitHub())
+		rep = fx.MustRerun(steps.GitHub())
 		if len(rep.Applied) != 0 {
 			t.Errorf("second run with the marker: want nothing applied, applied=%v", rep.Applied)
 		}

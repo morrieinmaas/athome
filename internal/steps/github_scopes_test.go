@@ -78,7 +78,7 @@ func TestNoSigningScopeConvergesAfterOneRun(t *testing.T) {
 	fx.Fake.On("gh", "auth", "status").Return(run.Result{Stdout: noScopes, Stderr: noScopes})
 	fx.Fake.On("ssh", sshProbe...).Return(run.Result{Stderr: "Hi athome! You've successfully authenticated, but GitHub does not provide shell access.\n", Code: 1})
 	fx.MustExec(steps.GitHub())
-	rep := fx.MustExec(steps.GitHub())
+	rep := fx.MustRerun(steps.GitHub())
 	if len(rep.Applied) != 0 {
 		t.Errorf("second run applied %v, want nothing:\n%s", rep.Applied, fx.Log)
 	}

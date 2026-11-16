@@ -248,25 +248,56 @@ func skKeygenApply(ctx context.Context, env *Env) error {
 	return nil
 }
 
+// skPubMarker records a key whose .pub could not be derived (a passphrase key
+// without a tty), so the next process does not apply ssh-pub again.
+func skPubMarker(env *Env) string {
+	return filepath.Join(env.Home, ".local", "state", "athome", "ssh-pub-underivable")
+}
+
+// skPubUnderivable reports whether the marker names key.
+func skPubUnderivable(env *Env, key string) bool {
+	b, err := os.ReadFile(skPubMarker(env))
+	return err == nil && strings.TrimSpace(string(b)) == key
+}
+
 // skPubCheck: a private key without .pub gets its .pub back, decided from the
-// files alone; Apply derives it. A key whose .pub cannot be derived (a
-// passphrase key without a tty) is logged once and then counts as done, as in
-// bash, so a rerun does not apply the step again.
+// files alone; Apply derives it. A key whose .pub cannot be derived is logged
+// once and then counts as done, as in bash, so a rerun does not apply the step
+// again.
 func skPubCheck(ctx context.Context, env *Env) (bool, error) {
 	key := skKeyPath(ctx, env)
-	if !fileExists(key) || fileExists(key+".pub") || env.pubFailed {
+	if !fileExists(key) || fileExists(key+".pub") || skPubUnderivable(env, key) {
 		return true, nil
 	}
 	return false, nil
 }
 
-// skPubApply writes the .pub from the private key. A failure only logs.
+// skPubApply writes the .pub from the private key. A failure only logs and
+// leaves the marker; a derived .pub removes it.
 func skPubApply(ctx context.Context, env *Env) error {
-	if err := skDerivePub(ctx, env, skKeyPath(ctx, env)); err != nil {
+	key := skKeyPath(ctx, env)
+	if err := skDerivePub(ctx, env, key); err != nil {
 		envLogln(env, "could not derive the public key: %v", err)
-		env.pubFailed = true
+		marker := skPubMarker(env)
+		if os.MkdirAll(filepath.Dir(marker), 0o755) == nil {
+			os.WriteFile(marker, []byte(key+"\n"), 0o644)
+		}
+		return nil
 	}
+	os.Remove(skPubMarker(env))
 	return nil
+}
+
+// skPubMarkerTidy drops the marker once the key it names has a .pub again. It
+// reads the key path from the marker, so Setup needs no hostname lookup.
+func skPubMarkerTidy(env *Env) {
+	b, err := os.ReadFile(skPubMarker(env))
+	if err != nil {
+		return
+	}
+	if key := strings.TrimSpace(string(b)); fileExists(key + ".pub") {
+		os.Remove(skPubMarker(env))
+	}
 }
 
 func skShellQuote(s string) string {

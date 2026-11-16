@@ -83,7 +83,7 @@ func TestAllTwiceAppliesNothing(t *testing.T) {
 	if _, err := fx.Exec(steps.All()); err != nil {
 		t.Fatalf("first run: %v\n%s", err, fx.Log)
 	}
-	rep, err := fx.Exec(steps.All())
+	rep, err := fx.Rerun(steps.All())
 	if err != nil {
 		t.Fatalf("second run: %v\n%s", err, fx.Log)
 	}

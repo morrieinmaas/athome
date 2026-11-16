@@ -223,7 +223,10 @@ Acceptance criteria:
 6. A run that fails at step N, rerun, skips steps before N and resumes at N.
 7. A second `athome init` with the same inputs, without `--ref`, applies no step. This
    excludes `sshKeyAction = "generate"`, which rotates the host's key on every run as
-   `bootstrap.sh` does (the step prints a note saying so), and `sshKeyAction = "reupload"`.
+   `bootstrap.sh` does (the step prints a note saying so), `sshKeyAction = "reupload"`, or when a GitHub key
+   upload failed (a failed `gh ssh-key add` is retried). The manual-upload fallbacks (an env
+   token without key scopes, a failed `gh auth refresh`) count as done once the run has
+   printed the instructions.
 8. With `ATHOME_CI` set no GitHub key upload is attempted.
 9. The e2e containers (arch, fedora) pass `verify-baseline.sh`, `verify.sh` and
    `verify-teardown.sh` unchanged with `ATHOME_E2E_RUNNER=binary`; CI runs both runners.

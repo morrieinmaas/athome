@@ -502,3 +502,48 @@ func (f failAdds) Run(ctx context.Context, c run.Cmd) (run.Result, error) {
 	}
 	return f.Runner.Run(ctx, c)
 }
+
+// AC7: the manual-upload fallbacks (an env token without key scopes, a failed
+// gh auth refresh) are states the user resolves by hand, so a second run applies
+// nothing and prints the instructions again; a failed `gh ssh-key add` is not
+// one of them and is retried.
+func TestManualUploadFallbackConverges(t *testing.T) {
+	t.Run("GITHUB_TOKEN without key scopes", func(t *testing.T) {
+		fx := ghFixture(t)
+		t.Setenv("GITHUB_TOKEN", "ghp_dummy")
+		fx.Fake.On("gh", "auth", "status").Return(run.Result{Stdout: noScopes, Stderr: noScopes})
+		fx.MustExec(steps.GitHub())
+		rep := fx.MustExec(steps.GitHub())
+		if len(rep.Applied) != 0 {
+			t.Errorf("second run applied %v, want nothing:\n%s", rep.Applied, fx.Log)
+		}
+		if n := strings.Count(fx.Log.String(), "github.com/settings/ssh/new"); n != 2 {
+			t.Errorf("manual instructions printed %d times, want once per run:\n%s", n, fx.Log)
+		}
+	})
+	t.Run("failed gh auth refresh", func(t *testing.T) {
+		fx := ghFixture(t)
+		fx.Fake.On("gh", "auth", "status").Return(run.Result{Stdout: noScopes, Stderr: noScopes})
+		fx.Fake.On("gh", "auth", "refresh", "-h", "github.com", "-s", "admin:public_key,admin:ssh_signing_key").Return(run.Result{Code: 1})
+		fx.MustExec(steps.GitHub())
+		rep := fx.MustExec(steps.GitHub())
+		if len(rep.Applied) != 0 {
+			t.Errorf("second run applied %v, want nothing:\n%s", rep.Applied, fx.Log)
+		}
+		if n := len(fx.callsTo("gh", "auth", "refresh")); n != 1 {
+			t.Errorf("gh auth refresh ran %d times, want 1 (interactive, never from a check)", n)
+		}
+	})
+	t.Run("failed gh ssh-key add is retried", func(t *testing.T) {
+		fx := ghFixture(t)
+		fx.Env.Run = failAdds{fx.Env.Run}
+		fx.MustExec(steps.GitHub())
+		rep := fx.MustExec(steps.GitHub())
+		if len(rep.Applied) != 1 {
+			t.Errorf("second run applied %v, want the upload retried:\n%s", rep.Applied, fx.Log)
+		}
+		if n := len(fx.authAdds()); n != 2 {
+			t.Errorf("auth key add ran %d times, want 2", n)
+		}
+	})
+}

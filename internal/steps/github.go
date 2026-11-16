@@ -57,6 +57,14 @@ func GitHub() []Step {
 					return true, nil
 				}
 				return false, nil
+			case ghUpload:
+				// An earlier run seeded ~/.ssh/config and still no key scope: the
+				// upload fell back to manual, which the user finishes by hand. A
+				// failed `gh ssh-key add` (scopes present) is not done and retries.
+				if len(ghMissingScopes(ctx, env)) > 0 && ghSSHConfigSeeded(env, p) {
+					ghManualUpload(env, p)
+					return true, nil
+				}
 			}
 			return false, nil
 		},
@@ -265,15 +273,26 @@ func ghUploadAll(ctx context.Context, env *Env, p ghPlan) {
 	ghPostUpload(ctx, env, p)
 }
 
-// ghEnsureScopes refreshes missing token scopes. It reports false when the
-// upload has to be done by hand.
-func ghEnsureScopes(ctx context.Context, env *Env) bool {
+func ghMissingScopes(ctx context.Context, env *Env) []string {
 	var missing []string
 	for _, s := range []string{scopePublic, scopeSigning} {
 		if !ghHasScope(ctx, env, s) {
 			missing = append(missing, s)
 		}
 	}
+	return missing
+}
+
+// ghSSHConfigSeeded: ghPostUpload already pinned this host's key in ~/.ssh/config.
+func ghSSHConfigSeeded(env *Env, p ghPlan) bool {
+	b, err := os.ReadFile(filepath.Join(env.Home, ".ssh", "config"))
+	return err == nil && strings.Contains(string(b), p.sshHost+"_ed25519")
+}
+
+// ghEnsureScopes refreshes missing token scopes. It reports false when the
+// upload has to be done by hand.
+func ghEnsureScopes(ctx context.Context, env *Env) bool {
+	missing := ghMissingScopes(ctx, env)
 	if len(missing) == 0 {
 		return true
 	}

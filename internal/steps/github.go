@@ -238,7 +238,6 @@ func ghAdd(ctx context.Context, env *Env, pub, title string, signing bool) {
 		envLogf(env, "  uploaded: %s\n", title)
 		return
 	}
-	env.Warnings++
 	envLogf(env, "  %s: upload failed\n", title)
 	for _, line := range strings.Split(strings.TrimSpace(r.Stdout+r.Stderr), "\n") {
 		if line != "" {
@@ -298,7 +297,6 @@ func ghUploadKeys(ctx context.Context, env *Env, p ghPlan) {
 }
 
 func ghManualUpload(env *Env, p ghPlan) {
-	env.Warnings++
 	envLogf(env, "==> manual SSH key upload:\n")
 	envLogf(env, "    Visit https://github.com/settings/ssh/new (auth tab)\n")
 	envLogf(env, "    and https://github.com/settings/ssh/signing/new (signing tab)\n")
@@ -319,7 +317,6 @@ func ghPostUpload(ctx context.Context, env *Env, p ghPlan) {
 
 	envLogf(env, "==> seeding github.com Host -> %s_ed25519 in ~/.ssh/config\n", p.sshHost)
 	if err := ghSeedSSHConfig(env.Home, p.sshHost+"_ed25519"); err != nil {
-		env.Warnings++
 		envLogf(env, "could not seed ~/.ssh/config: %v\n", err)
 	}
 

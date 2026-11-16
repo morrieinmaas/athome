@@ -1,6 +1,7 @@
 package steps_test
 
 import (
+	"context"
 	"os"
 	"strings"
 	"testing"
@@ -448,4 +449,55 @@ func TestLocalKeyOnGitHubNote(t *testing.T) {
 			t.Errorf("log lacks %q:\n%s", want, log)
 		}
 	}
+}
+
+// V4: bash counts only chezmoi init, baseline deps and bw-setup as warnings
+// (B:916,949,1001); a failed upload, the manual-upload fallback and a failed
+// ssh config seed only log.
+func TestGitHubFailuresOnlyLog(t *testing.T) {
+	t.Run("failed upload", func(t *testing.T) {
+		fx := ghFixture(t)
+		fx.Env.Run = failAdds{fx.Env.Run}
+		fx.MustExec(steps.GitHub())
+		if !strings.Contains(fx.Log.String(), "upload failed") {
+			t.Fatalf("the failed upload must be logged:\n%s", fx.Log)
+		}
+		if fx.Env.Warnings != 0 {
+			t.Errorf("Warnings = %d, a failed upload only logs", fx.Env.Warnings)
+		}
+	})
+	t.Run("manual upload fallback", func(t *testing.T) {
+		fx := ghFixture(t)
+		t.Setenv("GITHUB_TOKEN", "ghp_dummy")
+		fx.Fake.On("gh", "auth", "status").Return(run.Result{Stdout: noScopes, Stderr: noScopes})
+		fx.MustExec(steps.GitHub())
+		if !strings.Contains(fx.Log.String(), "github.com/settings/ssh/new") {
+			t.Fatalf("want manual-upload instructions:\n%s", fx.Log)
+		}
+		if fx.Env.Warnings != 0 {
+			t.Errorf("Warnings = %d, the manual fallback only logs", fx.Env.Warnings)
+		}
+	})
+	t.Run("failed ssh config seed", func(t *testing.T) {
+		fx := ghFixture(t)
+		mustMkdir(t, fx.Path(".ssh", "config")) // a directory where the file should be
+		fx.MustExec(steps.GitHub())
+		if !strings.Contains(fx.Log.String(), "could not seed ~/.ssh/config") {
+			t.Fatalf("the failed seed must be logged:\n%s", fx.Log)
+		}
+		if fx.Env.Warnings != 0 {
+			t.Errorf("Warnings = %d, a failed seed only logs", fx.Env.Warnings)
+		}
+	})
+}
+
+// failAdds makes every `gh ssh-key add` exit 1.
+type failAdds struct{ run.Runner }
+
+func (f failAdds) Run(ctx context.Context, c run.Cmd) (run.Result, error) {
+	if c.Name == "gh" && containsSeq(c.Args, "ssh-key", "add") {
+		f.Runner.Run(ctx, c)
+		return run.Result{Code: 1, Stderr: "nope"}, nil
+	}
+	return f.Runner.Run(ctx, c)
 }

@@ -188,7 +188,8 @@ func skImportBWApply(ctx context.Context, env *Env) error {
 		return err
 	}
 	envLogln(env, "restoring SSH key from Bitwarden '%s' -> %s", item, filepath.Base(key))
-	env.Run.Run(ctx, run.Cmd{Name: "rbw", Args: []string{"unlock"}}) // best effort, as bash
+	// Interactive: rbw asks for the master password on the terminal. Best effort, as bash.
+	env.Run.Run(ctx, run.Cmd{Name: "rbw", Args: []string{"unlock"}, Interactive: true})
 	res, err := env.Run.Run(ctx, run.Cmd{Name: "rbw", Args: []string{"get", "--field", "notes", item}})
 	if err != nil || res.Code != 0 || res.Stdout == "" {
 		envLogln(env, "couldn't read '%s' (run `rbw unlock`, check the item name)", item)

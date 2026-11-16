@@ -551,3 +551,19 @@ func TestImportDirDeriveIsInteractiveAndFailureOnlyLogs(t *testing.T) {
 		t.Errorf("second run applied %v, want nothing", rep.Applied)
 	}
 }
+
+// C2: `rbw unlock` may ask for the master password on the terminal.
+func TestImportBWUnlockIsInteractive(t *testing.T) {
+	const item = "ssh/otherbox_ed25519"
+	fx := newFixture(t)
+	fx.Fake.Have("rbw")
+	stubDeriveTmp := keyPath(fx) + ".import-tmp"
+	fx.Fake.On("ssh-keygen", "-y", "-f", stubDeriveTmp).Return(run.Result{Stdout: pubLine})
+	fx.Fake.On("rbw", "get", "--field", "notes", item).Return(run.Result{Stdout: "BW-PRIVATE\n"})
+	fx.Env.Opts.ImportSSHBW = item
+	fx.MustExec(steps.SSHKey())
+	calls := fx.callsTo("rbw", "unlock")
+	if len(calls) != 1 || !calls[0].Interactive {
+		t.Errorf("rbw unlock must run interactive: %+v", calls)
+	}
+}

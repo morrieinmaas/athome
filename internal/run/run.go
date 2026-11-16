@@ -18,6 +18,9 @@ type Cmd struct {
 	Dir   string
 	Env   []string
 	Stdin string
+	// Interactive inherits os.Stdin, os.Stdout and os.Stderr, so the user sees
+	// the command's output and can answer its prompts. Result then carries only Code.
+	Interactive bool
 }
 
 type Result struct {
@@ -49,7 +52,14 @@ func (execRunner) Run(ctx context.Context, c Cmd) (Result, error) {
 		cmd.Stdin = strings.NewReader(c.Stdin)
 	}
 	var stdout, stderr bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	if c.Interactive {
+		if c.Stdin == "" {
+			cmd.Stdin = os.Stdin
+		}
+		cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+	} else {
+		cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	}
 
 	err := cmd.Run()
 	res := Result{Stdout: stdout.String(), Stderr: stderr.String()}

@@ -141,3 +141,24 @@ func TestFakeHave(t *testing.T) {
 		t.Errorf("LookPath of a tool not declared with Have must error")
 	}
 }
+
+func TestExecInteractiveInheritsStreams(t *testing.T) {
+	res, err := run.Exec().Run(context.Background(), run.Cmd{Name: "sh", Args: []string{"-c", "echo out; exit 4"}, Interactive: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Code != 4 {
+		t.Errorf("Code = %d, want 4", res.Code)
+	}
+	if res.Stdout != "" || res.Stderr != "" {
+		t.Errorf("an interactive command's output is not captured: %+v", res)
+	}
+}
+
+func TestFakeRecordsInteractive(t *testing.T) {
+	f := run.NewFake()
+	f.Run(context.Background(), run.Cmd{Name: "x", Interactive: true})
+	if c := f.Calls(); len(c) != 1 || !c[0].Interactive {
+		t.Errorf("Fake must record Interactive, got %+v", c)
+	}
+}

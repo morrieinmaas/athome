@@ -219,7 +219,6 @@ func ghEnsureSigning(ctx context.Context, env *Env, p ghPlan) {
 	}
 }
 
-// ghAdd ports add_gh_ssh_key (B:533-544). A failure is logged, never returned.
 // ghSigningHint tells the user how to upload the signing key by hand (B:575-578).
 func ghSigningHint(env *Env, p ghPlan) {
 	envLogf(env, "  ! commit-signing key not uploaded: gh lacks the %s scope.\n", scopeSigning)
@@ -228,6 +227,7 @@ func ghSigningHint(env *Env, p ghPlan) {
 	envLogf(env, "      gh ssh-key add %s --title \"%s-sign\" --type signing\n", p.signPub, p.host)
 }
 
+// ghAdd ports add_gh_ssh_key (B:533-544). A failure is logged, never returned.
 func ghAdd(ctx context.Context, env *Env, pub, title string, signing bool) {
 	args := []string{"ssh-key", "add", pub, "--title", title}
 	if signing {
@@ -349,21 +349,18 @@ func ghSeedSSHConfig(home, hostkey string) error {
 	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	if err := os.WriteFile(path, existing, 0o600); err != nil {
-		return err
-	}
-	if err := os.Chmod(path, 0o600); err != nil {
-		return err
-	}
 	if strings.Contains(string(existing), hostkey) {
-		return nil
+		return os.Chmod(path, 0o600)
 	}
 	block := "\nHost github.com\n    HostName github.com\n    User git\n    IdentityFile ~/.ssh/id_ed25519\n    IdentityFile ~/.ssh/" + hostkey + "\n"
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
+	if err := os.Chmod(path, 0o600); err != nil {
+		return err
+	}
 	_, err = f.WriteString(block)
 	return err
 }

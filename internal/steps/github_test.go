@@ -4,6 +4,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/morrieinmaas/athome/internal/run"
 	"github.com/morrieinmaas/athome/internal/steps"
@@ -267,6 +268,24 @@ func TestSeed(t *testing.T) {
 		fx.MustExec(steps.GitHub())
 		if got := sshConfigSeed(t, fx); got != existing {
 			t.Errorf("config must not change:\n%s", got)
+		}
+	})
+	t.Run("an existing config is never rewritten", func(t *testing.T) {
+		fx := ghFixture(t)
+		existing := "Host github.com\n    IdentityFile ~/.ssh/" + testHost + "_ed25519\n"
+		path := fx.Path(".ssh", "config")
+		writeFile(t, path, existing, 0o600)
+		old := time.Now().Add(-48 * time.Hour)
+		if err := os.Chtimes(path, old, old); err != nil {
+			t.Fatal(err)
+		}
+		fx.MustExec(steps.GitHub())
+		fi, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !fi.ModTime().Equal(old) {
+			t.Errorf("config was rewritten: mtime %v, want %v", fi.ModTime(), old)
 		}
 	})
 	t.Run("never seeded when gh is missing", func(t *testing.T) {

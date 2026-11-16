@@ -321,3 +321,28 @@ func TestSpacesInPaths(t *testing.T) {
 		t.Errorf("handle=%q source=%q, want spacey %q", got.Data["githubHandle"], got.Source, file)
 	}
 }
+
+// S7: chezmoi's TOML needs UTF-8, so a bad byte is caught here, naming the key.
+func TestNonUTF8Answer(t *testing.T) {
+	dir := t.TempDir()
+	file := writeFile(t, filepath.Join(dir, "b.toml"), "workName = \"Ren\xe9\"\n")
+	cases := []struct {
+		name string
+		opts config.Options
+		want string
+	}{
+		{"env", config.Options{Home: dir, Env: map[string]string{"ATHOME_PERSONAL_NAME": "Ren\xe9"}}, "personalName"},
+		{"file", config.Options{ConfigPath: file, Home: dir, Env: map[string]string{}}, "workName"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			_, err := config.Load(c.opts)
+			if !errors.Is(err, config.ErrUsage) {
+				t.Fatalf("err = %v, want ErrUsage", err)
+			}
+			if !strings.Contains(err.Error(), c.want) {
+				t.Errorf("error %q does not name %q", err, c.want)
+			}
+		})
+	}
+}

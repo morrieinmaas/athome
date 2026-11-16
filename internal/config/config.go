@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 )
 
 // ErrUsage marks errors that exit with code 2.
@@ -58,29 +59,11 @@ var answers = []struct{ key, env, def string }{
 func Load(o Options) (Config, error) {
 	cfg := Config{Machine: "personal", IncludeAgents: true, Data: map[string]string{}}
 
-	var file []byte
-	switch {
-	case o.ConfigPath != "":
-		b, err := os.ReadFile(o.ConfigPath)
-		if err != nil {
-			return cfg, fmt.Errorf("%w: --config: file not readable: %s", ErrUsage, o.ConfigPath)
-		}
-		file, cfg.Source = b, o.ConfigPath
-	default:
-		var cands []string
-		if o.RepoRoot != "" {
-			cands = append(cands, filepath.Join(o.RepoRoot, "bootstrap.local.toml"))
-		}
-		if o.Home != "" {
-			cands = append(cands, filepath.Join(o.Home, ".config", "athome", "bootstrap.toml"))
-		}
-		for _, p := range cands {
-			if b, err := os.ReadFile(p); err == nil {
-				file, cfg.Source = b, p
-				break
-			}
-		}
+	file, source, err := readAnswersFile(o)
+	if err != nil {
+		return cfg, err
 	}
+	cfg.Source = source
 	text := string(file)
 
 	for _, a := range answers {
@@ -90,6 +73,9 @@ func Load(o Options) (Config, error) {
 		}
 		if v == "" {
 			v = a.def
+		}
+		if !utf8.ValidString(v) { // chezmoi.toml is TOML, which must be UTF-8
+			return cfg, fmt.Errorf("%w: %s is not valid UTF-8 (set via %s or the config file)", ErrUsage, a.key, a.env)
 		}
 		cfg.Data[a.key] = v
 	}
@@ -114,6 +100,31 @@ func Load(o Options) (Config, error) {
 		return cfg, fmt.Errorf("%w: machine must be personal|work (got: %s)", ErrUsage, cfg.Machine)
 	}
 	return cfg, nil
+}
+
+// readAnswersFile finds the answers file: --config, else the repo's
+// bootstrap.local.toml, else ~/.config/athome/bootstrap.toml (B:172-181).
+func readAnswersFile(o Options) (content []byte, source string, err error) {
+	if o.ConfigPath != "" {
+		b, err := os.ReadFile(o.ConfigPath)
+		if err != nil {
+			return nil, "", fmt.Errorf("%w: --config: file not readable: %s", ErrUsage, o.ConfigPath)
+		}
+		return b, o.ConfigPath, nil
+	}
+	var cands []string
+	if o.RepoRoot != "" {
+		cands = append(cands, filepath.Join(o.RepoRoot, "bootstrap.local.toml"))
+	}
+	if o.Home != "" {
+		cands = append(cands, filepath.Join(o.Home, ".config", "athome", "bootstrap.toml"))
+	}
+	for _, p := range cands {
+		if b, err := os.ReadFile(p); err == nil {
+			return b, p, nil
+		}
+	}
+	return nil, "", nil
 }
 
 // cfgGet ports cfg_get (B:182-185): first `key = value` line, trailing blanks

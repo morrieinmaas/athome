@@ -382,7 +382,7 @@ Decisions:
   `-y`, `--yes`, `--non-interactive` is given. `--plain` (and `ATHOME_PLAIN=1`) keeps the
   build 2 line prompts. Non-interactive runs, `--config` runs and e2e are unchanged.
 - The form has the pages of "The init form": Machine (machineType `personal|work`,
-  hostname), Identity (githubHandle, personalName, personalEmail, workEmail, workName,
+  hostname), Identity (githubHandle, githubId (derived, hidden), personalName, workEmail, workName,
   sidebizEmail, sidebizName), Keys and secrets (bitwardenUrl, ssh key action, store the key
   in Bitwarden, upload keys to GitHub, restore secrets), Network (meshProvider
   `meshnet|netbird|none`, nordvpnCountry when meshnet, netbirdManagementUrl when netbird),

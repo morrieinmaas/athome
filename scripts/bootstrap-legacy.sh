@@ -5,9 +5,9 @@
 # Usage:
 #
 #   ~/.local/share/chezmoi/scripts/bootstrap.sh             # default: the ref you cloned (current HEAD)
-#   ~/.local/share/chezmoi/scripts/bootstrap.sh --ref main  # explicit branch
-#   ~/.local/share/chezmoi/scripts/bootstrap.sh --ref v1.x  # pin a tagged release
-#   ~/.local/share/chezmoi/scripts/bootstrap.sh --non-interactive [--config FILE]  # no prompts (defaults/config)
+#   ~/.local/share/chezmoi/scripts/bootstrap-legacy.sh --ref main  # explicit branch
+#   ~/.local/share/chezmoi/scripts/bootstrap-legacy.sh --ref v1.x  # pin a tagged release
+#   ~/.local/share/chezmoi/scripts/bootstrap-legacy.sh --non-interactive [--config FILE]  # no prompts (defaults/config)
 #
 # Interactive by default (prompts for SSH-key + Bitwarden choices etc.).
 # --non-interactive (or no TTY) skips all prompts and uses sane defaults, which
@@ -162,7 +162,7 @@ if [[ ! -f "$repo_root/.chezmoiroot" ]] || [[ ! -d "$chezmoi_source/.chezmoiscri
   c_red "Clone first, then run the script from inside the clone:"
   c_red ""
   c_red "    gh repo clone morrieinmaas/athome ~/.local/share/chezmoi"
-  c_red "    ~/.local/share/chezmoi/scripts/bootstrap.sh"
+  c_red "    ~/.local/share/chezmoi/scripts/bootstrap-legacy.sh"
   exit 1
 fi
 
@@ -317,8 +317,8 @@ if [[ "$REF" != "$ORIGINAL_BRANCH" ]]; then
     c_red "This ref has no chezmoi sources under home/. Bootstrap can't use it."
     c_red ""
     c_red "Fix one of:"
-    c_red "  ./scripts/bootstrap.sh --ref main      # use current main"
-    c_red "  git fetch --tags && ./scripts/bootstrap.sh    # let default pick latest tag"
+    c_red "  ./scripts/bootstrap-legacy.sh --ref main      # use current main"
+    c_red "  git fetch --tags && ./scripts/bootstrap-legacy.sh    # let default pick latest tag"
     exit 1
   fi
 fi
@@ -395,7 +395,7 @@ fi
 if [[ -n "$IMPORT_SSH_BW" ]]; then
   if ! command -v rbw >/dev/null 2>&1; then
     c_yellow "==> --import-ssh-bw: rbw not installed yet — install it, then re-run:"
-    c_yellow "    ./scripts/bootstrap.sh --import-ssh-bw $IMPORT_SSH_BW"
+    c_yellow "    ./scripts/bootstrap-legacy.sh --import-ssh-bw $IMPORT_SSH_BW"
   else
     c_blue "==> restoring SSH key from Bitwarden '$IMPORT_SSH_BW' → ${ssh_host}_ed25519"
     mkdir -p "$HOME/.ssh"; chmod 700 "$HOME/.ssh"
@@ -1092,7 +1092,7 @@ Next manual steps:
 
   2. (Optional) Reuse this SSH key on another box. It's stored in Bitwarden as a
      secure note (ssh/<hostname>_ed25519); restore it elsewhere with:
-       ./scripts/bootstrap.sh --import-ssh-bw ssh/<hostname>_ed25519
+       ./scripts/bootstrap-legacy.sh --import-ssh-bw ssh/<hostname>_ed25519
 
   3. VPNs (when ready):
        sudo netbird up                                   # mesh (NetBird Cloud SSO)

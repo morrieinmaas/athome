@@ -25,7 +25,7 @@ internal/run/suspend_test.go, internal/steps/github.go, internal/steps/finish.go
 internal/steps/prompt_answers_test.go
 **Produces:** `Asker.Around func(func())` (when set, each question's print and read run inside it);
 `run.Suspending(r Runner, around func(func())) Runner` (Interactive or NeedsSudo cmds run inside
-around; others direct); steps honour `Cfg.Data["uploadSshKeys"]` and `Cfg.Data["restoreSecrets"]`
+around; others direct); steps honour `Cfg.Data["uploadSshKeys"]`, `Cfg.Data["restoreSecrets"]` and `Cfg.Data["bwBackupSshKey"]` (ssh-bw-backup)
 ("false" skips without asking and leaves the same follow-up/log lines as a "no"; "true" proceeds without asking).
 
 ### T2 the form
@@ -33,7 +33,7 @@ around; others direct); steps honour `Cfg.Data["uploadSshKeys"]` and `Cfg.Data["
 **Produces:** `tui.Seed{Values map[string]string; Locked map[string]bool; KeyExists bool;
 CheckURL, CheckHandle func(context.Context, string) error}`; `tui.RunForm(ctx, in io.Reader, out io.Writer, seed Seed) (map[string]string, error)`,
 `tui.ErrQuit`; the returned map holds every spec field key plus sshKeyAction or generateSshKey,
-useBitwarden, uploadSshKeys, restoreSecrets. `tui.ValidEmail(string) bool`.
+useBitwarden, uploadSshKeys, restoreSecrets, bwBackupSshKey. `tui.ValidEmail(string) bool`.
 
 ### T3 progress view, home screen, step events
 **Owns:** internal/tui/progress.go, internal/tui/progress_test.go, internal/tui/home.go,

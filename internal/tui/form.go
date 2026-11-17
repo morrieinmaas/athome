@@ -322,7 +322,7 @@ func (s *formState) reviewText() string {
 // uses tea.WithContext or tea.Interrupt: both take bubbletea's kill path, which
 // closes the input reader without waiting for the read loop still using it (a
 // data race, and the loop may outlive Run and touch the caller's reader).
-func runProgram(ctx context.Context, m tea.Model, opts ...tea.ProgramOption) (tea.Model, error) {
+var runProgram = func(ctx context.Context, m tea.Model, opts ...tea.ProgramOption) (tea.Model, error) {
 	p := tea.NewProgram(m, opts...)
 	defer context.AfterFunc(ctx, p.Quit)()
 	return p.Run()
@@ -337,7 +337,7 @@ func RunForm(ctx context.Context, in io.Reader, out io.Writer, seed Seed) (map[s
 			f := page().WithKeyMap(quitKeys)
 			f.SubmitCmd, f.CancelCmd = tea.Quit, tea.Quit
 			_, err := runProgram(ctx, f, tea.WithFilter(s.trackSubmit), tea.WithInput(in), tea.WithOutput(out))
-			if f.State == huh.StateAborted || ctx.Err() != nil {
+			if f.State == huh.StateAborted || ctx.Err() != nil || errors.Is(err, tea.ErrInterrupted) {
 				return nil, ErrQuit
 			}
 			if err != nil {
@@ -346,7 +346,7 @@ func RunForm(ctx context.Context, in io.Reader, out io.Writer, seed Seed) (map[s
 		}
 		rm := &reviewModel{text: s.reviewText()}
 		_, err := runProgram(ctx, rm, tea.WithInput(in), tea.WithOutput(out))
-		if ctx.Err() != nil {
+		if ctx.Err() != nil || errors.Is(err, tea.ErrInterrupted) {
 			return nil, ErrQuit
 		}
 		if err != nil {

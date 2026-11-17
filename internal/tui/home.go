@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -66,7 +68,10 @@ func (m *homeModel) View() string {
 // RunHome shows the home screen and returns "init" or "quit".
 func RunHome(in io.Reader, out io.Writer, info HomeInfo) (string, error) {
 	m := &homeModel{info: info}
-	if _, err := tea.NewProgram(m, tea.WithInput(in), tea.WithOutput(out)).Run(); err != nil {
+	if _, err := runProgram(context.Background(), m, tea.WithInput(in), tea.WithOutput(out)); err != nil {
+		if errors.Is(err, tea.ErrInterrupted) {
+			return "quit", nil
+		}
 		return "", err
 	}
 	if m.choice == "" {

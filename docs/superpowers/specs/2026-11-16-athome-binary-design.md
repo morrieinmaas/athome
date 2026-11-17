@@ -392,8 +392,9 @@ Decisions:
   data step derives it). A field set by flag or env is shown read-only.
 - Hostname: The hostname answer sets `[data].hostname` for that run only; the ssh key keeps chezmoi's hostname, and a later non-interactive run rewrites `hostname` as build 2 does.
 - Answers go into `env.Cfg.Data` under the keys the steps already read
-  (`sshKeyAction`, `generateSshKey`, `useBitwarden`), plus two new ones the steps honour:
-  `uploadSshKeys` and `restoreSecrets` (`"true"|"false"`). So no step asks a question
+  (`sshKeyAction`, `generateSshKey`, `useBitwarden`), plus three new ones the steps honour:
+  `uploadSshKeys`, `restoreSecrets` and `bwBackupSshKey` (`"true"|"false"`; the last is the
+  "store the ssh key in Bitwarden" answer, honoured by ssh-bw-backup). So no step asks a question
   the form answered. The ssh key field shows `use|generate|reupload` when a key exists,
   else `generate|skip`.
 - Validation on leaving a field: emails must match `^[^@\s]+@[^@\s]+\.[^@\s]+$` (empty
@@ -411,7 +412,7 @@ Decisions:
   device flow) runs with the TUI's terminal released and restored afterwards
   (`Program.ReleaseTerminal`/`RestoreTerminal`), so sudo asks only when a step needs it,
   as today.
-- After the progress view exits, the same finish summary as the plain run is printed.
+- After the progress view exits, the run log is printed, then the finish summary, so follow-up lines (manual upload commands, warnings) stay visible.
 - `athome` with no arguments on a terminal opens the home screen: version and commit, repo
   root, machine type, hostname and GitHub handle from `chezmoi.toml` (or "not set up"),
   then a menu: init, quit. Update and machines join the menu in later builds. Without a

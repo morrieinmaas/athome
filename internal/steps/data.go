@@ -279,12 +279,22 @@ func dataIdentity(ctx context.Context, env *Env) (handle, id string) {
 	return handle, id
 }
 
-// dataShortHostname is the hostname the user answered, else the short hostname.
+// dataShortHostname is the hostname the user answered, else the one already
+// stored in chezmoi.toml, else the short hostname.
 func dataShortHostname(env *Env) string {
 	if h := env.Cfg.Data["hostname"]; h != "" {
 		return h
 	}
+	if h := storedHostname(env); h != "" {
+		return h
+	}
 	return shortHostname()
+}
+
+// storedHostname is the [data].hostname an earlier run (or the TUI) recorded.
+func storedHostname(env *Env) string {
+	h, _ := storedData(env)["hostname"].(string)
+	return h
 }
 
 // ShortHostname is the hostname the data step records when none is answered.
@@ -293,9 +303,14 @@ func ShortHostname() string { return shortHostname() }
 // KeyPath is where the machine's ssh key lives, for callers outside the steps.
 func KeyPath(ctx context.Context, env *Env) string { return skKeyPath(ctx, env) }
 
-// dataHostname is an answered hostname, else chezmoi's hostname (B:352), falling back to the short hostname.
+// dataHostname is an answered or stored hostname, else chezmoi's hostname (B:352), falling back to the short hostname.
 func dataHostname(ctx context.Context, env *Env) string {
 	if h := env.Cfg.Data["hostname"]; h != "" {
+		return h
+	}
+	// The data step stores the short hostname when nothing was answered; that
+	// says nothing about the key, which then follows chezmoi's hostname.
+	if h := storedHostname(env); h != "" && h != shortHostname() {
 		return h
 	}
 	if r, err := env.Run.Run(ctx, dgCmd("chezmoi", "execute-template", "{{ .chezmoi.hostname }}")); err == nil && r.Code == 0 {

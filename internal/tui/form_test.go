@@ -29,7 +29,7 @@ func full() map[string]string {
 		"meshProvider": "netbird", "netbirdManagementUrl": "https://nb.example", "nordvpnCountry": "",
 		"includeAgents": "false", "agentsRepo": "o/r", "extraPackages": "jq fd",
 		"slackDefaultWorkspace": "acme", "slackTeamId": "T01", "matterhornHost": "mm.example", "matterhornUser": "me@x.co",
-		"sshKeyAction": "reupload",
+		"sshKeyAction": "use",
 	}
 }
 
@@ -289,7 +289,9 @@ func runLockedToReview(t *testing.T, ctx context.Context) (*syncBuf, *os.File, c
 		}
 	}
 	// huh skips groups that hold only read-only notes, except a group of a single
-	// note, which it shows: the store-the-key question is one.
+	// note, which it shows: the upload and store-the-key questions are each one.
+	waitFor("Upload keys to GitHub?")
+	pw2.WriteString("\r")
 	waitFor("Store the ssh key in Bitwarden?")
 	pw2.WriteString("\r")
 	waitFor("Network")

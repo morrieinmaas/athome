@@ -49,3 +49,23 @@ func TestValidBitwardenURL(t *testing.T) {
 		t.Error("check failure should show once then accept")
 	}
 }
+
+// huh validates on enter and on blur; a value that passed must not be checked
+// over the network a second time.
+func TestPassingCheckIsCached(t *testing.T) {
+	calls := 0
+	ok := func(context.Context, string) error { calls++; return nil }
+	h := validHandle(ok, context.Background())
+	h("octo")
+	h("octo")
+	u := validBitwardenURL(ok, context.Background())
+	u("https://vault.example")
+	u("https://vault.example")
+	if calls != 2 {
+		t.Errorf("calls = %d, want one per distinct valid value (2)", calls)
+	}
+	h("other")
+	if calls != 3 {
+		t.Errorf("a new value must be checked: calls = %d", calls)
+	}
+}

@@ -132,39 +132,52 @@ func (m *progressModel) View() string {
 	return b.String()
 }
 
-// RunProgress runs list through steps.Execute in a goroutine while showing one
-// line per step. wire, if set, is called once with an around func that suspends
-// the screen for fn (sudo, interactive commands, prompts). On failure the view
-// stays until a key press, then the Execute error is returned; Ctrl-C cancels
-// the run and returns an error wrapping context.Canceled.
-func RunProgress(ctx context.Context, in io.Reader, out io.Writer, env *steps.Env, list []steps.Step, wire func(around func(func()))) (steps.Report, error) {
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
+// progressRun ties a progressModel to steps.Execute: it runs the steps in a
+// goroutine, feeds their events to the program and restores env afterwards.
+type progressRun struct {
+	m        *progressModel
+	ctx      context.Context
+	cancel   context.CancelFunc
+	env      *steps.Env
+	list     []steps.Step
+	origLog  io.Writer
+	origEv   func(steps.Event)
+	finished chan struct{}
+	rep      steps.Report // Execute's own result, set before finished closes
+	err      error
+}
 
-	lb := &logBuf{}
-	m := &progressModel{
-		spin:    spinner.New(spinner.WithSpinner(spinner.Dot), spinner.WithStyle(lipgloss.NewStyle())),
-		log:     lb,
-		started: make(chan struct{}),
-		cancel:  cancel,
+func newProgressRun(ctx context.Context, env *steps.Env, list []steps.Step) *progressRun {
+	ctx, cancel := context.WithCancel(ctx)
+	r := &progressRun{
+		ctx: ctx, cancel: cancel, env: env, list: list,
+		origLog: env.Log, origEv: env.Events,
+		finished: make(chan struct{}),
+		m: &progressModel{
+			spin:    spinner.New(spinner.WithSpinner(spinner.Dot), spinner.WithStyle(lipgloss.NewStyle())),
+			log:     &logBuf{},
+			started: make(chan struct{}),
+			cancel:  cancel,
+		},
 	}
 	for _, s := range list {
-		m.rows = append(m.rows, row{name: s.Name})
+		r.m.rows = append(r.m.rows, row{name: s.Name})
 	}
+	return r
+}
 
-	p := tea.NewProgram(m, tea.WithInput(in), tea.WithOutput(out))
-	lb.p = p
-
-	origLog, origEvents := env.Log, env.Events
-	defer func() { env.Log, env.Events = origLog, origEvents }()
-	if origLog != nil {
-		env.Log = io.MultiWriter(origLog, lb)
+// start hooks env to p and runs the steps once the program has started.
+func (r *progressRun) start(p *tea.Program, wire func(around func(func()))) {
+	r.m.log.p = p
+	env := r.env
+	if r.origLog != nil {
+		env.Log = io.MultiWriter(r.origLog, r.m.log)
 	} else {
-		env.Log = lb
+		env.Log = r.m.log
 	}
 	env.Events = func(e steps.Event) {
-		if origEvents != nil {
-			origEvents(e)
+		if r.origEv != nil {
+			r.origEv(e)
 		}
 		p.Send(eventMsg(e))
 	}
@@ -175,26 +188,46 @@ func RunProgress(ctx context.Context, in io.Reader, out io.Writer, env *steps.En
 			fn()
 		})
 	}
-
-	finished := make(chan struct{})
 	go func() {
-		defer close(finished)
+		defer close(r.finished)
 		select {
-		case <-m.started:
-		case <-ctx.Done():
+		case <-r.m.started:
+		case <-r.ctx.Done():
 		}
-		rep, err := steps.Execute(ctx, env, list)
+		rep, err := steps.Execute(r.ctx, env, r.list)
+		r.rep, r.err = rep, err
 		p.Send(doneMsg{rep, err})
 	}()
+}
 
+// result waits for the steps to stop, restores env and maps the end of the
+// program to Execute's report and error. A program that quit before the done
+// message (SIGTERM becomes a quit message) still returns Execute's own result.
+func (r *progressRun) result(runErr error) (steps.Report, error) {
+	r.cancel()
+	<-r.finished
+	r.env.Log, r.env.Events = r.origLog, r.origEv
+	switch {
+	case runErr != nil:
+		return r.m.rep, runErr
+	case r.m.canceled:
+		return r.m.rep, fmt.Errorf("run canceled: %w", context.Canceled)
+	case !r.m.finished:
+		return r.rep, r.err
+	}
+	return r.m.rep, r.m.err
+}
+
+// RunProgress runs list through steps.Execute in a goroutine while showing one
+// line per step. wire, if set, is called once with an around func that suspends
+// the screen for fn (sudo, interactive commands, prompts). On failure the view
+// stays until a key press, then the Execute error is returned; Ctrl-C cancels
+// the run and returns an error wrapping context.Canceled.
+func RunProgress(ctx context.Context, in io.Reader, out io.Writer, env *steps.Env, list []steps.Step, wire func(around func(func()))) (steps.Report, error) {
+	r := newProgressRun(ctx, env, list)
+	defer r.cancel()
+	p := tea.NewProgram(r.m, tea.WithInput(in), tea.WithOutput(out))
+	r.start(p, wire)
 	_, runErr := p.Run()
-	cancel()
-	<-finished
-	if runErr != nil {
-		return m.rep, runErr
-	}
-	if m.canceled {
-		return m.rep, fmt.Errorf("run canceled: %w", context.Canceled)
-	}
-	return m.rep, m.err
+	return r.result(runErr)
 }

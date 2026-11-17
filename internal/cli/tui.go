@@ -7,12 +7,10 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
 
-	"github.com/BurntSushi/toml"
 	"github.com/morrieinmaas/athome/internal/run"
 	"github.com/morrieinmaas/athome/internal/steps"
 	"github.com/morrieinmaas/athome/internal/tui"
@@ -30,7 +28,10 @@ const checkTimeout = 5 * time.Second
 
 // useTUI: init shows the form when it would prompt, unless --plain or ATHOME_PLAIN asks for lines.
 func useTUI(o initOpts, environ map[string]string) bool {
-	if o.Plain || (environ["ATHOME_PLAIN"] != "" && environ["ATHOME_PLAIN"] != "0") {
+	if o.Plain || o.Config != "" { // a --config run keeps its line prompts, never the form
+		return false
+	}
+	if environ["ATHOME_PLAIN"] != "" && environ["ATHOME_PLAIN"] != "0" {
 		return false
 	}
 	return isInteractive(o.NonInter || o.Yes, stdinIsTTY()) && stdoutIsTTY()
@@ -52,14 +53,8 @@ var dataEnv = map[string]string{
 
 // storedChezmoiData is the [data] table of ~/.config/chezmoi/chezmoi.toml as strings.
 func storedChezmoiData(home string) map[string]string {
-	var doc struct {
-		Data map[string]any `toml:"data"`
-	}
 	out := map[string]string{}
-	if _, err := toml.DecodeFile(filepath.Join(home, ".config", "chezmoi", "chezmoi.toml"), &doc); err != nil {
-		return out
-	}
-	for k, v := range doc.Data {
+	for k, v := range steps.StoredData(home) {
 		switch x := v.(type) {
 		case string:
 			out[k] = x
@@ -110,10 +105,9 @@ func buildSeed(ctx context.Context, env *steps.Env, o initOpts, environ map[stri
 		}
 	}
 	if vals["hostname"] == "" {
-		vals["hostname"] = shortHostname()
+		vals["hostname"] = steps.ShortHostname()
 	}
-	keyPath := filepath.Join(env.Home, ".ssh", chezmoiHostname(ctx, env.Run)+"_ed25519")
-	_, statErr := os.Stat(keyPath)
+	_, statErr := os.Stat(steps.KeyPath(ctx, env))
 	return tui.Seed{
 		Values:      vals,
 		Locked:      locked,
@@ -121,35 +115,6 @@ func buildSeed(ctx context.Context, env *steps.Env, o initOpts, environ map[stri
 		CheckURL:    checkURL,
 		CheckHandle: func(ctx context.Context, h string) error { return checkHandle(ctx, env.Run, h) },
 	}
-}
-
-// chezmoiHostname is the hostname the ssh key file is named after (as the sshkey step derives it).
-func chezmoiHostname(ctx context.Context, r run.Runner) string {
-	if res, err := r.Run(ctx, run.Cmd{Name: "chezmoi", Args: []string{"execute-template", "{{ .chezmoi.hostname }}"}}); err == nil && res.Code == 0 {
-		if h := strings.TrimSpace(res.Stdout); h != "" {
-			return h
-		}
-	}
-	return shortHostname()
-}
-
-func shortHostname() string {
-	h := os.Getenv("HOSTNAME")
-	if h == "" {
-		h, _ = os.Hostname()
-	}
-	if h == "" {
-		if b, err := os.ReadFile("/etc/hostname"); err == nil {
-			h = strings.TrimSpace(string(b))
-		}
-	}
-	if i := strings.IndexByte(h, '.'); i >= 0 {
-		h = h[:i]
-	}
-	if h == "" {
-		return "machine"
-	}
-	return h
 }
 
 var httpGet = func(ctx context.Context, url string) (int, error) {
@@ -209,6 +174,10 @@ func mergeAnswers(env *steps.Env, ans map[string]string) {
 	if env.Cfg.Data == nil {
 		env.Cfg.Data = map[string]string{}
 	}
+	env.Answered = map[string]bool{}
+	for k := range ans {
+		env.Answered[k] = true // an empty answer is still an answer: the prompts must not ask again
+	}
 	for k, v := range ans {
 		switch k {
 		case "machineType":
@@ -216,8 +185,8 @@ func mergeAnswers(env *steps.Env, ans map[string]string) {
 		case "includeAgents":
 			env.Cfg.IncludeAgents = v != "false"
 		case "hostname":
-			if v != "" && v != shortHostname() {
-				os.Setenv("HOSTNAME", v) // the data step reads its hostname from here
+			if v != "" && v != steps.ShortHostname() {
+				env.Cfg.Data["hostname"] = v // the data step and the key path honour an explicit hostname
 			}
 		default:
 			env.Cfg.Data[k] = v

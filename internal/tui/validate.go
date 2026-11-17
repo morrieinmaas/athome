@@ -53,20 +53,21 @@ func validBitwardenURL(check func(context.Context, string) error, ctx context.Co
 	}
 }
 
-// overridable wraps a network check so that a failure is shown once and a
-// second submit of the same value is accepted (offline machines must still init).
+// overridable wraps a network check. A value that passed is not checked again
+// (huh validates on enter and on blur), and a failure is shown once: a second
+// submit of the same value is accepted (offline machines must still init).
 func overridable(check func(string) error) func(string) error {
-	failed := ""
-	hasFailed := false
+	last := ""
+	has := false
 	return func(v string) error {
-		if hasFailed && v == failed {
+		if has && v == last {
 			return nil
 		}
 		if err := check(v); err != nil {
-			failed, hasFailed = v, true
+			last, has = v, true
 			return errors.New(err.Error() + " (press enter again to use it anyway)")
 		}
-		hasFailed = false
+		last, has = v, true
 		return nil
 	}
 }

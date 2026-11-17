@@ -133,3 +133,21 @@ func TestFormQuitAtFirstPage(t *testing.T) {
 		t.Fatalf("err=%v want ErrQuit", err)
 	}
 }
+
+func TestFormDropsGithubIdWhenHandleChanges(t *testing.T) {
+	seed := Seed{Values: map[string]string{"githubHandle": "old", "githubId": "42"}}
+	st := newFormState(seed)
+	if got := st.answers()["githubId"]; got != "42" {
+		t.Errorf("unchanged handle: id = %q, want 42", got)
+	}
+	*st.v["githubHandle"] = "new"
+	if got := st.answers()["githubId"]; got != "" {
+		t.Errorf("changed handle kept the old id %q", got)
+	}
+	seed.Locked = map[string]bool{"githubId": true}
+	st = newFormState(seed)
+	*st.v["githubHandle"] = "new"
+	if got := st.answers()["githubId"]; got != "42" {
+		t.Errorf("a locked id must stay as seeded, got %q", got)
+	}
+}

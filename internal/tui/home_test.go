@@ -1,39 +1,71 @@
-package tui_test
+package tui
 
 import (
-	"io"
+	"bytes"
 	"strings"
 	"testing"
+	"time"
 
-	"github.com/morrieinmaas/athome/internal/tui"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/exp/teatest"
 )
 
+func runHomeModel(t *testing.T, info HomeInfo, keys ...tea.KeyMsg) *homeModel {
+	t.Helper()
+	tm := teatest.NewTestModel(t, &homeModel{info: info}, teatest.WithInitialTermSize(80, 24))
+	for _, k := range keys {
+		tm.Send(k)
+	}
+	final := tm.FinalModel(t, teatest.WithFinalTimeout(5*time.Second)).(*homeModel)
+	return final
+}
+
 func TestHomeSetUp(t *testing.T) {
-	var out syncBuf
-	got, err := tui.RunHome(strings.NewReader("\r"), &out, tui.HomeInfo{
+	info := HomeInfo{
 		Version: "v1.2.3", Commit: "abc123", Repo: "git@x:me/dots.git",
 		MachineType: "personal", Hostname: "box", Handle: "octo", SetUp: true,
-	})
-	if err != nil || got != "init" {
-		t.Fatalf("got %q, %v", got, err)
 	}
-	for _, w := range []string{"v1.2.3", "abc123", "git@x:me/dots.git", "personal", "box", "octo"} {
-		if !strings.Contains(out.String(), w) {
-			t.Errorf("missing %q in %q", w, out.String())
+	tm := teatest.NewTestModel(t, &homeModel{info: info}, teatest.WithInitialTermSize(80, 24))
+	teatest.WaitFor(t, tm.Output(), func(b []byte) bool {
+		s := string(b)
+		for _, w := range []string{"v1.2.3", "abc123", "git@x:me/dots.git", "personal", "box", "octo"} {
+			if !strings.Contains(s, w) {
+				return false
+			}
 		}
-	}
-	if strings.Contains(out.String(), "not set up") {
-		t.Error("unexpected not set up")
+		return !strings.Contains(s, "not set up")
+	}, teatest.WithDuration(5*time.Second))
+	tm.Send(tea.KeyMsg{Type: tea.KeyEnter})
+	if got := tm.FinalModel(t, teatest.WithFinalTimeout(5*time.Second)).(*homeModel).choice; got != "init" {
+		t.Errorf("choice = %q, want init", got)
 	}
 }
 
 func TestHomeNotSetUpQuit(t *testing.T) {
-	var out syncBuf
-	got, err := tui.RunHome(io.MultiReader(strings.NewReader("j\r")), &out, tui.HomeInfo{Version: "v1", Commit: "c", Repo: "r"})
-	if err != nil || got != "quit" {
-		t.Fatalf("got %q, %v", got, err)
+	tm := teatest.NewTestModel(t, &homeModel{info: HomeInfo{Version: "v1", Commit: "c", Repo: "r"}}, teatest.WithInitialTermSize(80, 24))
+	teatest.WaitFor(t, tm.Output(), func(b []byte) bool { return strings.Contains(string(b), "not set up") },
+		teatest.WithDuration(5*time.Second))
+	tm.Type("j")
+	tm.Send(tea.KeyMsg{Type: tea.KeyEnter})
+	if got := tm.FinalModel(t, teatest.WithFinalTimeout(5*time.Second)).(*homeModel).choice; got != "quit" {
+		t.Errorf("choice = %q, want quit", got)
 	}
-	if !strings.Contains(out.String(), "not set up") {
-		t.Errorf("want not set up in %q", out.String())
+}
+
+func TestHomeQuitKeys(t *testing.T) {
+	for _, k := range []tea.KeyMsg{{Type: tea.KeyRunes, Runes: []rune("q")}, {Type: tea.KeyCtrlC}, {Type: tea.KeyEsc}} {
+		m := runHomeModel(t, HomeInfo{}, k)
+		if m.choice != "quit" {
+			t.Errorf("%v: choice = %q, want quit", k, m.choice)
+		}
+	}
+}
+
+// RunHome itself: input in, choice out.
+func TestRunHomeReturnsTheChoice(t *testing.T) {
+	var out bytes.Buffer
+	got, err := RunHome(strings.NewReader("\r"), &out, HomeInfo{Version: "v1"})
+	if err != nil || got != "init" {
+		t.Fatalf("got %q, %v", got, err)
 	}
 }

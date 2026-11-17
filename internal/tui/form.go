@@ -92,6 +92,10 @@ func (s *formState) answers() map[string]string {
 	} else {
 		out["generateSshKey"] = "true"
 	}
+	// A seeded id belongs to the seeded handle; a changed handle must not keep it.
+	if *s.v["githubHandle"] != s.seed.Values["githubHandle"] {
+		out["githubId"] = ""
+	}
 	// Locked fields come back exactly as seeded.
 	for k, locked := range s.seed.Locked {
 		if !locked {

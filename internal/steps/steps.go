@@ -30,12 +30,13 @@ type Env struct {
 	Opts         Opts
 	Log          io.Writer
 	Warnings     int
-	KeyGenerated bool          // set by SSHKey when it generated this run's key; ssh-bw-backup runs only then, and github adds a note
-	DataChanged  bool          // set by chezmoi-data when it wrote chezmoi.toml; chezmoi-apply must then run (bash always re-inits after seeding)
-	depWarned    bool          // a baseline dep failure already counted as the run's one dep warning
-	Cleanup      []func()      // run in reverse order when the run ends, see RunCleanup
-	Ask          *prompt.Asker // nil means non-interactive: never prompt, never read stdin
-	Events       func(Event)   // nil means no-op; Execute reports each step transition
+	KeyGenerated bool            // set by SSHKey when it generated this run's key; ssh-bw-backup runs only then, and github adds a note
+	DataChanged  bool            // set by chezmoi-data when it wrote chezmoi.toml; chezmoi-apply must then run (bash always re-inits after seeding)
+	depWarned    bool            // a baseline dep failure already counted as the run's one dep warning
+	Cleanup      []func()        // run in reverse order when the run ends, see RunCleanup
+	Ask          *prompt.Asker   // nil means non-interactive: never prompt, never read stdin
+	Events       func(Event)     // nil means no-op; Execute reports each step transition
+	Answered     map[string]bool // keys the init form answered, even with an empty value; the prompts skip them
 }
 
 type Opts struct {

@@ -1,6 +1,7 @@
 package steps_test
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -374,5 +375,58 @@ func TestDataIdentityLookedUpOncePerRun(t *testing.T) {
 	fx.MustRerun(list)
 	if n := len(fx.callsTo("gh", "api", "user")); n != 2 {
 		t.Errorf("the second run must look the identity up again, gh api user ran %d times in total, want 2", n)
+	}
+}
+
+func TestDataUnicodeNamesRoundTrip(t *testing.T) {
+	fx := newFixture(t)
+	fx.Env.Cfg.Data = map[string]string{
+		"githubHandle": "octo", "githubId": "1",
+		"personalName": "Jürgen Müller", "workName": "山田", "sidebizName": "Zoë Ålesund",
+	}
+	fx.MustExec(steps.Data())
+	got := readChezmoiData(t, chezmoiTomlPath(fx))
+	for k, want := range map[string]string{"personalName": "Jürgen Müller", "workName": "山田", "sidebizName": "Zoë Ålesund"} {
+		if got[k] != want {
+			t.Errorf("%s = %#v, want %q", k, got[k], want)
+		}
+	}
+}
+
+// A bitwardenUrl the init form answered, even empty (US cloud), is not asked again.
+func TestDataSkipsBitwardenPromptWhenFormAnswered(t *testing.T) {
+	fx := newFixture(t)
+	fx.Env.Cfg.Data = map[string]string{"githubHandle": "octo", "githubId": "1", "useBitwarden": "true", "bitwardenUrl": ""}
+	fx.Env.Answered = map[string]bool{"bitwardenUrl": true}
+	presetAsk(t, fx) // fails the test on any read
+	fx.MustExec(steps.Data())
+	if got := readChezmoiData(t, chezmoiTomlPath(fx))["bitwardenUrl"]; got != "" {
+		t.Errorf("bitwardenUrl = %#v, want empty", got)
+	}
+}
+
+// An explicit hostname answer reaches chezmoi.toml and the key path without touching $HOSTNAME.
+func TestDataHonoursAnsweredHostname(t *testing.T) {
+	fx := newFixture(t)
+	t.Setenv("HOSTNAME", "envhost")
+	fx.Env.Cfg.Data = map[string]string{"githubHandle": "octo", "githubId": "1", "hostname": "answered"}
+	fx.MustExec(steps.Data())
+	if got := readChezmoiData(t, chezmoiTomlPath(fx))["hostname"]; got != "answered" {
+		t.Errorf("hostname = %#v, want answered", got)
+	}
+	if got, want := steps.KeyPath(context.Background(), fx.Env), fx.Path(".ssh", "answered_ed25519"); got != want {
+		t.Errorf("KeyPath = %q, want %q", got, want)
+	}
+}
+
+func TestStoredDataReadsTheChezmoiToml(t *testing.T) {
+	home := t.TempDir()
+	if got := steps.StoredData(home); got != nil {
+		t.Errorf("missing file: %v", got)
+	}
+	writeFile(t, filepath.Join(home, ".config", "chezmoi", "chezmoi.toml"), "[data]\n  a = \"x\"\n  b = true\n", 0o644)
+	got := steps.StoredData(home)
+	if got["a"] != "x" || got["b"] != true {
+		t.Errorf("StoredData = %v", got)
 	}
 }

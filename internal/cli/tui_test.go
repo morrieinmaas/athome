@@ -8,8 +8,11 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
+	"github.com/morrieinmaas/athome/internal/prompt"
 	"github.com/morrieinmaas/athome/internal/run"
 	"github.com/morrieinmaas/athome/internal/run/runtest"
 	"github.com/morrieinmaas/athome/internal/steps"
@@ -100,16 +103,24 @@ func TestInitRoutesByFlags(t *testing.T) {
 		{"plain", []string{"init", "--plain"}, "", nil},
 		{"env plain", []string{"init"}, "1", nil},
 		{"yes", []string{"init", "-y"}, "", nil},
+		{"config file", []string{"init", "--config", "CFG"}, "", nil},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			_, shown := tuiSandbox(t)
 			t.Setenv("ATHOME_PLAIN", c.env)
+			args := append([]string{}, c.args...)
+			for i, a := range args {
+				if a == "CFG" {
+					args[i] = filepath.Join(t.TempDir(), "a.toml")
+					os.WriteFile(args[i], []byte("personalName = \"x\"\n"), 0o644)
+				}
+			}
 			stdinIsTTY = func() bool { return true }
 			if len(c.want) == 0 { // plain paths must not read the real stdin: no tty answers
-				stdinIsTTY = func() bool { return c.name == "plain" || c.name == "env plain" }
+				stdinIsTTY = func() bool { return c.name == "plain" || c.name == "env plain" || c.name == "config file" }
 			}
 			stepList = func() []steps.Step { return nil }
-			run2(c.args...)
+			run2(args...)
 			if !reflect.DeepEqual(*shown, c.want) && !(len(*shown) == 0 && len(c.want) == 0) {
 				t.Errorf("screens = %v, want %v", *shown, c.want)
 			}
@@ -140,12 +151,17 @@ func TestSeedPrecedenceAndLocked(t *testing.T) {
 	os.WriteFile(cfg, []byte("personalName = \"FromFile\"\nworkEmail = \"file@x.io\"\n"), 0o644)
 	t.Setenv("ATHOME_WORK_EMAIL", "env@x.io")
 
-	var got tui.Seed
-	runForm = func(_ context.Context, _ io.Reader, _ io.Writer, s tui.Seed) (map[string]string, error) {
-		got = s
-		return nil, tui.ErrQuit
+	// A --config run never opens the form, so build the seed directly.
+	o, err := parseInit([]string{"--config", cfg, "--machine", "work"})
+	if err != nil {
+		t.Fatal(err)
 	}
-	run2("init", "--config", cfg, "--machine", "work")
+	var stdout, stderr strings.Builder
+	env, code := newInitEnv(o, &stdout, &stderr)
+	if env == nil {
+		t.Fatalf("newInitEnv exit %d: %s", code, stderr.String())
+	}
+	got := buildSeed(context.Background(), env, o, environMap())
 	v := got.Values
 	for k, want := range map[string]string{
 		"workEmail":      "env@x.io",   // env beats file
@@ -372,5 +388,166 @@ func TestCheckURLAndHandle(t *testing.T) {
 	}
 	if err := checkHandle(context.Background(), f, "bad name"); err == nil {
 		t.Error("invalid handle must be rejected")
+	}
+}
+
+// lockedBuf is an io.Writer the test can poll while the form writes to it.
+type lockedBuf struct {
+	mu sync.Mutex
+	b  strings.Builder
+}
+
+func (l *lockedBuf) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.Write(p)
+}
+
+func (l *lockedBuf) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.String()
+}
+
+// Pressing q on the real form's review page quits: exit 130 and no chezmoi.toml.
+func TestQuitOnReviewPageExits130AndWritesNothing(t *testing.T) {
+	home, shown := tuiSandbox(t)
+	t.Setenv("ATHOME_GITHUB_HANDLE", "octo") // a required field the test need not type
+	pr, pw, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pr.Close()
+	defer pw.Close()
+	var out lockedBuf
+	var formErr error
+	runForm = func(ctx context.Context, _ io.Reader, _ io.Writer, s tui.Seed) (map[string]string, error) {
+		var ans map[string]string
+		ans, formErr = tui.RunForm(ctx, pr, &out, s)
+		return ans, formErr
+	}
+	runProgress = func(context.Context, io.Reader, io.Writer, *steps.Env, []steps.Step, func(func(func()))) (steps.Report, error) {
+		*shown = append(*shown, "progress")
+		return steps.Report{}, nil
+	}
+	exit := make(chan int, 1)
+	go func() { code, _, _ := run2("init"); exit <- code }()
+
+	waitFor := func(want string) {
+		t.Helper()
+		for deadline := time.Now().Add(10 * time.Second); !strings.Contains(out.String(), want); time.Sleep(10 * time.Millisecond) {
+			if time.Now().After(deadline) {
+				t.Fatalf("timed out waiting for %q in %q", want, out.String())
+			}
+		}
+	}
+	// Each page ends with one enter per field; the pages are five, then the review.
+	for _, page := range []struct {
+		title  string
+		fields int
+	}{{"Machine", 2}, {"Identity", 6}, {"Keys and secrets", 5}, {"Network", 2}, {"Extras", 7}} {
+		waitFor(page.title)
+		pw.WriteString(strings.Repeat("\r", page.fields))
+	}
+	waitFor("enter apply, b back to edit, q quit")
+	pw.WriteString("q")
+
+	select {
+	case code := <-exit:
+		if code != 130 {
+			t.Errorf("exit = %d, want 130", code)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("init did not exit after q on the review page")
+	}
+	if !errors.Is(formErr, tui.ErrQuit) {
+		t.Errorf("RunForm err = %v, want ErrQuit", formErr)
+	}
+	if len(*shown) != 0 {
+		t.Errorf("screens after quit = %v", *shown)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".config", "chezmoi", "chezmoi.toml")); !os.IsNotExist(err) {
+		t.Errorf("chezmoi.toml must not exist after a quit, stat err = %v", err)
+	}
+}
+
+// The form's empty bitwardenUrl (US cloud) is an answer: the data step must not
+// fall back to its line prompt for it.
+func TestFormEmptyBitwardenUrlIsNotAskedAgain(t *testing.T) {
+	home, _ := tuiSandbox(t)
+	runForm = func(context.Context, io.Reader, io.Writer, tui.Seed) (map[string]string, error) {
+		return map[string]string{
+			"machineType": "personal", "includeAgents": "true", "githubHandle": "octo", "githubId": "5",
+			"useBitwarden": "true", "bitwardenUrl": "", "generateSshKey": "false",
+		}, nil
+	}
+	var asked bool
+	runProgress = func(ctx context.Context, _ io.Reader, _ io.Writer, env *steps.Env, list []steps.Step, _ func(func(func()))) (steps.Report, error) {
+		env.Ask = prompt.New(failReader{&asked}, io.Discard)
+		return steps.Execute(ctx, env, list)
+	}
+	if code, _, e := run2("init"); code != 0 {
+		t.Fatalf("exit %d: %s", code, e)
+	}
+	if asked {
+		t.Error("the data step read an answer although the form answered the Bitwarden URL")
+	}
+	if _, err := os.Stat(filepath.Join(home, ".config", "chezmoi", "chezmoi.toml")); err != nil {
+		t.Errorf("chezmoi.toml not written: %v", err)
+	}
+}
+
+type failReader struct{ asked *bool }
+
+func (f failReader) Read([]byte) (int, error) { *f.asked = true; return 0, io.EOF }
+
+// An explicit hostname answer is carried in the config, not in the process env.
+func TestMergeAnswersHostnameNeedsNoProcessEnv(t *testing.T) {
+	_, _ = tuiSandbox(t)
+	t.Setenv("HOSTNAME", "testbox")
+	env := &steps.Env{}
+	mergeAnswers(env, map[string]string{"hostname": "other"})
+	if got := env.Cfg.Data["hostname"]; got != "other" {
+		t.Errorf("Data[hostname] = %q, want other", got)
+	}
+	if os.Getenv("HOSTNAME") != "testbox" {
+		t.Errorf("HOSTNAME was changed to %q", os.Getenv("HOSTNAME"))
+	}
+	env = &steps.Env{}
+	mergeAnswers(env, map[string]string{"hostname": "testbox"})
+	if _, ok := env.Cfg.Data["hostname"]; ok {
+		t.Error("the default hostname must not be pinned")
+	}
+}
+
+// KeyExists follows the steps' key path, which uses chezmoi's hostname.
+func TestSeedKeyExistsUsesTheStepsKeyPath(t *testing.T) {
+	home, _ := tuiSandbox(t)
+	f := runtest.NewFake()
+	f.On("chezmoi", "execute-template", "{{ .chezmoi.hostname }}").Return(run.Result{Stdout: "chez\n"})
+	newRunner = func() run.Runner { return f }
+	os.MkdirAll(filepath.Join(home, ".ssh"), 0o700)
+	os.WriteFile(filepath.Join(home, ".ssh", "chez_ed25519"), []byte("k"), 0o600)
+	var got tui.Seed
+	runForm = func(_ context.Context, _ io.Reader, _ io.Writer, s tui.Seed) (map[string]string, error) {
+		got = s
+		return nil, tui.ErrQuit
+	}
+	run2("init")
+	if !got.KeyExists {
+		t.Error("KeyExists must look at the chezmoi hostname's key")
+	}
+}
+
+func TestStoredChezmoiDataStringifiesBools(t *testing.T) {
+	home := t.TempDir()
+	os.MkdirAll(filepath.Join(home, ".config", "chezmoi"), 0o755)
+	os.WriteFile(filepath.Join(home, ".config", "chezmoi", "chezmoi.toml"), []byte("[data]\n  a = \"x\"\n  b = true\n  c = 3\n"), 0o644)
+	got := storedChezmoiData(home)
+	if got["a"] != "x" || got["b"] != "true" {
+		t.Errorf("got %v", got)
+	}
+	if _, ok := got["c"]; ok {
+		t.Error("non-string, non-bool values are skipped")
 	}
 }

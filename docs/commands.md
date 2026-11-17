@@ -34,6 +34,32 @@ in [unattended installs](install.md#unattended-installs).
 `.chezmoiroot`; the installer sets it), the current directory, the `sourceDir`
 pinned in `~/.config/chezmoi/chezmoi.toml`, or `~/.local/share/chezmoi`.
 
+## athome update
+
+```
+athome update [--to <version>] [--yes|-y]
+```
+
+Brings this machine up to a release. It first runs `git fetch --tags` on the repo and picks
+the target: `--to` (`vX.Y.Z` or `X.Y.Z`), else the highest local `vX.Y.Z` tag. Then four steps:
+
+1. `self`: downloads `athome_<os>_<arch>` and `checksums.txt` from the release (the installer's
+   `ATHOME_RELEASE_BASE`), checks the sha256, prints the commit subjects between the two
+   tags, asks `update athome from <current> to <target>?` on a terminal (not with `--yes`),
+   replaces `~/.local/bin/athome` and runs `update --to <target>` in the new binary. Skipped
+   when already at the target, or newer without `--to` (no downgrade); `--to` installs an
+   older version too. A `dev` or snapshot build skips it unless `--to` is given.
+2. `source`: `git pull --ff-only` on a branch; on a detached HEAD at a tag, checks out the
+   target tag; at an untagged detached commit changes nothing and says so.
+3. `apply`: `chezmoi apply`, which installs new packages and moves grofe and canopy when
+   their pins changed.
+4. `mise`: `mise install`, skipped when `mise ls --missing` lists nothing.
+
+It ends with `athome: applied N, skipped M`. Exit codes: 0 done or cancelled; 1 a step
+failed (named), the fetch failed, or `--to` names a tag `origin` lacks; 2 a usage error
+(`--to v0.5`); 130 Ctrl-C at the prompt. A checksum mismatch, a missing checksums line or a
+missing asset leaves the installed binary untouched.
+
 ## athome teardown
 
 Undoes athome on this machine for a from-scratch retry. A dry run unless you pass

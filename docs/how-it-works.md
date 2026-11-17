@@ -149,6 +149,15 @@ and opencode's skills folder point at that one set. Every `chezmoi apply`
 brings the links in line with the lock; pulling the repo
 (`git -C ~/.claude pull`) is up to you. `--no-agents` skips all of it.
 
+## Updating
+
+`athome update` runs four steps in a fixed order: `self` (replace the binary from a release,
+then continue in the new one, so the rest runs with matching code), `source` (move the repo to
+the release), `apply` (`chezmoi apply`) and `mise` (`mise install`). athome's own version is
+the release tag; grofe and canopy are pinned in `home/.chezmoidata/pins.toml`, and
+`run_onchange_17` and `run_onchange_18` render those pins, so a bump reruns them on the next
+apply. grofe installs from its release tarball after a sha256 check.
+
 ## Repo layout
 
 ```text
@@ -162,6 +171,7 @@ athome/
 └── home/                      everything chezmoi puts in your home folder
     ├── .chezmoi.toml.tmpl     install-time questions
     ├── .chezmoidata/packages.yaml
+    ├── .chezmoidata/pins.toml     the grofe and canopy versions
     ├── .chezmoiexternal.toml.tmpl   things cloned from elsewhere (zinit, tmux plugins…)
     ├── .chezmoiscripts/       numbered setup scripts
     ├── dot_zshrc.tmpl, dot_zsh/     the shell

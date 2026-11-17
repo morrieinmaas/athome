@@ -13,10 +13,11 @@
 # at. So this script only clones or updates the store and regenerates the
 # files canopy generates.
 #
-# run_onchange, keyed on the pinned ref below: change the ref, and the next
-# `chezmoi apply` moves the checkout. Nothing else re-runs it.
+# run_onchange, keyed on the pin: change `pins.canopy` in
+# home/.chezmoidata/pins.toml, and the next `chezmoi apply` moves the checkout.
+# Nothing else re-runs it.
 #
-# canopy ref: {{ "f445cd0f9f665d2ea3fb6e0694934ae45ef10942" }}
+# canopy pin: {{ .pins.canopy }}
 set -euo pipefail
 
 store="${HOME}/.local/share/canopy"
@@ -31,11 +32,10 @@ repo_ssh="git@github.com:morrieinmaas/canopy.git"
 repo_https="https://github.com/morrieinmaas/canopy.git"
 # A tag, not a branch, so a machine only moves when a release is cut rather
 # than on whatever canopy's main happened to be that morning. Bumping it is
-# two edits in one place: this line, and the `canopy ref:` comment above,
-# which is what makes chezmoi re-run this script at all.
+# one edit, `pins.canopy` in home/.chezmoidata/pins.toml.
 # A full commit id also works, for a ref that is not tagged yet (the
 # alias-day pin is one).
-ref="f445cd0f9f665d2ea3fb6e0694934ae45ef10942"
+ref="{{ .pins.canopy }}"
 
 if ! command -v git >/dev/null 2>&1; then
   printf 'canopy: git not found, skipping install\n' >&2

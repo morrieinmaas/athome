@@ -73,6 +73,10 @@ func Main(args []string, stdout, stderr io.Writer) int {
 		return exitOK
 	case "init":
 		return runInit(args[1:], stdout, stderr)
+	case "update":
+		return runUpdate(args[1:], stdout, stderr)
+	case "secrets":
+		return runSecrets(args[1:], stdout, stderr)
 	case "teardown":
 		return runTeardown(args[1:], stdout, stderr)
 	case "status":
@@ -84,7 +88,7 @@ func Main(args []string, stdout, stderr io.Writer) int {
 }
 
 func usage(w io.Writer) {
-	fmt.Fprint(w, "Usage: athome <command>\n\nCommands:\n  init      set up this machine (what scripts/bootstrap.sh does)\n  teardown  undo athome on this machine (dry run by default)\n  status    show what athome manages here and whether it is current\n  version   print the version\n\n")
+	fmt.Fprint(w, "Usage: athome <command>\n\nCommands:\n  init      set up this machine (what scripts/bootstrap.sh does)\n  update    update athome, the repo and the tools (--to <version>, --yes)\n  secrets   back up or restore the encrypted secrets vault (backup|restore)\n  teardown  undo athome on this machine (dry run by default)\n  status    show what athome manages here and whether it is current\n  version   print the version\n\n")
 	fmt.Fprint(w, "Run `athome init --help` for the init flags.\n")
 }
 

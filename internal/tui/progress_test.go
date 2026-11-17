@@ -263,3 +263,28 @@ func TestProgressAtWidth40(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// Ctrl-C while the terminal is released cancels the parent context: the view
+// quits at once with a cancel, not a failure that waits for a key.
+func TestProgressParentCancelQuitsAsCancel(t *testing.T) {
+	for name, stepErr := range map[string]func(context.Context) error{
+		"context error": func(ctx context.Context) error { return ctx.Err() },
+		"other error":   func(context.Context) error { return errors.New("signal: interrupt") },
+	} {
+		t.Run(name, func(t *testing.T) {
+			parent, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			list := []steps.Step{fake("slow", false, func(ctx context.Context, _ *steps.Env) error {
+				<-ctx.Done()
+				return stepErr(ctx)
+			})}
+			r, tm := startProgress(t, parent, &steps.Env{}, list, nil)
+			waitOutput(t, tm, "slow")
+			cancel()
+			tm.WaitFinished(t, teatest.WithFinalTimeout(5*time.Second))
+			if _, err := r.result(nil); !errors.Is(err, context.Canceled) {
+				t.Fatalf("err = %v, want a cancel", err)
+			}
+		})
+	}
+}

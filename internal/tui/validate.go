@@ -80,3 +80,13 @@ func overridable(check func(string) error) func(string) error {
 		return errors.New(err.Error() + " (press enter again to use it anyway)")
 	}
 }
+
+var hostnameRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9-]{0,62}$`)
+
+// validHostname allows empty (the default); the name ends up in ~/.ssh/<hostname>_ed25519.
+func validHostname(s string) error {
+	if s == "" || hostnameRe.MatchString(s) {
+		return nil
+	}
+	return errors.New("use letters, digits and hyphens only, starting with a letter or digit (max 63)")
+}

@@ -189,3 +189,30 @@ func TestSeedKeyExistsFollowsAnsweredHostname(t *testing.T) {
 		t.Errorf("sshKeyAction = %q, asked = %v: the steps must not ask again", action, asked)
 	}
 }
+
+// An import that creates the key makes the form's generate answer moot: the
+// ssh step must use the imported key and not ask use/generate/reupload.
+func TestImportedKeyIsUsedWithoutAsking(t *testing.T) {
+	home, _ := tuiSandbox(t)
+	from := t.TempDir()
+	os.MkdirAll(filepath.Join(from, "ssh"), 0o700)
+	os.WriteFile(filepath.Join(from, "ssh", "old_ed25519"), []byte("k"), 0o600)
+	os.WriteFile(filepath.Join(from, "ssh", "old_ed25519.pub"), []byte("p"), 0o644)
+	runForm = func(context.Context, io.Reader, io.Writer, tui.Seed) (map[string]string, error) {
+		return map[string]string{"machineType": "personal", "generateSshKey": "true"}, nil
+	}
+	var asked bool
+	runProgress = func(ctx context.Context, _ io.Reader, _ io.Writer, env *steps.Env, _ []steps.Step, _ func(func(func()))) (steps.Report, error) {
+		env.Ask = prompt.New(failReader{&asked}, io.Discard)
+		return steps.Execute(ctx, env, steps.SSHKey())
+	}
+	if code, _, e := run2("init", "--import-from", from, "--import-ssh"); code != 0 {
+		t.Fatalf("exit %d: %s", code, e)
+	}
+	if asked {
+		t.Error("the ssh step asked although the import created the key")
+	}
+	if _, err := os.Stat(filepath.Join(home, ".ssh", "testbox_ed25519")); err != nil {
+		t.Errorf("imported key missing: %v", err)
+	}
+}

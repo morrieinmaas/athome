@@ -109,7 +109,8 @@ func (s *formState) answers() map[string]string {
 		out["nordvpnCountry"] = ""
 	}
 	if *s.v["useBitwarden"] == "false" { // the questions for these are hidden
-		out["bitwardenUrl"], out["restoreSecrets"] = "", "false"
+		delete(out, "bitwardenUrl") // not asked, so not answered: a stored URL is kept
+		out["restoreSecrets"] = "false"
 	}
 	if s.sshHasKey {
 		out["sshKeyAction"] = s.ssh
@@ -187,7 +188,7 @@ func (s *formState) pages(ctx context.Context) []func() *huh.Form {
 		func() *huh.Form {
 			return huh.NewForm(huh.NewGroup(
 				s.choice("machineType", "Machine type", s.v["machineType"], "personal", "work"),
-				s.input("hostname", "Hostname", "", nil),
+				s.input("hostname", "Hostname", "empty = this machine's name", validHostname),
 			).Title("Machine"))
 		},
 		func() *huh.Form {

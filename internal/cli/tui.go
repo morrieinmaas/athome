@@ -121,6 +121,13 @@ func mergeAnswers(env *steps.Env, ans map[string]string) {
 	for _, k := range []string{"sshKeyAction", "generateSshKey"} {
 		env.Cfg.Data[k] = ans[k] // the form answers one of them; the other must not linger
 	}
+	if env.Cfg.Data["sshKeyAction"] == "" && importsSSHKey(env.Opts) {
+		env.Cfg.Data["sshKeyAction"] = "use" // the form saw no key, but the import creates one
+	}
+}
+
+func importsSSHKey(o steps.Opts) bool {
+	return o.ImportSSHBW != "" || (o.ImportFrom != "" && o.ImportSSH)
 }
 
 // runInitTUI shows the form, then the progress view over the same step list.

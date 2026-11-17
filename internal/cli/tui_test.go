@@ -506,3 +506,38 @@ func TestProgressCancelRunsCleanup(t *testing.T) {
 		t.Error("env.Cleanup did not run after a cancel")
 	}
 }
+
+// useBitwarden=no keeps a stored Bitwarden URL, in the form and in a --config run alike.
+func TestUseBitwardenNoKeepsStoredURLInBothPaths(t *testing.T) {
+	home, _ := tuiSandbox(t)
+	toml := filepath.Join(home, ".config", "chezmoi", "chezmoi.toml")
+	stored := "[data]\n  bitwardenUrl = \"https://vault.example\"\n"
+	reset := func() {
+		os.MkdirAll(filepath.Dir(toml), 0o755)
+		os.WriteFile(toml, []byte(stored), 0o644)
+	}
+	reset()
+	runForm = func(context.Context, io.Reader, io.Writer, tui.Seed) (map[string]string, error) {
+		return map[string]string{
+			"machineType": "personal", "includeAgents": "true", "githubHandle": "octo", "githubId": "5",
+			"useBitwarden": "false", "restoreSecrets": "false", "generateSshKey": "false",
+		}, nil
+	}
+	if code, _, e := run2("init"); code != 0 {
+		t.Fatalf("tui run exit %d: %s", code, e)
+	}
+	viaForm := readFile(t, toml)
+	if !strings.Contains(viaForm, "https://vault.example") {
+		t.Errorf("stored bitwardenUrl lost:\n%s", viaForm)
+	}
+
+	reset()
+	cfg := filepath.Join(t.TempDir(), "bootstrap.toml")
+	os.WriteFile(cfg, []byte("githubHandle = \"octo\"\ngithubId = \"5\"\nuseBitwarden = false\nrestoreSecrets = false\ngenerateSshKey = false\n"), 0o644)
+	if code, _, e := run2("init", "--config", cfg, "-y"); code != 0 {
+		t.Fatalf("config run exit %d: %s", code, e)
+	}
+	if viaConfig := readFile(t, toml); viaForm != viaConfig {
+		t.Errorf("chezmoi.toml differs\nform:\n%s\nconfig:\n%s", viaForm, viaConfig)
+	}
+}

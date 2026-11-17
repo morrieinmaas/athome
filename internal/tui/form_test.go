@@ -291,12 +291,12 @@ func TestFormKeyExistsFollowsAnsweredHostname(t *testing.T) {
 	}
 }
 
-func TestFormUseBitwardenOffBlanksUrlAndRestore(t *testing.T) {
+func TestFormUseBitwardenOffKeepsUrlUnansweredAndSkipsRestore(t *testing.T) {
 	v := full()
 	v["useBitwarden"], v["bitwardenUrl"], v["restoreSecrets"] = "false", "https://vault.bitwarden.eu", "true"
 	got := newFormState(Seed{Values: v}).answers()
-	if got["bitwardenUrl"] != "" || got["restoreSecrets"] != "false" {
-		t.Errorf("bitwardenUrl=%q restoreSecrets=%q, want empty and false", got["bitwardenUrl"], got["restoreSecrets"])
+	if _, ok := got["bitwardenUrl"]; ok || got["restoreSecrets"] != "false" {
+		t.Errorf("bitwardenUrl answered=%v restoreSecrets=%q, want unanswered and false", ok, got["restoreSecrets"])
 	}
 	v["useBitwarden"] = "true"
 	got = newFormState(Seed{Values: v}).answers()

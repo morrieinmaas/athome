@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -91,5 +92,17 @@ func TestOnlyUnavailableChecksAreOverridable(t *testing.T) {
 	u := validBitwardenURL(func(context.Context, string) error { return bad }, context.Background())
 	if u("https://x.example") == nil || u("https://x.example") == nil {
 		t.Error("a definite URL failure must keep blocking")
+	}
+}
+
+func TestValidHostname(t *testing.T) {
+	for s, ok := range map[string]bool{
+		"": true, "box": true, "my-box-2": true, "A1": true,
+		"a b": false, "../x": false, "x/y": false, "-x": false, "x_y": false, "x.y": false,
+		strings.Repeat("a", 63): true, strings.Repeat("a", 64): false,
+	} {
+		if got := validHostname(s) == nil; got != ok {
+			t.Errorf("validHostname(%q) accepted=%v, want %v", s, got, ok)
+		}
 	}
 }

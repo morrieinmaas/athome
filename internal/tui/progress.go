@@ -61,6 +61,7 @@ type progressModel struct {
 	finished bool
 	canceled bool
 	cancel   context.CancelFunc
+	runCtx   context.Context
 	rep      steps.Report
 	err      error
 }
@@ -82,6 +83,9 @@ func (m *progressModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case doneMsg:
 		m.finished, m.rep, m.err = true, msg.rep, msg.err
+		if msg.err != nil && (errors.Is(msg.err, context.Canceled) || (m.runCtx != nil && m.runCtx.Err() != nil)) {
+			m.canceled = true // Ctrl-C while the terminal was released: a cancel, not a failure to acknowledge
+		}
 		if msg.err == nil || m.canceled {
 			return m, tea.Quit
 		}
@@ -160,6 +164,7 @@ func newProgressRun(ctx context.Context, env *steps.Env, list []steps.Step) *pro
 			log:     &logBuf{},
 			started: make(chan struct{}),
 			cancel:  cancel,
+			runCtx:  ctx,
 		},
 	}
 	for _, s := range list {

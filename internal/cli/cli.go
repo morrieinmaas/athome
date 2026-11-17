@@ -455,7 +455,7 @@ func environMap() map[string]string {
 	return m
 }
 
-// distro mirrors scripts/lib/pm.sh: dnf without pacman is fedora, else arch.
+// distro reports the Linux flavour: dnf without pacman is fedora, else arch.
 func distro(r run.Runner) string {
 	if runtime.GOOS != "linux" {
 		return ""

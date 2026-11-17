@@ -1,5 +1,5 @@
 // Package teardown undoes athome on this machine, in three cumulative tiers.
-// It is a port of the old scripts/teardown.sh: a dry run by default, a typed
+// It is a dry run by default, with a typed
 // confirmation before anything is deleted.
 package teardown
 

@@ -200,7 +200,9 @@ func TestChezmoiMissingSkips(t *testing.T) {
 	if code := r.run("linux", "", "--dotfiles"); code != 0 {
 		t.Fatalf("exit = %d", code)
 	}
-	contains(t, r.out.String(), "  skip: chezmoi not found\n")
+	if n := strings.Count(r.out.String(), "  skip: chezmoi not found\n"); n != 2 {
+		t.Errorf("skip line printed %d times, want 2:\n%s", n, r.out.String())
+	}
 	if strings.Contains(r.out.String(), "would: chezmoi") {
 		t.Error("planned a chezmoi call")
 	}
@@ -289,14 +291,17 @@ func TestClaudeLinkPruneOnlyAgentsLinks(t *testing.T) {
 func TestFailingActionExits1(t *testing.T) {
 	r := newRig(t)
 	r.fake.Have("chezmoi")
-	before := r.touch(t, ".local/state/athome/x")
+	after := r.touch(t, ".cache/chezmoi/x")
 	r.fake.On("chezmoi", "state", "reset", "--force").Return(run.Result{Code: 3, Stderr: "boom"})
 	if code := r.run("linux", "", "--state", "--execute", "--yes"); code != 1 {
 		t.Fatalf("exit = %d", code)
 	}
 	contains(t, r.err.String(), "athome teardown: chezmoi state reset --force failed")
-	if !exists(before) || strings.Contains(r.out.String(), "complete") {
-		t.Error("run continued or reported success")
+	if !exists(after) {
+		t.Error("a planned path after the failing action was removed")
+	}
+	if strings.Contains(r.out.String(), "complete") {
+		t.Error("reported success")
 	}
 }
 
@@ -306,5 +311,136 @@ func TestRbwStopAgentFailureIgnored(t *testing.T) {
 	r.fake.On("rbw", "stop-agent").Return(run.Result{Code: 1})
 	if code := r.run("linux", "", "--all", "--execute", "--yes"); code != 0 {
 		t.Fatalf("exit = %d: %s", code, r.err.String())
+	}
+}
+
+const goldenState = `
+== chezmoi persistent state + cache ==
+  would: chezmoi state reset --force
+  would: rm -rf H/.cache/chezmoi
+  would: rm -f H/.local/state/athome/github-manual-upload
+  would: rm -f H/.local/state/athome/ssh-pub-underivable
+  would: rm -f H/.local/state/athome/secrets-restore-attempted
+`
+
+const goldenDotfiles = `
+== chezmoi-managed files in $HOME ==
+  would: rm -f H/.zshrc
+  (1 managed files)
+
+== generated chezmoi config ==
+  would: rm -rf H/.config/chezmoi
+  kept: source repo /src/home (needed to re-bootstrap)
+`
+
+const goldenAllHead = `
+== mise (tools + config) ==
+  would: rm -rf H/.local/share/mise H/.config/mise H/.local/bin/mise
+
+== chezmoi externals + app data (not 'managed files') ==
+  would: rm -rf H/.local/share/zinit H/.config/tmux/plugins H/.config/agents H/.local/share/nvim H/.local/state/nvim H/.cache/bat
+
+== stale ~/.claude → agents symlinks ==
+`
+
+const goldenAllDarwin = `
+== nanobrew casks (GUI apps in /Applications) ==
+  would: nb uninstall firefox
+
+== nanobrew prefix (needs sudo) ==
+  would: sudo rm -rf /opt/nanobrew
+`
+
+func goldenAllLinux(name, list, remove string) string {
+	return `
+== Linux system packages (` + name + `): left in place ==
+  note: packages were installed system-wide via ` + name + ` and are
+  NOT auto-removed (could break the OS). Remove by hand if needed:
+    ` + list + `   # list explicitly-installed, then  ` + remove + `
+`
+}
+
+const goldenAllTail = `
+== rbw / Bitwarden local data ==
+  would: rbw stop-agent
+  would: rm -rf H/.config/rbw H/.local/share/rbw H/.cache/rbw
+
+== per-machine SSH key (backed up in Bitwarden) ==
+  would: rm -f H/.ssh/box_ed25519 H/.ssh/box_ed25519.pub
+
+== athome binary ==
+  would: rm -f H/.local/bin/athome
+
+== user data: LEFT ALONE (never removed) ==
+  kept: ~/.secrets (decrypted .env files from the secrets vault)
+  kept: ~/personal, ~/sidebiz, ~/work (your repos + project files)
+`
+
+const goldenFoot = "\nDry run only, nothing changed. Re-run with --execute to apply.\n"
+
+func TestGoldenPlans(t *testing.T) {
+	platforms := []struct {
+		name, os string
+		have     []string
+		pm       string
+	}{
+		{"darwin", "darwin", []string{"nb"}, goldenAllDarwin},
+		{"arch", "linux", []string{"pacman"}, goldenAllLinux("pacman/yay", "pacman -Qqe", "sudo pacman -Rns <pkg>")},
+		{"fedora", "linux", []string{"dnf"}, goldenAllLinux("dnf", "dnf repoquery --userinstalled", "sudo dnf remove <pkg>")},
+	}
+	for _, p := range platforms {
+		for _, tier := range []string{"state", "dotfiles", "all"} {
+			t.Run(p.name+"/"+tier, func(t *testing.T) {
+				r := newRig(t)
+				r.fake.Have(append([]string{"chezmoi", "rbw"}, p.have...)...)
+				r.fake.On("chezmoi", "managed", "--path-style=absolute", "--include=files").
+					Return(run.Result{Stdout: r.touch(t, ".zshrc") + "\n"})
+				r.fake.On("chezmoi", "source-path").Return(run.Result{Stdout: "/src/home\n"})
+				r.fake.On("nb", "list").Return(run.Result{Stdout: "git 2.0\nfirefox 1.0 (cask)\n"})
+				if code := r.run(p.os, "", "--"+tier); code != 0 {
+					t.Fatalf("exit = %d", code)
+				}
+				want := "athome teardown: tier=" + tier + "  mode=DRY-RUN (no changes)\n" + goldenState
+				if tier != "state" {
+					want += goldenDotfiles
+				}
+				if tier == "all" {
+					want += goldenAllHead + p.pm + goldenAllTail
+				}
+				want = strings.ReplaceAll(want+goldenFoot, "H/", r.home+"/")
+				if got := r.out.String(); got != want {
+					t.Errorf("plan differs.\ngot:\n%s\nwant:\n%s", got, want)
+				}
+			})
+		}
+	}
+}
+
+func TestManagedFixtureAndClaudeLinks(t *testing.T) {
+	r := newRig(t)
+	r.fake.Have("chezmoi")
+	file := r.touch(t, ".zshrc")
+	spaced := r.touch(t, ".config/my app/conf")
+	dir := filepath.Join(r.home, ".config", "somedir")
+	os.MkdirAll(dir, 0o755)
+	dangling := filepath.Join(r.home, ".dangling")
+	os.Symlink(filepath.Join(r.home, "nowhere"), dangling)
+	claude := filepath.Join(r.home, ".claude")
+	os.MkdirAll(claude, 0o755)
+	os.Symlink(filepath.Join(r.home, ".config/agents/skills"), filepath.Join(claude, "skills"))
+	os.Symlink("/elsewhere", filepath.Join(claude, "CLAUDE.md"))
+	rtk := r.touch(t, ".claude/RTK.md")
+	r.fake.On("chezmoi", "managed", "--path-style=absolute", "--include=files").
+		Return(run.Result{Stdout: strings.Join([]string{file, dir, dangling, spaced}, "\n") + "\n"})
+	if code := r.run("linux", "", "--all"); code != 0 {
+		t.Fatalf("exit = %d", code)
+	}
+	out := r.out.String()
+	contains(t, out, "  would: rm -f "+file+"\n", "  would: rm -f "+spaced+"\n",
+		"(2 managed files)", "  would: rm -f "+filepath.Join(claude, "skills")+"\n")
+	for _, no := range []string{"rm -f " + dir + "\n", "rm -f " + dangling, filepath.Join(claude, "CLAUDE.md"), rtk} {
+		if strings.Contains(out, no) {
+			t.Errorf("planned %q:\n%s", no, out)
+		}
 	}
 }

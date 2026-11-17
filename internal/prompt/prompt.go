@@ -2,16 +2,15 @@
 package prompt
 
 import (
-	"bufio"
 	"fmt"
 	"io"
 	"strings"
 )
 
-// Asker reads answers from one buffered reader, so successive questions do not
-// lose input.
+// Asker reads answers a byte at a time, so it never consumes input past the
+// answer line and typed-ahead input stays for later interactive commands.
 type Asker struct {
-	in  *bufio.Reader
+	in  io.Reader
 	out io.Writer
 
 	// Done, when set, cancels a prompt that is waiting for input: line then calls
@@ -22,7 +21,7 @@ type Asker struct {
 }
 
 func New(in io.Reader, out io.Writer) *Asker {
-	return &Asker{in: bufio.NewReader(in), out: out}
+	return &Asker{in: in, out: out}
 }
 
 // Say prints a line of context for the next question to the same writer.
@@ -49,7 +48,7 @@ func (a *Asker) line(q string) (string, bool) {
 // the process exit.
 func (a *Asker) read() (s string, cancelled bool, err error) {
 	if a.Done == nil {
-		s, err = a.in.ReadString('\n')
+		s, err = readLine(a.in)
 		return s, false, err
 	}
 	type result struct {
@@ -63,7 +62,7 @@ func (a *Asker) read() (s string, cancelled bool, err error) {
 	}
 	ch := make(chan result, 1)
 	go func() {
-		s, err := a.in.ReadString('\n')
+		s, err := readLine(a.in)
 		ch <- result{s, err}
 	}()
 	select {
@@ -71,6 +70,24 @@ func (a *Asker) read() (s string, cancelled bool, err error) {
 		return r.s, false, r.err
 	case <-a.Done:
 		return "", a.cancel(), nil
+	}
+}
+
+// readLine reads up to and including '\n', or to EOF, without reading further.
+func readLine(r io.Reader) (string, error) {
+	var sb strings.Builder
+	b := make([]byte, 1)
+	for {
+		n, err := r.Read(b)
+		if n > 0 {
+			sb.WriteByte(b[0])
+			if b[0] == '\n' {
+				return sb.String(), nil
+			}
+		}
+		if err != nil {
+			return sb.String(), err
+		}
 	}
 }
 

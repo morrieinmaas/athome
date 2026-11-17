@@ -103,6 +103,21 @@ func TestPromptUpload(t *testing.T) {
 			t.Errorf("non-interactive rerun applied %v", rep.Applied)
 		}
 	})
+	t.Run("refresh y: gh auth refresh, then both ssh-key adds", func(t *testing.T) {
+		fx, _ := pr5GHUpload(t, "y\ny\n")
+		fx.Fake.On("gh", "auth", "status").Return(run.Result{Stdout: noScopes, Stderr: noScopes})
+		fx.MustExec(steps.GitHub())
+		if !fx.called("gh", "auth", "refresh", "-h", "github.com", "-s") {
+			t.Errorf("refresh missing:\n%s", fx.dump())
+		}
+		if len(fx.addCalls()) != 2 {
+			t.Errorf("want 2 adds after the refresh:\n%s", fx.dump())
+		}
+		fx2 := ghFixture(t) // no terminal: the refresh is the default
+		fx2.Fake.On("gh", "auth", "status").Return(run.Result{Stdout: noScopes, Stderr: noScopes})
+		fx2.MustExec(steps.GitHub())
+		pr5SameRun(t, fx, fx2)
+	})
 	t.Run("force upload and scopes present: no prompt", func(t *testing.T) {
 		fx, out := pr5GHUpload(t, "n\n")
 		fx.Env.Cfg.Data["sshKeyAction"] = "reupload"

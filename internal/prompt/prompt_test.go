@@ -148,3 +148,15 @@ func TestCancelBeforePrompt(t *testing.T) {
 		t.Errorf("ok=%v cancelled=%v, want a cancelled read", ok, cancelled)
 	}
 }
+
+func TestConfirmLeavesTypedAhead(t *testing.T) {
+	in := strings.NewReader("y\nrest\n")
+	var out bytes.Buffer
+	if !New(in, &out).Confirm("ok?", false) {
+		t.Fatal("want yes")
+	}
+	rest, _ := io.ReadAll(in)
+	if string(rest) != "rest\n" {
+		t.Errorf("unread = %q, want %q", rest, "rest\n")
+	}
+}

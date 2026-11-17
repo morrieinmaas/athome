@@ -4,7 +4,7 @@
 #
 # Usage:
 #
-#   ~/.local/share/chezmoi/scripts/bootstrap.sh             # default: the ref you cloned (current HEAD)
+#   ~/.local/share/chezmoi/scripts/bootstrap-legacy.sh     # default: the ref you cloned (current HEAD)
 #   ~/.local/share/chezmoi/scripts/bootstrap-legacy.sh --ref main  # explicit branch
 #   ~/.local/share/chezmoi/scripts/bootstrap-legacy.sh --ref v1.x  # pin a tagged release
 #   ~/.local/share/chezmoi/scripts/bootstrap-legacy.sh --non-interactive [--config FILE]  # no prompts (defaults/config)

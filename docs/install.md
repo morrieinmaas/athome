@@ -211,5 +211,13 @@ Prompts are plain questions asked only on a terminal. They are skipped with
 `-y` or `--non-interactive`, and a value that comes from a flag, an `ATHOME_*`
 variable or the config file is never asked.
 
+The installer needs a published release. Until the first `v*` release exists,
+build one yourself and pass it in:
+
+```bash
+go build -o athome ./cmd/athome
+./scripts/bootstrap.sh --install-from ./athome
+```
+
 The previous bash installer is kept as `scripts/bootstrap-legacy.sh` for one
 release, with the same flags. It will then be removed.

@@ -60,7 +60,7 @@ func TestChoose(t *testing.T) {
 			if got := a.Choose("ssh key found", "use", "use", "generate", "reupload"); got != c.want {
 				t.Errorf("got %q, want %q", got, c.want)
 			}
-			if !strings.Contains(out.String(), "[use/generate/reupload]") {
+			if !strings.Contains(out.String(), "[use/g/r]") {
 				t.Errorf("out %q", out.String())
 			}
 			if c.name == "choose invalid re-asks" && strings.Count(out.String(), "ssh key found") != 2 {

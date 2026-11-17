@@ -50,7 +50,16 @@ func (a *Asker) Confirm(q string, def bool) bool {
 }
 
 func (a *Asker) Choose(q string, def string, opts ...string) string {
-	hint := "[" + strings.Join(opts, "/") + "] "
+	// Like bash's choose(): the default spelled out, the others as first letters.
+	menu := make([]string, len(opts))
+	for i, o := range opts {
+		if o == def {
+			menu[i] = o
+		} else {
+			menu[i] = o[:1]
+		}
+	}
+	hint := "[" + strings.Join(menu, "/") + "] "
 	for {
 		s, ok := a.line(q + " " + hint)
 		if !ok || s == "" {

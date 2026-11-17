@@ -63,3 +63,14 @@ func TestNewInitEnvAsk(t *testing.T) {
 		t.Error("--non-interactive sets nil Ask")
 	}
 }
+
+func TestIsTerminalFalseForDevNull(t *testing.T) {
+	f, err := os.Open(os.DevNull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	if isTerminal(f) {
+		t.Error("/dev/null must not count as a terminal")
+	}
+}

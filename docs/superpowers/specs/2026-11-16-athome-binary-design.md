@@ -296,6 +296,11 @@ Decisions:
   upload keys to GitHub (y); refresh `gh` scopes (y); GitHub username (asked again while
   empty); Bitwarden server URL (empty = US cloud); use Bitwarden (y); restore secrets
   now (y). An answer of empty takes the default; EOF on stdin takes the default.
+- Deliberate differences from bash: Confirm accepts y, yes, n and no, case-insensitive,
+  and asks again on anything else (bash: only `y` is yes, anything else is no); prompt
+  texts use a colon where bash used a dash; the Bitwarden URL is not asked when one is
+  already stored in `chezmoi.toml`; interactive reruns ask the upload, Bitwarden and
+  restore questions again, as bash does (no remembered declines).
 
 Acceptance criteria:
 

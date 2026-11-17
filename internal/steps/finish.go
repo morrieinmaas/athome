@@ -192,7 +192,9 @@ func secretsRestoreDone(ctx context.Context, env *Env) (bool, error) {
 	if hasSecretsEnv(env) {
 		return true, nil
 	}
-	if fileExists(restoreMarker(env)) {
+	// An interactive rerun asks again (B:1023-1025); the marker only quiets
+	// non-interactive runs.
+	if env.Ask == nil && fileExists(restoreMarker(env)) {
 		return true, nil
 	}
 	return secretsStateOf(ctx, env) != secretsRestorable, nil

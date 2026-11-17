@@ -28,15 +28,16 @@ var Version = "dev"
 // replace it, so no test can start a real process.
 var newRunner = run.Exec
 
-// stdinIsTTY reports whether stdin is a terminal. Tests replace it.
+var Commit = "none"
+
+// isTerminal reports whether f is a terminal.
 func isTerminal(f *os.File) bool { return term.IsTerminal(int(f.Fd())) }
 
+// stdinIsTTY reports whether stdin is a terminal. Tests replace it.
 var stdinIsTTY = func() bool { return isTerminal(os.Stdin) }
 
 // isInteractive decides whether init may prompt.
 func isInteractive(nonInter, tty bool) bool { return tty && !nonInter }
-
-var Commit = "none"
 
 const (
 	exitOK    = 0

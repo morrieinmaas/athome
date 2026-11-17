@@ -37,6 +37,24 @@ esac
 # copy. Pin the source now so the second pass never installs a file onto itself.
 athome_src="$(command -v athome || true)"
 
+# actions/checkout leaves a pull_request build on a detached merge commit, and
+# bootstrap's last step moves a detached repo to main, so phase 3 would run
+# main's scripts instead of the commit under test. Name the commit with a local
+# branch so the whole scenario stays on it.
+if [ "$(git rev-parse --abbrev-ref HEAD)" = HEAD ]; then
+  git checkout -q -B e2e-under-test
+fi
+under_test="$(git rev-parse HEAD)"
+
+assert_same_commit() {
+  local now
+  now="$(git rev-parse HEAD)"
+  if [ "$now" != "$under_test" ]; then
+    echo "FAIL: the repo moved from $under_test to $now during the scenario" >&2
+    exit 1
+  fi
+}
+
 run_bootstrap() {
   if [ "$runner" = binary ]; then
     ./scripts/bootstrap.sh --install-from "$athome_src" --config test/e2e/bootstrap.toml --machine personal
@@ -60,6 +78,7 @@ assert_init_idempotent() {
 # before apply changes the home), then converge with apply, asserting each half.
 bootstrap_and_verify() {
   run_bootstrap
+  assert_same_commit
   if [ "$runner" = binary ]; then
     assert_init_idempotent
   fi
@@ -77,6 +96,7 @@ mkdir -p "$HOME/.secrets/canary" "$HOME/personal/canary-repo"
 printf 'SECRET=keepme\n' >"$HOME/.secrets/canary/.env"
 printf 'keepme\n' >"$HOME/personal/canary-repo/keepme"
 ./scripts/teardown.sh --all --execute --yes
+assert_same_commit
 bash test/e2e/verify-teardown.sh
 
 phase "3/3 re-bootstrap -> re-apply -> re-verify (round-trip)"

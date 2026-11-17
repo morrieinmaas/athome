@@ -62,6 +62,9 @@ cd ~/.local/share/chezmoi
 ./scripts/bootstrap.sh
 ```
 
+`bootstrap.sh` installs the `athome` binary into `~/.local/bin` and runs
+`athome init` for you; see [docs/commands.md](docs/commands.md).
+
 This takes a few minutes. It asks a few questions, each with a sensible
 default. For a work machine, add `--machine work`. To answer everything in
 advance and run hands-off, see [unattended installs](docs/install.md#unattended-installs).

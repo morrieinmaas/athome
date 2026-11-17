@@ -21,18 +21,24 @@ export PATH="$HOME/.local/bin:$HOME/.local/share/mise/shims:/opt/nanobrew/prefix
 
 phase() { printf '\n\033[1;35m========== %s ==========\033[0m\n' "$1"; }
 
-# ATHOME_E2E_RUNNER: bash (default, scripts/bootstrap.sh) or binary (athome init).
+# ATHOME_E2E_RUNNER: bash (default, scripts/bootstrap-legacy.sh) or binary
+# (scripts/bootstrap.sh, the installer, which runs athome init).
 runner="${ATHOME_E2E_RUNNER:-bash}"
 case "$runner" in
   bash|binary) ;;
   *) echo "unknown ATHOME_E2E_RUNNER='$runner' (expected: bash | binary)" >&2; exit 1 ;;
 esac
 
+# The image puts athome in /usr/local/bin; the installer copies it into
+# ~/.local/bin, which is first on PATH, so later `athome` calls run the installed
+# copy. Pin the source now so the second pass never installs a file onto itself.
+athome_src="$(command -v athome || true)"
+
 run_bootstrap() {
   if [ "$runner" = binary ]; then
-    athome init --config test/e2e/bootstrap.toml --machine personal
+    ./scripts/bootstrap.sh --install-from "$athome_src" --config test/e2e/bootstrap.toml --machine personal
   else
-    ./scripts/bootstrap.sh --config test/e2e/bootstrap.toml --machine personal
+    ./scripts/bootstrap-legacy.sh --config test/e2e/bootstrap.toml --machine personal
   fi
 }
 

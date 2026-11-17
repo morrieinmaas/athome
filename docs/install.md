@@ -132,7 +132,7 @@ Bootstrap asks a handful of questions when run in a terminal, each with a
 sensible default. To skip them, copy
 [`examples/bootstrap.toml.example`](../examples/bootstrap.toml.example) to
 `bootstrap.local.toml` in the repo root (it's gitignored), fill in what you
-care about, and run `./scripts/bootstrap.sh --non-interactive`. Bootstrap
+care about, and run `./scripts/bootstrap.sh -y`. Bootstrap
 also looks for `~/.config/athome/bootstrap.toml`.
 
 Each answer is taken from, in order: an `ATHOME_*` environment variable, the
@@ -192,21 +192,24 @@ can restore them:
 ./scripts/bootstrap.sh --import-ssh-bw ssh/<hostname>_ed25519
 ```
 
-## athome binary (preview)
+## The installer and the athome binary
 
-`athome` is a Go binary that is growing into a replacement for the bash
-bootstrap. For now it runs the same baseline steps as `bootstrap.sh`, and a
-second run skips whatever is already done.
+`./scripts/bootstrap.sh` installs the `athome` Go binary into
+`~/.local/bin/athome` and then runs `athome init` with the arguments you gave
+it, so every flag in [Bootstrap flags](#bootstrap-flags) works unchanged. The
+binary downloads from the GitHub release. See [commands](commands.md) for what
+it takes.
 
-```bash
-go build -o ~/.local/bin/athome ./cmd/athome
-athome init --config <file> --machine personal
-```
+| Option | What it does |
+| --- | --- |
+| `--install-from <path>` | Install this `athome` binary instead of downloading one (a local build, or CI). |
+| `--help` | Show the installer's usage. |
+| `ATHOME_VERSION` | Release to install, e.g. `v0.4.0`. Default: the latest. |
+| `ATHOME_RELEASE_BASE` | Base URL to download releases from, for a mirror or a test server. |
 
-Run `athome init` from the clone. It also finds the repo through the
-`sourceDir` pinned in `~/.config/chezmoi/chezmoi.toml`, or at
-`~/.local/share/chezmoi`, so it works from any directory once chezmoi has
-the clone.
+Prompts are plain questions asked only on a terminal. They are skipped with
+`-y` or `--non-interactive`, and a value that comes from a flag, an `ATHOME_*`
+variable or the config file is never asked.
 
-`scripts/bootstrap.sh` stays the supported install path for now; the binary is
-exercised in CI next to it (the e2e `binary` runner) but is not yet the default.
+The previous bash installer is kept as `scripts/bootstrap-legacy.sh` for one
+release, with the same flags. It will then be removed.

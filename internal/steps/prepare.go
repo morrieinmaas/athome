@@ -88,6 +88,10 @@ func prepLinkCheck(_ context.Context, env *Env) (bool, error) {
 
 func prepLinkApply(_ context.Context, env *Env) error {
 	link := prepLinkPath(env)
+	if env.Ask != nil && !env.Ask.Confirm(fmt.Sprintf("==> repo at %s, chezmoi expects %s. symlink it?", env.RepoRoot, link), true) {
+		envLogln(env, "continuing with source=%s", env.RepoRoot)
+		return nil
+	}
 	if err := os.MkdirAll(filepath.Dir(link), 0o755); err != nil {
 		return err
 	}

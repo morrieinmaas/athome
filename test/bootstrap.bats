@@ -140,3 +140,49 @@ FAKE
   [[ "$output" == *"--install-from"* ]]
   [ ! -e "$DEST" ]
 }
+
+# A clone with tags v1.0.0 and v1.1.0; only the release dir for $1 exists, so a
+# successful install proves that tag was requested.
+tagged_clone() {
+  local c="$BATS_TEST_TMPDIR/tclone" g="git -C $BATS_TEST_TMPDIR/tclone -c user.name=t -c user.email=t@t -c commit.gpgsign=false -c tag.gpgsign=false"
+  mkdir -p "$c/scripts"
+  cp "$ROOT/scripts/bootstrap.sh" "$c/scripts/"
+  git -C "$c" init -q
+  $g add . && $g commit -q -m one && $g tag v1.0.0
+  $g commit -q --allow-empty -m two && $g tag v1.1.0
+  rm -rf "$REL"
+  mkdir -p "$REL/$1"
+  make_fake "$REL/$1/$ASSET" "$1"
+  (cd "$REL/$1" && shasum -a 256 "$ASSET" >checksums.txt)
+}
+
+@test "tag exactly at HEAD is the version installed" {
+  unset ATHOME_VERSION
+  tagged_clone v1.1.0
+  run bash "$BATS_TEST_TMPDIR/tclone/scripts/bootstrap.sh"
+  [ "$status" -eq 0 ]
+  [ "$("$DEST" version)" = "athome v1.1.0 (abc)" ]
+}
+
+@test "HEAD past a tag installs the nearest tag" {
+  unset ATHOME_VERSION
+  tagged_clone v1.1.0
+  git -C "$BATS_TEST_TMPDIR/tclone" -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q --allow-empty -m three
+  run bash "$BATS_TEST_TMPDIR/tclone/scripts/bootstrap.sh"
+  [ "$status" -eq 0 ]
+  [ "$("$DEST" version)" = "athome v1.1.0 (abc)" ]
+}
+
+@test "ATHOME_VERSION overrides a tag at HEAD" {
+  tagged_clone v1.0.0
+  ATHOME_VERSION=v1.0.0 run bash "$BATS_TEST_TMPDIR/tclone/scripts/bootstrap.sh"
+  [ "$status" -eq 0 ]
+  [ "$("$DEST" version)" = "athome v1.0.0 (abc)" ]
+}
+
+@test "args before and after --install-from reach init in order" {
+  make_fake "$BATS_TEST_TMPDIR/athome-src" vX
+  run bash "$ROOT/scripts/bootstrap.sh" -y --install-from "$BATS_TEST_TMPDIR/athome-src" --machine work
+  [ "$status" -eq 0 ]
+  grep -qx 'init-args:init -y --machine work' "$HOME/calls"
+}

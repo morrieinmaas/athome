@@ -368,3 +368,101 @@ Test list (unit unless marked):
 
 Out of scope for build 2: the TUI, `teardown`, `secrets`, `update`, `status`, self-update,
 and moving the release host to termage.
+
+## Build 3: the TUI (migration step 3)
+
+Goal: an interactive `athome init` fills one form, then shows one progress view over the
+same step list; `athome` with no arguments on a terminal opens a home screen.
+
+Decisions:
+
+- Libraries: Bubble Tea, huh, lipgloss and bubbles, latest stable releases at build time.
+  TUI tests use `github.com/charmbracelet/x/exp/teatest`.
+- The TUI runs when `init` would prompt today: stdin and stdout are terminals and none of
+  `-y`, `--yes`, `--non-interactive` is given. `--plain` (and `ATHOME_PLAIN=1`) keeps the
+  build 2 line prompts. Non-interactive runs, `--config` runs and e2e are unchanged.
+- The form has the pages of "The init form": Machine (machineType `personal|work`,
+  hostname), Identity (githubHandle, personalName, personalEmail, workEmail, workName,
+  sidebizEmail, sidebizName), Keys and secrets (bitwardenUrl, ssh key action, store the key
+  in Bitwarden, upload keys to GitHub, restore secrets), Network (meshProvider
+  `meshnet|netbird|none`, nordvpnCountry when meshnet, netbirdManagementUrl when netbird),
+  Extras (includeAgents, agentsRepo, extraPackages, Slack and Matterhorn keys), Review.
+- Prefill order per field: flag or `ATHOME_*` env, config file, stored `chezmoi.toml`
+  `[data]`, then the step's own default (githubHandle from `gh api user`, hostname as the
+  data step derives it). A field set by flag or env is shown read-only.
+- Answers go into `env.Cfg.Data` under the keys the steps already read
+  (`sshKeyAction`, `generateSshKey`, `useBitwarden`), plus two new ones the steps honour:
+  `uploadSshKeys` and `restoreSecrets` (`"true"|"false"`). So no step asks a question
+  the form answered. The ssh key field shows `use|generate|reupload` when a key exists,
+  else `generate|skip`.
+- Validation on leaving a field: emails must match `^[^@\s]+@[^@\s]+\.[^@\s]+$` (empty
+  allowed where the template allows empty); bitwardenUrl empty or an `https://` URL that
+  answers an HTTP GET within 5 s; githubHandle must exist (`gh api users/<h>`, else the
+  public API), checked within 5 s; a failed network check is an inline error the user can
+  override by pressing enter again (offline machines must still be able to init).
+- Review lists every answer; enter applies, `b` goes back to edit, `q` or Ctrl-C quits
+  with exit 130 and writes nothing.
+- The progress view lists every step with a spinner, a tick, "skipped" or a cross. `l`
+  toggles the run log (what `env.Log` gets) under the list. On failure it stays on screen
+  until a key is pressed, then exits 1 with the same error line the plain run prints.
+- A question a step still asks (the repo symlink confirm, the gh scope refresh) and every
+  `Interactive` or `NeedsSudo` command (sudo, `bw-setup`, `secrets-restore`, the gh
+  device flow) runs with the TUI's terminal released and restored afterwards
+  (`Program.ReleaseTerminal`/`RestoreTerminal`), so sudo asks only when a step needs it,
+  as today.
+- After the progress view exits, the same finish summary as the plain run is printed.
+- `athome` with no arguments on a terminal opens the home screen: version and commit, repo
+  root, machine type, hostname and GitHub handle from `chezmoi.toml` (or "not set up"),
+  then a menu: init, quit. Update and machines join the menu in later builds. Without a
+  terminal it prints usage as today.
+
+Acceptance criteria:
+
+1. On a terminal, `athome init` shows the form, not line prompts; with `--plain` or
+   `ATHOME_PLAIN=1` it shows the build 2 prompts.
+2. Filling the form and applying writes the same `chezmoi.toml` `[data]` as a
+   `bootstrap.toml` with the same values run with `--config`.
+3. No step asks a question the form answered (ssh key, Bitwarden, upload, restore).
+4. Fields set by flag or env are read-only and their values used.
+5. An invalid email blocks the page with an inline error; a failed network check shows an
+   error and a second enter accepts the value.
+6. Quitting at any form page exits 130 and leaves `chezmoi.toml` untouched.
+7. The progress view shows each step's state and the log on `l`; a failing step exits 1
+   with the step's error.
+8. Interactive and sudo commands run with the terminal released.
+9. `athome` on a terminal shows the home screen with the stored values; init from it runs
+   the form.
+10. `-y`, `--config` and e2e behave exactly as in build 2.
+
+Edge cases:
+
+- No `chezmoi.toml` yet: every field from defaults; home screen says "not set up".
+- `gh` missing or logged out: githubHandle is empty and required.
+- Unicode in names (`Jürgen Müller`, `山田`) round-trips into `chezmoi.toml`.
+- A terminal narrower than 60 columns still renders (huh wraps).
+- Ctrl-C during the progress view cancels the context, runs cleanup, exits 130.
+- `meshProvider=none` hides both mesh fields and writes them empty.
+
+Test list:
+
+- unit: form model with every field filled produces the `Data` map equal to the one
+  `config.Load` gives for the equivalent `bootstrap.toml` (criterion 2).
+- unit: prefill precedence: env over file over stored over default; env field read-only.
+- unit: email validator accepts `a@b.co`, rejects `a@b`, `a b@c.d`, accepts empty where
+  optional.
+- unit: network check fake failing once, second enter accepts.
+- unit: steps honour `uploadSshKeys=false` and `restoreSecrets=false` without asking
+  (`env.Ask` set to an asker that fails the test on any read).
+- unit: quit at page 1 and at review exits 130, `chezmoi.toml` absent.
+- teatest: progress view over three fake steps (done, applied, failing) shows tick,
+  skipped and cross, `l` shows the log, exit code 1.
+- unit: a runner wrapper calls release before and restore after an `Interactive` and a
+  `NeedsSudo` command, and neither for a plain command.
+- teatest: home screen with a stored `chezmoi.toml` shows handle and machine type; without
+  one shows "not set up".
+- unit: `--plain` and `ATHOME_PLAIN=1` select the line prompts; `-y` selects neither.
+- unit: unicode name round-trip through `writeData`.
+- e2e: unchanged matrix stays green.
+
+Out of scope: update and machines menu entries, `athome status`, teardown and secrets
+(build 4).

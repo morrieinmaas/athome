@@ -74,6 +74,9 @@ func ghCheck(ctx context.Context, env *Env, p ghPlan) (bool, error) {
 		}
 		return false, nil
 	case ghUpload:
+		if !ghForceUpload(ctx, env) && fileExists(ghDeclinedMarker(env)) {
+			return true, nil
+		}
 		// No key scope and the refresh was refused or impossible earlier (the
 		// marker): the upload is manual, which the user finishes by hand. The
 		// first run applies, so the instructions and the post-upload steps run
@@ -284,6 +287,14 @@ func ghManualMarker(env *Env) string {
 
 // ghUploadAll ports B:633-747.
 func ghUploadAll(ctx context.Context, env *Env, p ghPlan) {
+	if env.Ask != nil && !ghForceUpload(ctx, env) && !env.Ask.Confirm("Upload SSH public keys to GitHub now (auth + signing)?", true) { // B:633
+		envLogf(env, "skipping ssh-key upload, run manually later:\n")
+		envLogf(env, "  gh auth refresh -h github.com -s admin:public_key,admin:ssh_signing_key\n")
+		envLogf(env, "  gh ssh-key add %s --title \"%s\"\n", p.pub, p.sshHost)
+		envLogf(env, "  gh ssh-key add %s --title \"%s-sign\" --type signing\n", p.pub, p.sshHost)
+		ghWriteMarker(env, ghDeclinedMarker(env))
+		return
+	}
 	if ghEnsureScopes(ctx, env) {
 		if ghUploadKeys(ctx, env, p) {
 			os.Remove(ghManualMarker(env))
@@ -305,8 +316,15 @@ func ghMissingScopes(ctx context.Context, env *Env) []string {
 	return missing
 }
 
-func ghWriteManualMarker(env *Env) {
-	path := ghManualMarker(env)
+// ghDeclinedMarker records an interactive "no" to the upload prompt, so a rerun
+// does not ask again.
+func ghDeclinedMarker(env *Env) string {
+	return filepath.Join(env.Home, ".local", "state", "athome", "github-upload-declined")
+}
+
+func ghWriteManualMarker(env *Env) { ghWriteMarker(env, ghManualMarker(env)) }
+
+func ghWriteMarker(env *Env, path string) {
 	err := os.MkdirAll(filepath.Dir(path), 0o755)
 	if err == nil {
 		err = os.WriteFile(path, nil, 0o644)
@@ -326,6 +344,10 @@ func ghEnsureScopes(ctx context.Context, env *Env) bool {
 	envLogf(env, "==> gh auth is missing scope(s): %s\n", strings.Join(missing, " "))
 	if os.Getenv("GITHUB_TOKEN") != "" {
 		envLogf(env, "    gh is authed via the GITHUB_TOKEN env var, scopes can't be refreshed on an env token, so falling back to manual upload.\n")
+		return false
+	}
+	if env.Ask != nil && !env.Ask.Confirm("refresh via gh?", true) { // B:668
+		envLogf(env, "    skipping the refresh, falling back to manual upload.\n")
 		return false
 	}
 	// Interactive: the device code and URL must reach the user.

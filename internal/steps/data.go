@@ -57,9 +57,55 @@ func Data() []Step {
 					return err
 				}
 			}
+			if dataPrompt(env, entries) {
+				var err error
+				if entries, err = dataEntries(ctx, env); err != nil {
+					return err
+				}
+			}
 			return writeData(env, entries)
 		},
 	}}
+}
+
+// dataPrompt asks for the values bootstrap.sh prompts for (B:837, B:855-861) when
+// env.Ask is set and the value is neither preset nor already stored. Answers go
+// into env.Cfg.Data, where an env or config value would be. It reports whether
+// anything was set, so the entries must be rebuilt. Only Apply calls it: a check
+// never prompts.
+func dataPrompt(env *Env, entries []dataEntry) bool {
+	if env.Ask == nil {
+		return false
+	}
+	if env.Cfg.Data == nil {
+		env.Cfg.Data = map[string]string{}
+	}
+	changed := false
+	for _, e := range entries {
+		if e.key == "githubHandle" && e.val == "" { // B:837, EOF leaves it empty
+			if h := env.Ask.String("GitHub username: ", true); h != "" {
+				env.Cfg.Data["githubHandle"] = h
+				changed = true
+			}
+		}
+	}
+	d := env.Cfg.Data
+	if d["bitwardenUrl"] == "" && d["useBitwarden"] != "false" && storedBitwardenURL(env) == "" { // B:855-861
+		envLogf(env, "Bitwarden server (for rbw secrets):\n")
+		envLogf(env, "  empty  = US cloud (bitwarden.com)\n")
+		envLogf(env, "  EU     = https://vault.bitwarden.eu\n")
+		envLogf(env, "  self-hosted Vaultwarden = your URL (https://vault.example.com)\n")
+		if u := env.Ask.String("Bitwarden server URL [empty = US cloud]: ", false); u != "" {
+			d["bitwardenUrl"] = u
+			changed = true
+		}
+	}
+	return changed
+}
+
+func storedBitwardenURL(env *Env) string {
+	s, _ := storedData(env)["bitwardenUrl"].(string)
+	return s
 }
 
 // dataDone: chezmoi.toml already holds every seed key with the wanted value.
@@ -143,6 +189,9 @@ func dataEntries(ctx context.Context, env *Env) ([]dataEntry, error) {
 		v := d[k]
 		if k == "meshProvider" && v == "" {
 			v = "meshnet"
+		}
+		if k == "bitwardenUrl" && v == "" && env.Ask != nil {
+			v = storedBitwardenURL(env) // an answer given on an earlier run is not asked again
 		}
 		entries = append(entries, dataEntry{key: k, val: v})
 	}

@@ -29,6 +29,8 @@ afterwards. Built on [chezmoi](https://www.chezmoi.io/) and
 - Secrets are meant to live in [Bitwarden](https://bitwarden.com/) (or a
   self-hosted Vaultwarden). That's optional: say no when asked, or see
   [docs/secrets.md](docs/secrets.md).
+- Lost a laptop? `./scripts/bootstrap.sh --restore` on the new one, then follow the
+  [recovery drill](docs/secrets.md#recovering-a-lost-laptop).
 - Setup uses `sudo`, creates SSH keys, and installs software from the AUR,
   Fedora COPRs, nanobrew and the mise registry. Read [SECURITY.md](SECURITY.md)
   if that matters to you.

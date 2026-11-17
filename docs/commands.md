@@ -25,6 +25,7 @@ athome init [flags]
 | `--import-ssh` | Import the SSH key from `--import-from`. |
 | `--import-ssh-bw <item>` | Bitwarden item holding the SSH key. |
 | `--non-interactive`, `-y`, `--yes` | Never ask; use defaults, the config file and `ATHOME_*` variables. |
+| `--restore` | Replacement laptop: log in to Bitwarden and `gh`, restore the ssh key from Bitwarden and the vault, before any key is generated. See [recovery](secrets.md#recovering-a-lost-laptop). |
 
 Questions are asked only on a terminal, and never for a value already given by
 a flag, an `ATHOME_*` variable or the config file. Details on the answers are
@@ -101,6 +102,7 @@ one release as wrappers that pass their arguments and exit code through.
 ```bash
 athome secrets backup
 athome secrets restore [--dry-run]
+athome secrets rekey [--yes]
 ```
 
 `backup` mirrors `~/.secrets/<repo>/.env*` (not `.example`, `.sample`, `.template` or
@@ -131,6 +133,36 @@ commit); 1 no vault (`backup`), a vault that cannot be cloned, listed or unlocke
 file that could not be copied; 2 plaintext found in the staged files (`backup`), or a
 usage error.
 
+`rekey` makes a new vault with a new git-crypt key and keeps the names: the old GitHub repo
+becomes `<name>-old-<YYYYMMDD>`, a new private `<owner>/<name>` gets every file, the new key
+is stored as `git-crypt/<name>-key` and the old one as `git-crypt/<name>-old-<YYYYMMDD>-key`.
+It needs the vault unlocked, clean and up to date, and rbw unlocked (else exit 1, nothing
+changed). On a terminal it asks first (default no); without one, pass `--yes` (else exit 2).
+It prints the commands to delete the old repo and key, and never runs them. A failure after
+the rename exits 1 naming the `gh repo rename` that undoes it.
+
+## athome keys
+
+```
+athome keys rotate [--laptop] [--boxes] [--break-glass] [--all] [--resume]
+```
+
+Rotates ssh keys in an order that never locks you out: generate, store in Bitwarden
+(`rbw edit` when the item exists), add to GitHub and each box, check a login with only the
+new key, then remove the old key everywhere. See [rotation](secrets.md#rotation).
+
+| Flag | What it rotates |
+| --- | --- |
+| `--laptop` | This laptop's key (`~/.ssh/id_ed25519` if present, else `~/.ssh/<host>_ed25519`) and its Bitwarden item `ssh/<file>`. |
+| `--boxes` | Each box's own key (arrives with `athome machine`; with no machines it prints a note). |
+| `--break-glass` | Each scope's break-glass key, `athome/<context>/<scope>/break-glass`. |
+| `--all` | All three, in that order. |
+| `--resume` | Finishes the pending rotation in `~/.local/state/athome/rotate.json`, retrying skipped boxes. Takes no other flag. |
+
+A new rotation while one is pending exits 1 and asks for `--resume`. Exit codes: 0 done;
+1 a failure, or boxes skipped (listed, with the `--resume` hint); 2 a usage error, including
+no flag.
+
 ## athome version
 
 Prints the version and commit, e.g. `athome 0.5.0 (abc1234)`.
@@ -153,6 +185,11 @@ Each is `current`, `not current`, `not installed` or `unknown` (offline, no
 `--json` prints `{"version", "commit", "repo", "ref", "current", "components": [{"name",
 "status", "installed", "wanted", "detail"}]}`, where `current` is true only when all
 five are current.
+
+`--json` also has `"keys": {"last_rotated", "due"}`: the last finished rotation, else the
+laptop key's age. When it is more than 90 days old, the text output adds
+`keys: last rotated <n> days ago; run athome keys rotate --laptop`. It never changes
+`current` or the exit code.
 
 Exit codes: 0 whenever the report printed, whatever it says; 1 when the repo is not
 found; 2 for a usage error.

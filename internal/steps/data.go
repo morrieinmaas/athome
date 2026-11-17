@@ -63,6 +63,9 @@ func Data() []Step {
 					return err
 				}
 			}
+			if dataStored(env, entries) {
+				return nil // the prompts changed nothing: leave DataChanged false
+			}
 			return writeData(env, entries)
 		},
 	}}
@@ -124,6 +127,11 @@ func dataDone(env *Env, entries []dataEntry) bool {
 	if env.Ask != nil && bitwardenURLUnasked(env) {
 		return false // likewise the Bitwarden URL
 	}
+	return dataStored(env, entries)
+}
+
+// dataStored: chezmoi.toml holds every seed key with the wanted value.
+func dataStored(env *Env, entries []dataEntry) bool {
 	var doc struct {
 		Data map[string]any `toml:"data"`
 	}

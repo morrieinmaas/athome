@@ -341,10 +341,16 @@ func printSummary(w io.Writer, rep steps.Report) {
 	fmt.Fprintf(w, "athome: applied %d, skipped %d\n", len(rep.Applied), len(rep.Skipped))
 }
 
-// findRepoRoot looks for .chezmoiroot at or above the working directory, then
-// falls back to the parent of the sourceDir pinned in chezmoi's config, then to
+// findRepoRoot uses $ATHOME_REPO when set (it must hold .chezmoiroot), else looks
+// for .chezmoiroot at or above the working directory, then falls back to the parent of the sourceDir pinned in chezmoi's config, then to
 // chezmoi's own clone at ~/.local/share/chezmoi.
 func findRepoRoot(home string) (string, error) {
+	if repo := os.Getenv("ATHOME_REPO"); repo != "" {
+		if _, err := os.Stat(filepath.Join(repo, ".chezmoiroot")); err != nil {
+			return "", fmt.Errorf("ATHOME_REPO=%s is not an athome repo: no .chezmoiroot there", repo)
+		}
+		return repo, nil
+	}
 	dir, err := os.Getwd()
 	if err != nil {
 		return "", err

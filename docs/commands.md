@@ -28,7 +28,8 @@ Questions are asked only on a terminal, and never for a value already given by
 a flag, an `ATHOME_*` variable or the config file. Details on the answers are
 in [unattended installs](install.md#unattended-installs).
 
-`athome init` finds the repo through the current directory, the `sourceDir`
+`athome init` finds the repo through `ATHOME_REPO` (a path that must hold
+`.chezmoiroot`; the installer sets it), the current directory, the `sourceDir`
 pinned in `~/.config/chezmoi/chezmoi.toml`, or `~/.local/share/chezmoi`.
 
 ## athome version

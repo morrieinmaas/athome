@@ -41,8 +41,13 @@ jobs:
           args: release --snapshot --clean --skip=publish
       - name: assert artifacts
         run: |
+          # Binary-format archives are the built binaries (dist/athome_<os>_<arch>_<variant>/athome),
+          # uploaded as athome_<os>_<arch>, the names checksums.txt carries.
           test -f dist/checksums.txt
-          ls dist/athome_{darwin,linux}_{amd64,arm64}
-          out=$(dist/athome_linux_amd64 version)
+          for t in darwin_amd64 darwin_arm64 linux_amd64 linux_arm64; do
+            grep -q " athome_$t\$" dist/checksums.txt
+            test -x dist/athome_${t}_*/athome
+          done
+          out=$(dist/athome_linux_amd64_*/athome version)
           echo "$out" | grep -q SNAPSHOT
           echo "$out" | grep -q "$(git rev-parse --short HEAD)"

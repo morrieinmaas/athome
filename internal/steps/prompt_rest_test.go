@@ -124,6 +124,24 @@ func TestPromptBitwardenURL(t *testing.T) {
 			t.Errorf("no URL prompt: %q", out)
 		}
 	})
+	t.Run("an empty answer on a rerun changes nothing, so DataChanged stays false", func(t *testing.T) {
+		fx := newFixture(t)
+		fx.Env.Cfg.Data["githubHandle"] = "octo"
+		pr5Ask(fx, "\n")
+		fx.MustExec(steps.Data())
+		if !fx.Env.DataChanged {
+			t.Fatalf("the first run must write chezmoi.toml")
+		}
+		fx.Env.DataChanged = false
+		out := pr5Ask(fx, "\n") // Rerun builds an Env without Ask, so reuse this one
+		fx.MustExec(steps.Data())
+		if !strings.Contains(out.String(), "Bitwarden server URL") {
+			t.Fatalf("the rerun must ask again: %q", out)
+		}
+		if fx.Env.DataChanged {
+			t.Errorf("DataChanged = true, but the file already held the seed values")
+		}
+	})
 	t.Run("answer lands in data and is not asked again", func(t *testing.T) {
 		fx := newFixture(t)
 		fx.Env.Cfg.Data["githubHandle"] = "octo"

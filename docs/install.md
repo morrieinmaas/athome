@@ -206,6 +206,7 @@ it takes.
 | `--help` | Show the installer's usage. |
 | `ATHOME_VERSION` | Release to install, e.g. `v0.4.0`. Default: the tag at `HEAD`, else the nearest tag. |
 | `ATHOME_RELEASE_BASE` | Base URL to download releases from, for a mirror or a test server. |
+| `ATHOME_REPO` | Set by the installer to its own checkout, so `athome init` finds the repo from any directory. |
 
 Prompts are plain questions asked only on a terminal. They are skipped with
 `-y` or `--non-interactive`, and a value that comes from a flag, an `ATHOME_*`

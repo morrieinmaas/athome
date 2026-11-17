@@ -51,6 +51,7 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 dest_dir="$HOME/.local/bin"
 dest="$dest_dir/athome"
 tmp=""
@@ -69,6 +70,7 @@ run_init() {
   # exec skips the EXIT trap, so clean up first.
   cleanup
   trap - EXIT
+  export ATHOME_REPO="$repo_dir"
   exec "$dest" init ${args[@]+"${args[@]}"}
 }
 
@@ -91,7 +93,6 @@ case "$(uname -m)" in
   *) die "unsupported arch $(uname -m); $hint" ;;
 esac
 
-repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 tag="${ATHOME_VERSION:-}"
 if [ -z "$tag" ]; then
   tag="$(git -C "$repo_dir" describe --tags --exact-match HEAD 2>/dev/null ||
@@ -138,8 +139,8 @@ if [ "$rc" -ne 0 ]; then
   trap - EXIT
   exec "$repo_dir/scripts/bootstrap-legacy.sh" ${args[@]+"${args[@]}"}
 fi
-curl -fsSL "$base/$tag/checksums.txt" -o "$tmp/checksums.txt" ||
-  die "cannot download $base/$tag/checksums.txt; $hint"
+curl -fsSL "$base/$tag/checksums.txt" -o "$tmp/checksums.txt" 2>"$tmp/curl.err" ||
+  die "cannot download $base/$tag/checksums.txt: $(cat "$tmp/curl.err"); $hint"
 
 want="$(awk -v a="$asset" '$2 == a || $2 == "*" a { print $1; exit }' "$tmp/checksums.txt")"
 [ -n "$want" ] || die "checksums.txt has no line for $asset"

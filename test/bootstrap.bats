@@ -73,6 +73,89 @@ FAKE
   [ -z "$(ls -d "$TMPDIR"/athome-install.* 2>/dev/null)" ]
 }
 
+# A fake curl first on PATH, faithful to how bootstrap.sh calls it: the asset
+# download passes -w '%{http_code}' and reads the code from stdout, and curl -f
+# exits 22 on an HTTP error. FAKE_ASSET_CODE is the status for the asset request;
+# FAKE_CHECKSUMS_FAIL=1 makes the checksums.txt request fail.
+fake_curl() {
+  mkdir -p "$BATS_TEST_TMPDIR/curlbin"
+  cat >"$BATS_TEST_TMPDIR/curlbin/curl" <<'CURL'
+#!/bin/sh
+code="" out=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -w) code=1; shift ;;
+    -o) out="$2"; shift ;;
+  esac
+  shift
+done
+if [ -n "$code" ]; then
+  printf '%s' "$FAKE_ASSET_CODE"
+  if [ "$FAKE_ASSET_CODE" != 200 ]; then
+    echo "curl: (22) The requested URL returned error: $FAKE_ASSET_CODE" >&2
+    exit 22
+  fi
+  echo fake >"$out"
+  exit 0
+fi
+echo "curl: (22) checksums gone" >&2
+exit 22
+CURL
+  chmod 0755 "$BATS_TEST_TMPDIR/curlbin/curl"
+  export PATH="$BATS_TEST_TMPDIR/curlbin:$PATH"
+}
+
+legacy_clone() {
+  mkdir -p "$BATS_TEST_TMPDIR/lclone/scripts"
+  cp "$ROOT/scripts/bootstrap.sh" "$BATS_TEST_TMPDIR/lclone/scripts/"
+  printf '#!/bin/sh\necho "legacy-args:$*" >> "$HOME/calls"\n' >"$BATS_TEST_TMPDIR/lclone/scripts/bootstrap-legacy.sh"
+  chmod 0755 "$BATS_TEST_TMPDIR/lclone/scripts/bootstrap-legacy.sh"
+}
+
+@test "an HTTP 404 for the asset falls back to bootstrap-legacy.sh" {
+  fake_curl
+  legacy_clone
+  FAKE_ASSET_CODE=404 ATHOME_RELEASE_BASE=https://releases.invalid run bash "$BATS_TEST_TMPDIR/lclone/scripts/bootstrap.sh" -y
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"falling back to scripts/bootstrap-legacy.sh"* ]]
+  grep -qx 'legacy-args:-y' "$HOME/calls"
+  [ ! -e "$DEST" ]
+}
+
+@test "an HTTP 500 for the asset exits 1 with curl's message and does not fall back" {
+  fake_curl
+  legacy_clone
+  FAKE_ASSET_CODE=500 ATHOME_RELEASE_BASE=https://releases.invalid run bash "$BATS_TEST_TMPDIR/lclone/scripts/bootstrap.sh" -y
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"cannot download https://releases.invalid/v9.9.9/$ASSET"* ]]
+  [[ "$output" == *"returned error: 500"* ]]
+  [[ "$output" != *"falling back"* ]]
+  [ ! -e "$HOME/calls" ]
+  [ ! -e "$DEST" ]
+  [ -z "$(ls -d "$TMPDIR"/athome-install.* 2>/dev/null)" ]
+}
+
+@test "a failed checksums.txt download exits 1 with curl's message" {
+  fake_curl
+  FAKE_ASSET_CODE=200 ATHOME_RELEASE_BASE=https://releases.invalid run bash "$ROOT/scripts/bootstrap.sh"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"cannot download https://releases.invalid/v9.9.9/checksums.txt: curl: (22) checksums gone"* ]]
+  [ ! -e "$DEST" ]
+}
+
+@test "the installer exports ATHOME_REPO and works from another directory" {
+  make_fake "$BATS_TEST_TMPDIR/athome-src" vX
+  cat >"$BATS_TEST_TMPDIR/athome-src" <<'STUB'
+#!/bin/sh
+echo "repo:$ATHOME_REPO" >> "$HOME/calls"
+STUB
+  mkdir "$BATS_TEST_TMPDIR/elsewhere"
+  cd "$BATS_TEST_TMPDIR/elsewhere"
+  run bash "$ROOT/scripts/bootstrap.sh" --install-from "$BATS_TEST_TMPDIR/athome-src"
+  [ "$status" -eq 0 ]
+  grep -qx "repo:$ROOT" "$HOME/calls"
+}
+
 @test "no curl exits 1 naming curl" {
   mkdir "$BATS_TEST_TMPDIR/nobin"
   for t in bash env cut awk mktemp mkdir rm cp mv chmod git dirname uname cat shasum; do

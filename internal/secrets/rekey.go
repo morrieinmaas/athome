@@ -28,6 +28,7 @@ type RekeyOpts struct {
 // Rekey makes a new vault repo with a new git-crypt key under the same name,
 // renaming the old repo out of the way. It returns the process exit code.
 func Rekey(ctx context.Context, o RekeyOpts) int {
+	o.Vault = filepath.Clean(o.Vault) // a trailing slash would put .rekey inside the vault
 	now := time.Now
 	if o.Now != nil {
 		now = o.Now
@@ -157,8 +158,8 @@ func (o RekeyOpts) swapCheckout(ctx context.Context, rk, date string) int {
 		return exitError
 	}
 	// Files git ignores never reach the vault; keep them rather than delete them.
-	if r, err := o.Run.Run(ctx, run.Cmd{Name: "git", Args: []string{"status", "--porcelain", "--ignored"}, Dir: oldDir}); err == nil && r.Code == 0 && strings.Contains(r.Stdout, "!! ") {
-		o.outf("kept the old checkout at %s: it holds files git ignores; move what you need, then delete it\n", oldDir)
+	if r, err := o.Run.Run(ctx, run.Cmd{Name: "git", Args: []string{"status", "--porcelain", "--ignored"}, Dir: oldDir}); err != nil || r.Code != 0 || strings.Contains(r.Stdout, "!! ") {
+		o.outf("kept the old checkout at %s: it may hold files git ignores; move what you need, then delete it\n", oldDir)
 		return exitOK
 	}
 	if err := os.RemoveAll(oldDir); err != nil {

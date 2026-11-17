@@ -564,3 +564,15 @@ func TestRekeyKeepsOldCheckoutWithIgnoredFiles(t *testing.T) {
 		t.Errorf("out = %q", g.out.String())
 	}
 }
+
+func TestRekeyVaultWithTrailingSlash(t *testing.T) {
+	g := newRekeyRig(t)
+	o := g.opts(true, false, "")
+	o.Vault += "/"
+	if code := secrets.Rekey(context.Background(), o); code != 0 {
+		t.Fatalf("code %d, stderr %q", code, g.errb.String())
+	}
+	if _, err := os.Stat(filepath.Join(g.vault, ".rekey")); err == nil {
+		t.Error(".rekey was built inside the vault")
+	}
+}

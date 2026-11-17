@@ -70,8 +70,17 @@ func restoreKeyPresent(ctx context.Context, env *Env) bool {
 	return fileExists(skKeyPath(ctx, env)) || fileExists(filepath.Join(env.Home, ".ssh", "id_ed25519"))
 }
 
+// restoreKeyCheck: a present key is kept, and the later ssh-keygen step must
+// not make another (it only looks at <host>_ed25519), so the answers say so.
 func restoreKeyCheck(ctx context.Context, env *Env) (bool, error) {
-	return restoreKeyPresent(ctx, env), nil
+	if !restoreKeyPresent(ctx, env) {
+		return false, nil
+	}
+	skSetData(env, "sshKeyAction", "use")
+	if !fileExists(skKeyPath(ctx, env)) {
+		skSetData(env, "generateSshKey", "false")
+	}
+	return true, nil
 }
 
 var sshItem = regexp.MustCompile(`^ssh/[^/]+_ed25519$`)

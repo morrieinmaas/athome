@@ -84,7 +84,7 @@ func Rekey(ctx context.Context, o RekeyOpts) int {
 	if code := o.publish(ctx, t, rk, newKey); code != exitOK {
 		return code
 	}
-	if code := o.swapCheckout(rk, date); code != exitOK {
+	if code := o.swapCheckout(ctx, rk, date); code != exitOK {
 		return code
 	}
 
@@ -140,7 +140,7 @@ func (o RekeyOpts) publish(ctx context.Context, t rekeyTarget, rk string, newKey
 
 // swapCheckout is step 7: the rebuilt checkout takes the vault's place.
 // GitHub and Bitwarden are correct from here, so a failure names no GitHub undo.
-func (o RekeyOpts) swapCheckout(rk, date string) int {
+func (o RekeyOpts) swapCheckout(ctx context.Context, rk, date string) int {
 	oldDir := o.Vault + ".old-" + date
 	for i := 1; ; i++ {
 		if _, err := os.Lstat(oldDir); err != nil {
@@ -155,6 +155,11 @@ func (o RekeyOpts) swapCheckout(rk, date string) int {
 	if err := os.Rename(rk, o.Vault); err != nil {
 		o.errf("could not move %s to %s: %v\nthe old checkout is at %s; the new vault is at %s\n", rk, o.Vault, err, oldDir, rk)
 		return exitError
+	}
+	// Files git ignores never reach the vault; keep them rather than delete them.
+	if r, err := o.Run.Run(ctx, run.Cmd{Name: "git", Args: []string{"status", "--porcelain", "--ignored"}, Dir: oldDir}); err == nil && r.Code == 0 && strings.Contains(r.Stdout, "!! ") {
+		o.outf("kept the old checkout at %s: it holds files git ignores; move what you need, then delete it\n", oldDir)
+		return exitOK
 	}
 	if err := os.RemoveAll(oldDir); err != nil {
 		o.errf("could not remove the old checkout %s: %v\nthe new vault is in place at %s; delete %s yourself\n", oldDir, err, o.Vault, oldDir)
@@ -188,7 +193,7 @@ func (o RekeyOpts) preconditions(ctx context.Context) int {
 		o.errf("the vault is locked; run git-crypt unlock, then re-run athome secrets rekey\n")
 		return exitError
 	}
-	r, err = o.git(ctx, "status", "--porcelain", "--ignored")
+	r, err = o.git(ctx, "status", "--porcelain")
 	if err != nil || r.Code != 0 {
 		o.gitFailed(err, r)
 		return exitError

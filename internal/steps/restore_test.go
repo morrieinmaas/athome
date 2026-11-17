@@ -193,6 +193,16 @@ func TestRestoreIdKeyCountsAsPresent(t *testing.T) {
 	}
 }
 
+func TestRestoreIdKeyStopsKeygen(t *testing.T) {
+	fx := restoreHappy(t)
+	fx.Env.Run = keygenWrites{fx.Env.Run}
+	writeFile(t, fx.Path(".ssh", "id_ed25519"), "ID", 0o600)
+	fx.MustExec(append(restoreRun(), steps.SSHKey()...))
+	if n := len(keygenCalls(fx)); n != 0 {
+		t.Errorf("a key was generated beside the present id_ed25519 (%d calls):\n%s", n, fx.dump())
+	}
+}
+
 func TestRestoreNoKeyFileFails(t *testing.T) {
 	fx := restoreHappy(t)
 	fx.Fake.On("rbw", "get", "--field", "notes", restoreItem).Return(run.Result{Code: 1})

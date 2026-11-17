@@ -544,3 +544,23 @@ func TestRekeyRenameFailureNamesTheStep3Undo(t *testing.T) {
 		t.Errorf("stderr %q lacks %q", g.errb.String(), undo)
 	}
 }
+
+func TestRekeyKeepsOldCheckoutWithIgnoredFiles(t *testing.T) {
+	g := newRekeyRig(t)
+	if err := os.WriteFile(filepath.Join(g.vault, ".git", "info", "exclude"), []byte("notes.txt\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(g.vault, "notes.txt"), []byte("mine"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if code := secrets.Rekey(context.Background(), g.opts(true, false, "")); code != 0 {
+		t.Fatalf("code %d, stderr %q", code, g.errb.String())
+	}
+	kept := g.vault + ".old-" + rekeyDate
+	if b, err := os.ReadFile(filepath.Join(kept, "notes.txt")); err != nil || string(b) != "mine" {
+		t.Errorf("ignored file lost: %v", err)
+	}
+	if !strings.Contains(g.out.String(), "kept the old checkout at "+kept) {
+		t.Errorf("out = %q", g.out.String())
+	}
+}

@@ -313,7 +313,8 @@ Decisions:
      exported key file is then removed.
   7. `<vault>` is renamed to `<vault>.old-<YYYYMMDD>` (a numeric suffix is added if that
      exists), `<vault>.rekey` is renamed to `<vault>`, then the `.old-<YYYYMMDD>` directory is
-     removed.
+     removed, unless `git status --porcelain --ignored` shows files git ignores there: then it
+     is kept and named, so nothing outside the vault is deleted.
 
   It prints `✓ vault re-keyed` and the two commands to run once you have checked the new
   vault: `gh repo delete <owner>/<name>-old-<YYYYMMDD>` and
@@ -337,7 +338,9 @@ Decisions:
   2. `restore-gh`: done when `gh auth status` exits 0. Apply runs `gh auth login --git-protocol https --skip-ssh-key`
      interactively on a terminal (so gh never makes a key before the old one is restored); without one it fails with
      `gh is not logged in: run gh auth login, then re-run athome init --restore`.
-  3. `restore-ssh-key`: done when the laptop key exists (kept, never overwritten). Apply
+  3. `restore-ssh-key`: done when the laptop key exists (kept, never overwritten). A
+     present key also sets `sshKeyAction = "use"` (and `generateSshKey = "false"` when it is
+     `id_ed25519`), so the later `ssh-keygen` step never makes another. Apply
      picks the item: `--import-ssh-bw` when given, else the one `rbw list` name matching
      `ssh/<name>_ed25519`; several are offered as a choice on a terminal and fail without
      one, listing them and naming `--import-ssh-bw`; none fails naming

@@ -1,0 +1,191 @@
+package cli
+
+import (
+	"context"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/morrieinmaas/athome/internal/prompt"
+	"github.com/morrieinmaas/athome/internal/run"
+	"github.com/morrieinmaas/athome/internal/run/runtest"
+	"github.com/morrieinmaas/athome/internal/steps"
+	"github.com/morrieinmaas/athome/internal/tui"
+)
+
+func TestSeedPrecedenceAndLocked(t *testing.T) {
+	home, _ := tuiSandbox(t)
+	chez := filepath.Join(home, ".config", "chezmoi")
+	os.MkdirAll(chez, 0o755)
+	os.WriteFile(filepath.Join(chez, "chezmoi.toml"), []byte("[data]\n  personalName = \"Stored\"\n  workName = \"StoredWork\"\n  nordvpnCountry = \"DE\"\n  meshProvider = \"netbird\"\n  includeAgents = false\n"), 0o644)
+	cfg := filepath.Join(t.TempDir(), "a.toml")
+	os.WriteFile(cfg, []byte("personalName = \"FromFile\"\nworkEmail = \"file@x.io\"\n"), 0o644)
+	t.Setenv("ATHOME_WORK_EMAIL", "env@x.io")
+
+	// A --config run never opens the form, so build the seed directly.
+	o, err := parseInit([]string{"--config", cfg, "--machine", "work"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr strings.Builder
+	env, code := newInitEnv(o, &stdout, &stderr)
+	if env == nil {
+		t.Fatalf("newInitEnv exit %d: %s", code, stderr.String())
+	}
+	got := buildSeed(context.Background(), env, o, environMap())
+	v := got.Values
+	for k, want := range map[string]string{
+		"workEmail":      "env@x.io",   // env beats file
+		"personalName":   "FromFile",   // file beats stored
+		"workName":       "StoredWork", // stored beats default
+		"nordvpnCountry": "DE",
+		"machineType":    "work",
+		"hostname":       "testbox",
+	} {
+		if v[k] != want {
+			t.Errorf("Values[%s] = %q, want %q", k, v[k], want)
+		}
+	}
+	if !got.Locked["workEmail"] || !got.Locked["machineType"] {
+		t.Errorf("env and flag fields must be locked: %v", got.Locked)
+	}
+	if got.Locked["personalName"] {
+		t.Errorf("a config-file field is prefilled, not locked")
+	}
+	if got.KeyExists(os.Getenv("HOSTNAME")) {
+		t.Errorf("no ssh key exists")
+	}
+}
+
+func TestSeedKeyExistsAndNoAgentsFlag(t *testing.T) {
+	home, _ := tuiSandbox(t)
+	os.MkdirAll(filepath.Join(home, ".ssh"), 0o700)
+	os.WriteFile(filepath.Join(home, ".ssh", "testbox_ed25519"), []byte("k"), 0o600)
+	os.MkdirAll(filepath.Join(home, ".config", "chezmoi"), 0o755)
+	os.WriteFile(filepath.Join(home, ".config", "chezmoi", "chezmoi.toml"), []byte("[data]\n  meshProvider = \"netbird\"\n"), 0o644)
+	var got tui.Seed
+	runForm = func(_ context.Context, _ io.Reader, _ io.Writer, s tui.Seed) (map[string]string, error) {
+		got = s
+		return nil, tui.ErrQuit
+	}
+	run2("init", "--no-agents")
+	if !got.KeyExists("testbox") {
+		t.Error("KeyExists must be true when the key file exists")
+	}
+	if got.Values["meshProvider"] != "netbird" {
+		t.Errorf("stored meshProvider must survive config defaults, got %q", got.Values["meshProvider"])
+	}
+	if got.Values["includeAgents"] != "false" || !got.Locked["includeAgents"] {
+		t.Errorf("--no-agents must lock includeAgents=false: %v %v", got.Values["includeAgents"], got.Locked)
+	}
+}
+
+// KeyExists follows the steps' key path, which uses chezmoi's hostname.
+func TestSeedKeyExistsUsesTheStepsKeyPath(t *testing.T) {
+	home, _ := tuiSandbox(t)
+	f := runtest.NewFake()
+	f.On("chezmoi", "execute-template", "{{ .chezmoi.hostname }}").Return(run.Result{Stdout: "chez\n"})
+	newRunner = func() run.Runner { return f }
+	os.MkdirAll(filepath.Join(home, ".ssh"), 0o700)
+	os.WriteFile(filepath.Join(home, ".ssh", "chez_ed25519"), []byte("k"), 0o600)
+	var got tui.Seed
+	runForm = func(_ context.Context, _ io.Reader, _ io.Writer, s tui.Seed) (map[string]string, error) {
+		got = s
+		return nil, tui.ErrQuit
+	}
+	run2("init")
+	if !got.KeyExists("testbox") {
+		t.Error("KeyExists must look at the chezmoi hostname's key")
+	}
+}
+
+func TestStoredChezmoiDataStringifiesBools(t *testing.T) {
+	home := t.TempDir()
+	os.MkdirAll(filepath.Join(home, ".config", "chezmoi"), 0o755)
+	os.WriteFile(filepath.Join(home, ".config", "chezmoi", "chezmoi.toml"), []byte("[data]\n  a = \"x\"\n  b = true\n  c = 3\n"), 0o644)
+	got := storedChezmoiData(home)
+	if got["a"] != "x" || got["b"] != "true" {
+		t.Errorf("got %v", got)
+	}
+	if _, ok := got["c"]; ok {
+		t.Error("non-string, non-bool values are skipped")
+	}
+}
+
+// An auto-discovered answers file that does not set machine, includeAgents or
+// meshProvider must not override what chezmoi.toml stores.
+func TestSeedFileSettingNothingKeepsStoredChoices(t *testing.T) {
+	home, _ := tuiSandbox(t)
+	os.MkdirAll(filepath.Join(home, ".config", "chezmoi"), 0o755)
+	os.WriteFile(filepath.Join(home, ".config", "chezmoi", "chezmoi.toml"),
+		[]byte("[data]\n  machineType = \"work\"\n  includeAgents = false\n  meshProvider = \"netbird\"\n"), 0o644)
+	os.MkdirAll(filepath.Join(home, ".config", "athome"), 0o755)
+	os.WriteFile(filepath.Join(home, ".config", "athome", "bootstrap.toml"), []byte("personalName = \"FromFile\"\n"), 0o644)
+	var got tui.Seed
+	runForm = func(_ context.Context, _ io.Reader, _ io.Writer, s tui.Seed) (map[string]string, error) {
+		got = s
+		return nil, tui.ErrQuit
+	}
+	run2("init")
+	for k, want := range map[string]string{
+		"personalName": "FromFile", "machineType": "work", "includeAgents": "false", "meshProvider": "netbird",
+	} {
+		if got.Values[k] != want {
+			t.Errorf("Values[%s] = %q, want %q", k, got.Values[k], want)
+		}
+	}
+}
+
+// When the file does set them, the file wins over the stored values.
+func TestSeedFileSettingsBeatStored(t *testing.T) {
+	home, _ := tuiSandbox(t)
+	os.MkdirAll(filepath.Join(home, ".config", "chezmoi"), 0o755)
+	os.WriteFile(filepath.Join(home, ".config", "chezmoi", "chezmoi.toml"),
+		[]byte("[data]\n  machineType = \"work\"\n  includeAgents = false\n  meshProvider = \"netbird\"\n"), 0o644)
+	os.MkdirAll(filepath.Join(home, ".config", "athome"), 0o755)
+	os.WriteFile(filepath.Join(home, ".config", "athome", "bootstrap.toml"),
+		[]byte("machine = \"personal\"\nincludeAgents = true\nmeshProvider = \"none\"\n"), 0o644)
+	var got tui.Seed
+	runForm = func(_ context.Context, _ io.Reader, _ io.Writer, s tui.Seed) (map[string]string, error) {
+		got = s
+		return nil, tui.ErrQuit
+	}
+	run2("init")
+	for k, want := range map[string]string{"machineType": "personal", "includeAgents": "true", "meshProvider": "none"} {
+		if got.Values[k] != want {
+			t.Errorf("Values[%s] = %q, want %q", k, got.Values[k], want)
+		}
+	}
+}
+
+// A hostname changed in the form is checked for its own key: the ssh question
+// is answered by the form and the steps need not ask it again.
+func TestSeedKeyExistsFollowsAnsweredHostname(t *testing.T) {
+	home, _ := tuiSandbox(t)
+	os.MkdirAll(filepath.Join(home, ".ssh"), 0o700)
+	os.WriteFile(filepath.Join(home, ".ssh", "other_ed25519"), []byte("k"), 0o600)
+	runForm = func(_ context.Context, _ io.Reader, _ io.Writer, s tui.Seed) (map[string]string, error) {
+		if s.KeyExists("testbox") {
+			t.Error("the seeded hostname has no key")
+		}
+		if !s.KeyExists("other") {
+			t.Error("the answered hostname has a key")
+		}
+		return map[string]string{"machineType": "personal", "hostname": "other", "sshKeyAction": "use"}, nil
+	}
+	var action string
+	var asked bool
+	runProgress = func(ctx context.Context, _ io.Reader, _ io.Writer, env *steps.Env, _ []steps.Step, _ func(func(func()))) (steps.Report, error) {
+		env.Ask = prompt.New(failReader{&asked}, io.Discard)
+		action = env.Cfg.Data["sshKeyAction"]
+		return steps.Execute(ctx, env, steps.SSHKey())
+	}
+	if code, _, e := run2("init"); code != 0 {
+		t.Fatalf("exit %d: %s", code, e)
+	}
+	if action != "use" || asked {
+		t.Errorf("sshKeyAction = %q, asked = %v: the steps must not ask again", action, asked)
+	}
+}

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"regexp"
 	"strings"
@@ -37,86 +38,6 @@ func useTUI(o initOpts, environ map[string]string) bool {
 	return isInteractive(o.NonInter || o.Yes, stdinIsTTY()) && stdoutIsTTY()
 }
 
-// dataEnv maps the form's data keys to the ATHOME_* variable that presets (and locks) them.
-var dataEnv = map[string]string{
-	"githubHandle": "ATHOME_GITHUB_HANDLE", "githubId": "ATHOME_GITHUB_ID",
-	"personalName": "ATHOME_PERSONAL_NAME", "workEmail": "ATHOME_WORK_EMAIL", "workName": "ATHOME_WORK_NAME",
-	"sidebizEmail": "ATHOME_SIDEBIZ_EMAIL", "sidebizName": "ATHOME_SIDEBIZ_NAME",
-	"agentsRepo": "ATHOME_AGENTS_REPO", "slackDefaultWorkspace": "ATHOME_SLACK_WORKSPACE",
-	"slackTeamId": "ATHOME_SLACK_TEAM_ID", "matterhornHost": "ATHOME_MATTERHORN_HOST",
-	"matterhornUser": "ATHOME_MATTERHORN_USER", "netbirdManagementUrl": "ATHOME_NETBIRD_MGMT_URL",
-	"nordvpnCountry": "ATHOME_NORDVPN_COUNTRY", "meshProvider": "ATHOME_MESH_PROVIDER",
-	"extraPackages": "ATHOME_EXTRA_PACKAGES", "useBitwarden": "ATHOME_USE_BITWARDEN",
-	"sshKeyAction": "ATHOME_SSH_KEY_ACTION", "generateSshKey": "ATHOME_GENERATE_SSH_KEY",
-	"bitwardenUrl": "ATHOME_BW_BASE_URL",
-}
-
-// storedChezmoiData is the [data] table of ~/.config/chezmoi/chezmoi.toml as strings.
-func storedChezmoiData(home string) map[string]string {
-	out := map[string]string{}
-	for k, v := range steps.StoredData(home) {
-		switch x := v.(type) {
-		case string:
-			out[k] = x
-		case bool:
-			out[k] = fmt.Sprint(x)
-		}
-	}
-	return out
-}
-
-// buildSeed resolves each form field: flag or env (locked), config file, stored chezmoi.toml, default.
-func buildSeed(ctx context.Context, env *steps.Env, o initOpts, environ map[string]string) tui.Seed {
-	stored := storedChezmoiData(env.Home)
-	vals := map[string]string{}
-	locked := map[string]bool{}
-	for k, v := range stored {
-		vals[k] = v
-	}
-	for k, v := range env.Cfg.Data {
-		if v == "" {
-			continue
-		}
-		if k == "meshProvider" && v == "meshnet" && environ[dataEnv[k]] == "" && env.Cfg.Source == "" {
-			continue // config's own default must not hide a stored choice
-		}
-		vals[k] = v
-	}
-	for k, e := range dataEnv {
-		if environ[e] != "" {
-			locked[k] = true
-		}
-	}
-	if env.Cfg.Source != "" {
-		vals["machineType"] = env.Cfg.Machine
-		vals["includeAgents"] = fmt.Sprint(env.Cfg.IncludeAgents)
-	}
-	if o.MachineSet || o.Machine != "" {
-		vals["machineType"], locked["machineType"] = env.Cfg.Machine, true
-	}
-	if o.NoAgents {
-		vals["includeAgents"], locked["includeAgents"] = "false", true
-	}
-	if vals["githubHandle"] == "" {
-		if _, err := env.Run.LookPath("gh"); err == nil {
-			if r, err := env.Run.Run(ctx, run.Cmd{Name: "gh", Args: []string{"api", "user", "--jq", ".login"}}); err == nil && r.Code == 0 {
-				vals["githubHandle"] = strings.TrimSpace(r.Stdout)
-			}
-		}
-	}
-	if vals["hostname"] == "" {
-		vals["hostname"] = steps.ShortHostname()
-	}
-	_, statErr := os.Stat(steps.KeyPath(ctx, env))
-	return tui.Seed{
-		Values:      vals,
-		Locked:      locked,
-		KeyExists:   statErr == nil,
-		CheckURL:    checkURL,
-		CheckHandle: func(ctx context.Context, h string) error { return checkHandle(ctx, env.Run, h) },
-	}
-}
-
 var httpGet = func(ctx context.Context, url string) (int, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -130,7 +51,8 @@ var httpGet = func(ctx context.Context, url string) (int, error) {
 	return resp.StatusCode, nil
 }
 
-// checkURL: an https URL that answers a GET within 5 s.
+// checkURL: an https URL that answers a GET within 5 s. Only a transport
+// failure is overridable (tui.ErrCheckUnavailable); a malformed URL is not.
 func checkURL(ctx context.Context, u string) error {
 	if !strings.HasPrefix(u, "https://") {
 		return errors.New("the URL must start with https://")
@@ -138,33 +60,37 @@ func checkURL(ctx context.Context, u string) error {
 	ctx, cancel := context.WithTimeout(ctx, checkTimeout)
 	defer cancel()
 	if _, err := httpGet(ctx, u); err != nil {
-		return fmt.Errorf("%s did not answer: %v", u, err)
+		return fmt.Errorf("%w %s: it did not answer: %v", tui.ErrCheckUnavailable, u, err)
 	}
 	return nil
 }
 
-var handleRe = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$`)
+// A GitHub username is alphanumeric with single hyphens inside, at most 39 long.
+var handleRe = regexp.MustCompile(`^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$`)
 
 // checkHandle: the GitHub user exists, by `gh api users/<h>` else the public API.
+// A malformed handle and a 404 block; a transport error or an unexpected status
+// wraps tui.ErrCheckUnavailable so an offline machine can still go on.
 func checkHandle(ctx context.Context, r run.Runner, h string) error {
-	if !handleRe.MatchString(h) {
+	if len(h) > 39 || !handleRe.MatchString(h) {
 		return fmt.Errorf("%q is not a valid GitHub username", h)
 	}
 	ctx, cancel := context.WithTimeout(ctx, checkTimeout)
 	defer cancel()
+	path := "users/" + url.PathEscape(h)
 	if _, err := r.LookPath("gh"); err == nil {
-		if res, err := r.Run(ctx, run.Cmd{Name: "gh", Args: []string{"api", "users/" + h}}); err == nil && res.Code == 0 {
+		if res, err := r.Run(ctx, run.Cmd{Name: "gh", Args: []string{"api", path}}); err == nil && res.Code == 0 {
 			return nil
 		}
 	}
-	code, err := httpGet(ctx, "https://api.github.com/users/"+h)
+	code, err := httpGet(ctx, "https://api.github.com/"+path)
 	switch {
 	case err != nil:
-		return fmt.Errorf("could not check %s: %v", h, err)
+		return fmt.Errorf("%w %s: %v", tui.ErrCheckUnavailable, h, err)
 	case code == http.StatusNotFound:
 		return fmt.Errorf("no GitHub user %q", h)
 	case code != http.StatusOK:
-		return fmt.Errorf("could not check %s: GitHub answered %d", h, code)
+		return fmt.Errorf("%w %s: GitHub answered %d", tui.ErrCheckUnavailable, h, code)
 	}
 	return nil
 }

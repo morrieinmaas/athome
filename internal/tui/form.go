@@ -19,10 +19,12 @@ var ErrQuit = errors.New("form quit")
 
 // Seed is what the form starts from. Values holds the prefilled answers keyed
 // as chezmoi's [data]; Locked fields are shown but not editable and keep their value.
+// KeyExists reports whether an ssh key exists for a hostname; it is asked with
+// the hostname the form answers, and nil means no key.
 type Seed struct {
 	Values      map[string]string
 	Locked      map[string]bool
-	KeyExists   bool
+	KeyExists   func(hostname string) bool
 	CheckURL    func(context.Context, string) error
 	CheckHandle func(context.Context, string) error
 }
@@ -32,6 +34,9 @@ type formState struct {
 	seed Seed
 	v    map[string]*string
 	ssh  string // the ssh key choice: use|generate|reupload, or generate|skip
+	// sshHasKey is the key existence ssh was last defaulted for; it is reset when
+	// the answered hostname changes it.
+	sshHasKey bool
 }
 
 var formKeys = []string{
@@ -57,22 +62,40 @@ func newFormState(seed Seed) *formState {
 		}
 		s.v[k] = &val
 	}
-	switch {
-	case seed.KeyExists:
-		s.ssh = seed.Values["sshKeyAction"]
-		if s.ssh == "" {
-			s.ssh = "use"
-		}
-	case seed.Values["generateSshKey"] == "false":
-		s.ssh = "skip"
-	default:
-		s.ssh = "generate"
-	}
+	s.sshHasKey = s.keyExists()
+	s.ssh = s.sshDefault()
 	return s
+}
+
+// keyExists asks the seed about the hostname as currently answered.
+func (s *formState) keyExists() bool {
+	return s.seed.KeyExists != nil && s.seed.KeyExists(*s.v["hostname"])
+}
+
+func (s *formState) sshDefault() string {
+	switch {
+	case s.sshHasKey:
+		if a := s.seed.Values["sshKeyAction"]; a != "" {
+			return a
+		}
+		return "use"
+	case s.seed.Values["generateSshKey"] == "false":
+		return "skip"
+	}
+	return "generate"
+}
+
+// syncSSH resets the ssh choice when the answered hostname changed whether a key exists.
+func (s *formState) syncSSH() {
+	if has := s.keyExists(); has != s.sshHasKey {
+		s.sshHasKey = has
+		s.ssh = s.sshDefault()
+	}
 }
 
 // answers maps the state to the Data keys the steps read.
 func (s *formState) answers() map[string]string {
+	s.syncSSH()
 	out := map[string]string{}
 	for k, p := range s.v {
 		out[k] = *p
@@ -85,7 +108,7 @@ func (s *formState) answers() map[string]string {
 	case "netbird":
 		out["nordvpnCountry"] = ""
 	}
-	if s.seed.KeyExists {
+	if s.sshHasKey {
 		out["sshKeyAction"] = s.ssh
 	} else if s.ssh == "skip" {
 		out["generateSshKey"] = "false"
@@ -112,7 +135,7 @@ func (s *formState) locked(k string) bool { return s.seed.Locked[k] }
 
 func (s *formState) lockedKey(k string) bool {
 	if k == "sshKey" {
-		if s.seed.KeyExists {
+		if s.sshHasKey {
 			return s.locked("sshKeyAction")
 		}
 		return s.locked("generateSshKey")
@@ -153,49 +176,61 @@ func (s *formState) yesNo(k, title string) huh.Field {
 		huh.NewOption("yes", "true"), huh.NewOption("no", "false")).Value(s.v[k])
 }
 
-// pages builds the five editable pages; the review page is separate.
-func (s *formState) pages(ctx context.Context) []*huh.Form {
-	sshOpts := []string{"generate", "skip"}
-	sshTitle := "No ssh key yet: create one?"
-	if s.seed.KeyExists {
-		sshOpts = []string{"use", "generate", "reupload"}
-		sshTitle = "An ssh key exists"
-	}
+// pages builds the five editable pages, each when it is reached, so the keys
+// page sees the hostname answered on the first. The review page is separate.
+func (s *formState) pages(ctx context.Context) []func() *huh.Form {
 	meshIs := func(m string) func() bool { return func() bool { return *s.v["meshProvider"] != m } }
-	return []*huh.Form{
-		huh.NewForm(huh.NewGroup(
-			s.choice("machineType", "Machine type", s.v["machineType"], "personal", "work"),
-			s.input("hostname", "Hostname", "", nil),
-		).Title("Machine")),
-		huh.NewForm(huh.NewGroup(
-			s.input("githubHandle", "GitHub username", "e.g. octocat", validHandle(s.seed.CheckHandle, ctx)),
-			s.input("personalName", "Personal git name", "empty = your GitHub username", nil),
-			s.input("workEmail", "Work git email", "empty = personal everywhere", validOptionalEmail),
-			s.input("workName", "Work git name", "empty = personal name", nil),
-			s.input("sidebizEmail", "Side-business git email", "empty = personal everywhere", validOptionalEmail),
-			s.input("sidebizName", "Side-business git name", "empty = personal name", nil),
-		).Title("Identity")),
-		huh.NewForm(huh.NewGroup(
-			s.input("bitwardenUrl", "Bitwarden server URL", "empty = US cloud; EU = https://vault.bitwarden.eu; or your Vaultwarden URL", validBitwardenURL(s.seed.CheckURL, ctx)),
-			s.yesNo("useBitwarden", "Store the ssh key in Bitwarden?"),
-			s.choice("sshKey", sshTitle, &s.ssh, sshOpts...),
-			s.yesNo("uploadSshKeys", "Upload keys to GitHub?"),
-			s.yesNo("restoreSecrets", "Restore secrets from Bitwarden?"),
-		).Title("Keys and secrets")),
-		huh.NewForm(
-			huh.NewGroup(s.choice("meshProvider", "Mesh VPN", s.v["meshProvider"], "meshnet", "netbird", "none")).Title("Network"),
-			huh.NewGroup(s.input("nordvpnCountry", "NordVPN country", "empty = NordVPN picks", nil)).WithHideFunc(meshIs("meshnet")),
-			huh.NewGroup(s.input("netbirdManagementUrl", "NetBird management URL", "empty = NetBird Cloud", nil)).WithHideFunc(meshIs("netbird")),
-		),
-		huh.NewForm(huh.NewGroup(
-			s.yesNo("includeAgents", "Set up agent skills?"),
-			s.input("agentsRepo", "Agents repo (owner/repo)", "empty = none", nil),
-			s.input("extraPackages", "Extra packages", "space-separated", nil),
-			s.input("slackDefaultWorkspace", "Slack workspace slug", "empty = none", nil),
-			s.input("slackTeamId", "Slack team id", "e.g. T0XXXXXXX", nil),
-			s.input("matterhornHost", "Matterhorn host", "no https://, empty = none", nil),
-			s.input("matterhornUser", "Matterhorn login", "empty = none", nil),
-		).Title("Extras")),
+	return []func() *huh.Form{
+		func() *huh.Form {
+			return huh.NewForm(huh.NewGroup(
+				s.choice("machineType", "Machine type", s.v["machineType"], "personal", "work"),
+				s.input("hostname", "Hostname", "", nil),
+			).Title("Machine"))
+		},
+		func() *huh.Form {
+			return huh.NewForm(huh.NewGroup(
+				s.input("githubHandle", "GitHub username", "e.g. octocat", validHandle(s.seed.CheckHandle, ctx)),
+				s.input("personalName", "Personal git name", "empty = your GitHub username", nil),
+				s.input("workEmail", "Work git email", "empty = personal everywhere", validOptionalEmail),
+				s.input("workName", "Work git name", "empty = personal name", nil),
+				s.input("sidebizEmail", "Side-business git email", "empty = personal everywhere", validOptionalEmail),
+				s.input("sidebizName", "Side-business git name", "empty = personal name", nil),
+			).Title("Identity"))
+		},
+		func() *huh.Form {
+			s.syncSSH()
+			sshOpts := []string{"generate", "skip"}
+			sshTitle := "No ssh key yet: create one?"
+			if s.sshHasKey {
+				sshOpts = []string{"use", "generate", "reupload"}
+				sshTitle = "An ssh key exists"
+			}
+			return huh.NewForm(huh.NewGroup(
+				s.input("bitwardenUrl", "Bitwarden server URL", "empty = US cloud; EU = https://vault.bitwarden.eu; or your Vaultwarden URL", validBitwardenURL(s.seed.CheckURL, ctx)),
+				s.yesNo("useBitwarden", "Store the ssh key in Bitwarden?"),
+				s.choice("sshKey", sshTitle, &s.ssh, sshOpts...),
+				s.yesNo("uploadSshKeys", "Upload keys to GitHub?"),
+				s.yesNo("restoreSecrets", "Restore secrets from Bitwarden?"),
+			).Title("Keys and secrets"))
+		},
+		func() *huh.Form {
+			return huh.NewForm(
+				huh.NewGroup(s.choice("meshProvider", "Mesh VPN", s.v["meshProvider"], "meshnet", "netbird", "none")).Title("Network"),
+				huh.NewGroup(s.input("nordvpnCountry", "NordVPN country", "empty = NordVPN picks", nil)).WithHideFunc(meshIs("meshnet")),
+				huh.NewGroup(s.input("netbirdManagementUrl", "NetBird management URL", "empty = NetBird Cloud", nil)).WithHideFunc(meshIs("netbird")),
+			)
+		},
+		func() *huh.Form {
+			return huh.NewForm(huh.NewGroup(
+				s.yesNo("includeAgents", "Set up agent skills?"),
+				s.input("agentsRepo", "Agents repo (owner/repo)", "empty = none", nil),
+				s.input("extraPackages", "Extra packages", "space-separated", nil),
+				s.input("slackDefaultWorkspace", "Slack workspace slug", "empty = none", nil),
+				s.input("slackTeamId", "Slack team id", "e.g. T0XXXXXXX", nil),
+				s.input("matterhornHost", "Matterhorn host", "no https://, empty = none", nil),
+				s.input("matterhornUser", "Matterhorn login", "empty = none", nil),
+			).Title("Extras"))
+		},
 	}
 }
 
@@ -250,22 +285,25 @@ func (s *formState) reviewText() string {
 }
 
 // RunForm shows the pages and returns the answers keyed as chezmoi's [data].
+// A quit key, a cancelled context (SIGTERM) or huh's timeout all give ErrQuit.
 func RunForm(ctx context.Context, in io.Reader, out io.Writer, seed Seed) (map[string]string, error) {
 	s := newFormState(seed)
 	for {
-		for _, f := range s.pages(ctx) {
-			if err := f.WithInput(in).WithOutput(out).WithKeyMap(quitKeys).RunWithContext(ctx); err != nil {
-				if errors.Is(err, huh.ErrUserAborted) || errors.Is(err, context.Canceled) {
-					return nil, ErrQuit
-				}
+		for _, page := range s.pages(ctx) {
+			err := page().WithInput(in).WithOutput(out).WithKeyMap(quitKeys).RunWithContext(ctx)
+			if errors.Is(err, huh.ErrUserAborted) || errors.Is(err, huh.ErrTimeout) || errors.Is(err, context.Canceled) || ctx.Err() != nil {
+				return nil, ErrQuit
+			}
+			if err != nil {
 				return nil, err
 			}
 		}
 		rm := &reviewModel{text: s.reviewText()}
-		if _, err := tea.NewProgram(rm, tea.WithInput(in), tea.WithOutput(out), tea.WithContext(ctx)).Run(); err != nil {
-			if errors.Is(err, tea.ErrProgramKilled) || errors.Is(err, context.Canceled) {
-				return nil, ErrQuit
-			}
+		_, err := tea.NewProgram(rm, tea.WithInput(in), tea.WithOutput(out), tea.WithContext(ctx)).Run()
+		if errors.Is(err, tea.ErrProgramKilled) || errors.Is(err, context.Canceled) || ctx.Err() != nil {
+			return nil, ErrQuit
+		}
+		if err != nil {
 			return nil, err
 		}
 		switch rm.choice {

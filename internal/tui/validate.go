@@ -7,6 +7,10 @@ import (
 	"strings"
 )
 
+// ErrCheckUnavailable marks a network check that could not run (transport error
+// or an unexpected status). Only such a failure may be overridden by the user.
+var ErrCheckUnavailable = errors.New("could not check")
+
 var emailRe = regexp.MustCompile(`^[^@\s]+@[^@\s]+\.[^@\s]+$`)
 
 // ValidEmail reports whether s has the shape of an email address. Empty is not
@@ -54,8 +58,9 @@ func validBitwardenURL(check func(context.Context, string) error, ctx context.Co
 }
 
 // overridable wraps a network check. A value that passed is not checked again
-// (huh validates on enter and on blur), and a failure is shown once: a second
-// submit of the same value is accepted (offline machines must still init).
+// (huh validates on enter and on blur). A failure that wraps ErrCheckUnavailable
+// is shown once: a second submit of the same value is accepted (offline machines
+// must still init). Any other failure blocks every time.
 func overridable(check func(string) error) func(string) error {
 	last := ""
 	has := false
@@ -63,11 +68,15 @@ func overridable(check func(string) error) func(string) error {
 		if has && v == last {
 			return nil
 		}
-		if err := check(v); err != nil {
+		err := check(v)
+		if err == nil {
 			last, has = v, true
-			return errors.New(err.Error() + " (press enter again to use it anyway)")
+			return nil
+		}
+		if !errors.Is(err, ErrCheckUnavailable) {
+			return err
 		}
 		last, has = v, true
-		return nil
+		return errors.New(err.Error() + " (press enter again to use it anyway)")
 	}
 }

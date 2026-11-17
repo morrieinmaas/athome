@@ -142,73 +142,6 @@ func TestQuitExits130AndWritesNothing(t *testing.T) {
 	}
 }
 
-func TestSeedPrecedenceAndLocked(t *testing.T) {
-	home, _ := tuiSandbox(t)
-	chez := filepath.Join(home, ".config", "chezmoi")
-	os.MkdirAll(chez, 0o755)
-	os.WriteFile(filepath.Join(chez, "chezmoi.toml"), []byte("[data]\n  personalName = \"Stored\"\n  workName = \"StoredWork\"\n  nordvpnCountry = \"DE\"\n  meshProvider = \"netbird\"\n  includeAgents = false\n"), 0o644)
-	cfg := filepath.Join(t.TempDir(), "a.toml")
-	os.WriteFile(cfg, []byte("personalName = \"FromFile\"\nworkEmail = \"file@x.io\"\n"), 0o644)
-	t.Setenv("ATHOME_WORK_EMAIL", "env@x.io")
-
-	// A --config run never opens the form, so build the seed directly.
-	o, err := parseInit([]string{"--config", cfg, "--machine", "work"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	var stdout, stderr strings.Builder
-	env, code := newInitEnv(o, &stdout, &stderr)
-	if env == nil {
-		t.Fatalf("newInitEnv exit %d: %s", code, stderr.String())
-	}
-	got := buildSeed(context.Background(), env, o, environMap())
-	v := got.Values
-	for k, want := range map[string]string{
-		"workEmail":      "env@x.io",   // env beats file
-		"personalName":   "FromFile",   // file beats stored
-		"workName":       "StoredWork", // stored beats default
-		"nordvpnCountry": "DE",
-		"machineType":    "work",
-		"hostname":       "testbox",
-	} {
-		if v[k] != want {
-			t.Errorf("Values[%s] = %q, want %q", k, v[k], want)
-		}
-	}
-	if !got.Locked["workEmail"] || !got.Locked["machineType"] {
-		t.Errorf("env and flag fields must be locked: %v", got.Locked)
-	}
-	if got.Locked["personalName"] {
-		t.Errorf("a config-file field is prefilled, not locked")
-	}
-	if got.KeyExists {
-		t.Errorf("no ssh key exists")
-	}
-}
-
-func TestSeedKeyExistsAndNoAgentsFlag(t *testing.T) {
-	home, _ := tuiSandbox(t)
-	os.MkdirAll(filepath.Join(home, ".ssh"), 0o700)
-	os.WriteFile(filepath.Join(home, ".ssh", "testbox_ed25519"), []byte("k"), 0o600)
-	os.MkdirAll(filepath.Join(home, ".config", "chezmoi"), 0o755)
-	os.WriteFile(filepath.Join(home, ".config", "chezmoi", "chezmoi.toml"), []byte("[data]\n  meshProvider = \"netbird\"\n"), 0o644)
-	var got tui.Seed
-	runForm = func(_ context.Context, _ io.Reader, _ io.Writer, s tui.Seed) (map[string]string, error) {
-		got = s
-		return nil, tui.ErrQuit
-	}
-	run2("init", "--no-agents")
-	if !got.KeyExists {
-		t.Error("KeyExists must be true when the key file exists")
-	}
-	if got.Values["meshProvider"] != "netbird" {
-		t.Errorf("stored meshProvider must survive config defaults, got %q", got.Values["meshProvider"])
-	}
-	if got.Values["includeAgents"] != "false" || !got.Locked["includeAgents"] {
-		t.Errorf("--no-agents must lock includeAgents=false: %v %v", got.Values["includeAgents"], got.Locked)
-	}
-}
-
 func readFile(t *testing.T, p string) string {
 	t.Helper()
 	b, err := os.ReadFile(p)
@@ -371,23 +304,58 @@ func TestCheckURLAndHandle(t *testing.T) {
 	oldGet := httpGet
 	t.Cleanup(func() { httpGet = oldGet })
 	httpGet = func(context.Context, string) (int, error) { return 200, nil }
-	if err := checkURL(context.Background(), "http://x"); err == nil {
-		t.Error("http must be rejected")
+	if err := checkURL(context.Background(), "http://x"); err == nil || errors.Is(err, tui.ErrCheckUnavailable) {
+		t.Errorf("http must be rejected for good: %v", err)
 	}
 	if err := checkURL(context.Background(), "https://x"); err != nil {
 		t.Error(err)
 	}
+	httpGet = func(context.Context, string) (int, error) { return 0, errors.New("no route") }
+	if err := checkURL(context.Background(), "https://x"); !errors.Is(err, tui.ErrCheckUnavailable) {
+		t.Errorf("a transport error is overridable: %v", err)
+	}
 	f := runtest.NewFake()
 	httpGet = func(context.Context, string) (int, error) { return 404, nil }
-	if err := checkHandle(context.Background(), f, "nobody"); err == nil {
-		t.Error("404 must be an error")
+	if err := checkHandle(context.Background(), f, "nobody"); err == nil || errors.Is(err, tui.ErrCheckUnavailable) {
+		t.Errorf("404 must block for good: %v", err)
 	}
 	httpGet = func(context.Context, string) (int, error) { return 200, nil }
 	if err := checkHandle(context.Background(), f, "octo"); err != nil {
 		t.Error(err)
 	}
-	if err := checkHandle(context.Background(), f, "bad name"); err == nil {
-		t.Error("invalid handle must be rejected")
+}
+
+func TestCheckHandleClassifiesFailures(t *testing.T) {
+	oldGet := httpGet
+	t.Cleanup(func() { httpGet = oldGet })
+	var gotURL string
+	httpGet = func(_ context.Context, u string) (int, error) { gotURL = u; return 200, nil }
+	f := runtest.NewFake()
+	for _, h := range []string{"bad name", "-lead", "trail-", "dou--ble", "has/slash", "a?b", strings.Repeat("a", 40), ""} {
+		gotURL = ""
+		err := checkHandle(context.Background(), f, h)
+		if err == nil || errors.Is(err, tui.ErrCheckUnavailable) {
+			t.Errorf("handle %q must be rejected for good: %v", h, err)
+		}
+		if gotURL != "" {
+			t.Errorf("handle %q reached the network: %s", h, gotURL)
+		}
+	}
+	for _, h := range []string{"octo", "octo-cat", "a", strings.Repeat("a", 39)} {
+		if err := checkHandle(context.Background(), f, h); err != nil {
+			t.Errorf("handle %q: %v", h, err)
+		}
+	}
+	if gotURL != "https://api.github.com/users/"+strings.Repeat("a", 39) {
+		t.Errorf("url = %q", gotURL)
+	}
+	httpGet = func(context.Context, string) (int, error) { return 0, errors.New("offline") }
+	if err := checkHandle(context.Background(), f, "octo"); !errors.Is(err, tui.ErrCheckUnavailable) {
+		t.Errorf("a transport error is overridable: %v", err)
+	}
+	httpGet = func(context.Context, string) (int, error) { return 503, nil }
+	if err := checkHandle(context.Background(), f, "octo"); !errors.Is(err, tui.ErrCheckUnavailable) {
+		t.Errorf("an unexpected status is overridable: %v", err)
 	}
 }
 
@@ -517,37 +485,5 @@ func TestMergeAnswersHostnameNeedsNoProcessEnv(t *testing.T) {
 	mergeAnswers(env, map[string]string{"hostname": "testbox"})
 	if _, ok := env.Cfg.Data["hostname"]; ok {
 		t.Error("the default hostname must not be pinned")
-	}
-}
-
-// KeyExists follows the steps' key path, which uses chezmoi's hostname.
-func TestSeedKeyExistsUsesTheStepsKeyPath(t *testing.T) {
-	home, _ := tuiSandbox(t)
-	f := runtest.NewFake()
-	f.On("chezmoi", "execute-template", "{{ .chezmoi.hostname }}").Return(run.Result{Stdout: "chez\n"})
-	newRunner = func() run.Runner { return f }
-	os.MkdirAll(filepath.Join(home, ".ssh"), 0o700)
-	os.WriteFile(filepath.Join(home, ".ssh", "chez_ed25519"), []byte("k"), 0o600)
-	var got tui.Seed
-	runForm = func(_ context.Context, _ io.Reader, _ io.Writer, s tui.Seed) (map[string]string, error) {
-		got = s
-		return nil, tui.ErrQuit
-	}
-	run2("init")
-	if !got.KeyExists {
-		t.Error("KeyExists must look at the chezmoi hostname's key")
-	}
-}
-
-func TestStoredChezmoiDataStringifiesBools(t *testing.T) {
-	home := t.TempDir()
-	os.MkdirAll(filepath.Join(home, ".config", "chezmoi"), 0o755)
-	os.WriteFile(filepath.Join(home, ".config", "chezmoi", "chezmoi.toml"), []byte("[data]\n  a = \"x\"\n  b = true\n  c = 3\n"), 0o644)
-	got := storedChezmoiData(home)
-	if got["a"] != "x" || got["b"] != "true" {
-		t.Errorf("got %v", got)
-	}
-	if _, ok := got["c"]; ok {
-		t.Error("non-string, non-bool values are skipped")
 	}
 }

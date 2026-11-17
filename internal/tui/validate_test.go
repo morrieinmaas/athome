@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 )
 
@@ -19,7 +20,7 @@ func TestValidEmail(t *testing.T) {
 
 func TestValidHandleRequiredAndCheckOnce(t *testing.T) {
 	calls := 0
-	v := validHandle(func(context.Context, string) error { calls++; return errors.New("unknown") }, context.Background())
+	v := validHandle(func(context.Context, string) error { calls++; return ErrCheckUnavailable }, context.Background())
 	if v("") == nil {
 		t.Error("empty handle accepted")
 	}
@@ -38,7 +39,7 @@ func TestValidHandleRequiredAndCheckOnce(t *testing.T) {
 }
 
 func TestValidBitwardenURL(t *testing.T) {
-	v := validBitwardenURL(func(context.Context, string) error { return errors.New("down") }, context.Background())
+	v := validBitwardenURL(func(context.Context, string) error { return ErrCheckUnavailable }, context.Background())
 	if v("") != nil {
 		t.Error("empty must be accepted without a check")
 	}
@@ -67,5 +68,28 @@ func TestPassingCheckIsCached(t *testing.T) {
 	h("other")
 	if calls != 3 {
 		t.Errorf("a new value must be checked: calls = %d", calls)
+	}
+}
+
+// Only an unavailable network may be overridden; any other failure keeps blocking.
+func TestOnlyUnavailableChecksAreOverridable(t *testing.T) {
+	bad := errors.New(`no GitHub user "nobody"`)
+	h := validHandle(func(context.Context, string) error { return bad }, context.Background())
+	for i := 0; i < 3; i++ {
+		if h("nobody") == nil {
+			t.Fatalf("submit %d: a definite failure must keep blocking", i+1)
+		}
+	}
+	down := fmt.Errorf("%w x: offline", ErrCheckUnavailable)
+	h = validHandle(func(context.Context, string) error { return down }, context.Background())
+	if h("octo") == nil {
+		t.Fatal("first submit should show the failure")
+	}
+	if err := h("octo"); err != nil {
+		t.Errorf("an unavailable check must pass on the second submit: %v", err)
+	}
+	u := validBitwardenURL(func(context.Context, string) error { return bad }, context.Background())
+	if u("https://x.example") == nil || u("https://x.example") == nil {
+		t.Error("a definite URL failure must keep blocking")
 	}
 }

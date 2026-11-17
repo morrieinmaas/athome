@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -57,7 +58,7 @@ func TestProgressTickSkipCrossLogAndError(t *testing.T) {
 	tm.Type("l")
 	waitOutput(t, tm, "hello run log")
 	close(gate)
-	waitOutput(t, tm, "press any key to exit")
+	waitOutput(t, tm, "any other key: exit")
 	tm.Type("x")
 	tm.WaitFinished(t, teatest.WithFinalTimeout(5*time.Second))
 
@@ -74,8 +75,11 @@ func TestProgressTickSkipCrossLogAndError(t *testing.T) {
 			t.Errorf("missing %q in %q", w, view)
 		}
 	}
-	if !strings.Contains(orig.String(), "hello run log") {
-		t.Errorf("original log not forwarded: %q", orig.String())
+	if orig.Len() != 0 {
+		t.Errorf("the run log leaked to the original writer during the view: %q", orig.String())
+	}
+	if !strings.Contains(r.m.log.String(), "hello run log") {
+		t.Errorf("in-view log missing the line: %q", r.m.log.String())
 	}
 	if env.Log != &orig {
 		t.Error("env.Log not restored")
@@ -84,12 +88,19 @@ func TestProgressTickSkipCrossLogAndError(t *testing.T) {
 
 func TestProgressAroundReleasesAndRestores(t *testing.T) {
 	var around func(func())
-	ran := false
+	var mu sync.Mutex
+	var order []string
+	note := func(s string) { mu.Lock(); order = append(order, s); mu.Unlock() }
 	list := []steps.Step{fake("s", false, func(context.Context, *steps.Env) error {
-		around(func() { ran = true })
+		around(func() { note("fn") })
 		return nil
 	})}
-	r, tm := startProgress(t, context.Background(), &steps.Env{}, list, func(a func(func())) {
+	r := newProgressRun(context.Background(), &steps.Env{}, list)
+	tm := teatest.NewTestModel(t, r.m, teatest.WithInitialTermSize(80, 24))
+	p := tm.GetProgram()
+	r.release = func() error { note("release"); return p.ReleaseTerminal() }
+	r.restore = func() error { note("restore"); return p.RestoreTerminal() }
+	r.start(p, func(a func(func())) {
 		if a == nil {
 			t.Fatal("nil around")
 		}
@@ -99,8 +110,42 @@ func TestProgressAroundReleasesAndRestores(t *testing.T) {
 	if _, err := r.result(nil); err != nil {
 		t.Fatal(err)
 	}
-	if !ran {
-		t.Error("around did not run fn")
+	mu.Lock()
+	defer mu.Unlock()
+	if got := strings.Join(order, ","); got != "release,fn,restore" {
+		t.Errorf("order = %q, want release,fn,restore", got)
+	}
+}
+
+// After a failure `l` toggles the log and only other keys quit.
+func TestProgressFailureLKeyTogglesLog(t *testing.T) {
+	boom := errors.New("boom")
+	list := []steps.Step{fake("broken", false, func(_ context.Context, env *steps.Env) error {
+		env.Log.Write([]byte("diagnostic line\n"))
+		return boom
+	})}
+	r, tm := startProgress(t, context.Background(), &steps.Env{}, list, nil)
+	waitOutput(t, tm, "any other key: exit")
+	tm.Type("l")
+	waitOutput(t, tm, "diagnostic line")
+	tm.Type("x")
+	tm.WaitFinished(t, teatest.WithFinalTimeout(5*time.Second))
+	if _, err := r.result(nil); !errors.Is(err, boom) {
+		t.Fatalf("err = %v, want boom", err)
+	}
+}
+
+// Ctrl-C after a failure only leaves the view: the step's error comes back, not a cancel.
+func TestProgressCtrlCAfterFailureReturnsStepError(t *testing.T) {
+	boom := errors.New("boom")
+	list := []steps.Step{fake("broken", false, func(context.Context, *steps.Env) error { return boom })}
+	r, tm := startProgress(t, context.Background(), &steps.Env{}, list, nil)
+	waitOutput(t, tm, "any other key: exit")
+	tm.Send(tea.KeyMsg{Type: tea.KeyCtrlC})
+	tm.WaitFinished(t, teatest.WithFinalTimeout(5*time.Second))
+	_, err := r.result(nil)
+	if !errors.Is(err, boom) || errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want the step error and not a cancel", err)
 	}
 }
 

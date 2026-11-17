@@ -89,16 +89,15 @@ func (m *progressModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.spin, cmd = m.spin.Update(msg)
 		return m, cmd
 	case tea.KeyMsg:
-		if msg.Type == tea.KeyCtrlC {
+		switch {
+		case msg.String() == "l":
+			m.showLog = !m.showLog
+		case m.finished: // a failed run: any other key, Ctrl-C included, leaves with the step's error
+			return m, tea.Quit
+		case msg.Type == tea.KeyCtrlC:
 			m.canceled = true
 			m.cancel()
 			return m, tea.Quit
-		}
-		if m.finished {
-			return m, tea.Quit
-		}
-		if msg.String() == "l" {
-			m.showLog = !m.showLog
 		}
 	}
 	return m, nil
@@ -125,7 +124,7 @@ func (m *progressModel) View() string {
 	}
 	switch {
 	case m.finished && m.err != nil:
-		b.WriteString("\npress any key to exit\n")
+		b.WriteString("\nl: toggle log   any other key: exit\n")
 	case !m.finished:
 		b.WriteString("\nl: toggle log   ctrl-c: cancel\n")
 	}
@@ -142,6 +141,8 @@ type progressRun struct {
 	list     []steps.Step
 	origLog  io.Writer
 	origEv   func(steps.Event)
+	release  func() error // the terminal hand-over around fn; nil means p's own
+	restore  func() error
 	finished chan struct{}
 	rep      steps.Report // Execute's own result, set before finished closes
 	err      error
@@ -170,11 +171,7 @@ func newProgressRun(ctx context.Context, env *steps.Env, list []steps.Step) *pro
 func (r *progressRun) start(p *tea.Program, wire func(around func(func()))) {
 	r.m.log.p = p
 	env := r.env
-	if r.origLog != nil {
-		env.Log = io.MultiWriter(r.origLog, r.m.log)
-	} else {
-		env.Log = r.m.log
-	}
+	env.Log = r.m.log // the real stdout would garble the view; the view shows this log
 	env.Events = func(e steps.Event) {
 		if r.origEv != nil {
 			r.origEv(e)
@@ -182,9 +179,16 @@ func (r *progressRun) start(p *tea.Program, wire func(around func(func()))) {
 		p.Send(eventMsg(e))
 	}
 	if wire != nil {
+		release, restore := r.release, r.restore
+		if release == nil {
+			release = p.ReleaseTerminal
+		}
+		if restore == nil {
+			restore = p.RestoreTerminal
+		}
 		wire(func(fn func()) {
-			_ = p.ReleaseTerminal()
-			defer func() { _ = p.RestoreTerminal() }()
+			_ = release()
+			defer func() { _ = restore() }()
 			fn()
 		})
 	}

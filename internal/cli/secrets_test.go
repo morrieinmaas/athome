@@ -27,7 +27,7 @@ func secretsEnv(t *testing.T) (home string, fake *runtest.Fake) {
 func TestSecretsUsage(t *testing.T) {
 	secretsEnv(t)
 	for _, args := range [][]string{
-		{"secrets"}, {"secrets", "rekey"}, {"secrets", "backup", "x"}, {"secrets", "restore", "--wet"}, {"secrets", "restore", "--dry-run", "x"},
+		{"secrets"}, {"secrets", "rekey"}, {"secrets", "backup", "x"}, {"secrets", "restore", "--wet"}, {"secrets", "restore", "--dry-run", "x"}, {"secrets", "bogus"},
 	} {
 		code, _, errOut := runMain(args...)
 		if code != 2 || !strings.Contains(errOut, "backup|restore") {

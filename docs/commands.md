@@ -44,10 +44,11 @@ Brings this machine up to a release. It first runs `git fetch --tags` on the rep
 the target: `--to` (`vX.Y.Z` or `X.Y.Z`, which must be a tag `git ls-remote` lists on
 `origin`), else the highest local `vX.Y.Z` tag. Then four steps:
 
-1. `self`: downloads `athome_<os>_<arch>` and `checksums.txt` from the release (the installer's
-   `ATHOME_RELEASE_BASE`), checks the sha256, prints the commit subjects between the two
-   tags, asks `update athome from <current> to <target>?` on a terminal (not with `--yes`),
-   replaces `~/.local/bin/athome` and runs `update --to <target>` in the new binary. Skipped
+1. `self`: prints the commit subjects between the two tags, asks
+   `update athome from <current> to <target>?` on a terminal (not with `--yes`), downloads
+   `athome_<os>_<arch>` and `checksums.txt` from the release (the installer's
+   `ATHOME_RELEASE_BASE`), checks the sha256, replaces `~/.local/bin/athome` and re-execs
+   `update --to <target>` in the new binary. Skipped
    when already at the target, or newer without `--to` (no downgrade); `--to` installs an
    older version too. A `dev` or snapshot build skips it unless `--to` is given.
 2. `source`: `git pull --ff-only` on a branch; on a detached HEAD at a tag, checks out the

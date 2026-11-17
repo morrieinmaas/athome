@@ -115,8 +115,6 @@ func runUpdate(args []string, stdout, stderr io.Writer) int {
 	return exitOK
 }
 
-// resolveUpdateTarget fetches the tags and returns the release to move to: want
-// when given (it must exist on origin), else the highest vX.Y.Z tag.
 // withUpdateOpts carries the resolved update options to the steps, with the
 // release base from ATHOME_RELEASE_BASE or selfupdate.DefaultBase.
 func withUpdateOpts(ctx context.Context, target string, toGiven, yes bool) context.Context {
@@ -129,6 +127,8 @@ func withUpdateOpts(ctx context.Context, target string, toGiven, yes bool) conte
 	})
 }
 
+// resolveUpdateTarget fetches the tags and returns the release to move to: want
+// when given (it must exist on origin), else the highest vX.Y.Z tag.
 func resolveUpdateTarget(ctx context.Context, r run.Runner, repo, want string) (string, error) {
 	git := func(args ...string) (run.Result, error) {
 		return r.Run(ctx, run.Cmd{Name: "git", Args: append([]string{"-C", repo}, args...)})

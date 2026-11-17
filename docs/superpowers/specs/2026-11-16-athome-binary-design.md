@@ -295,7 +295,7 @@ Decisions:
 - An installed `~/.local/bin/athome` that already reports the wanted version is kept and
   nothing is downloaded, so a rerun works offline.
 - GoReleaser builds plain binaries (no archives) with `CGO_ENABLED=0` and the same
-  `-X ...cli.Version` and `-X ...cli.Commit` ldflags as the e2e image. A tag `v*` push
+  `-X ...cli.Version` and `-X ...cli.Commit` ldflags as the e2e image, except releases embed the short commit ({{.ShortCommit}}) while the e2e image embeds the full SHA. A tag `v*` push
   publishes the release; CI runs `goreleaser check` and a snapshot build on every PR.
 - Prompts are plain lines on stderr, read from stdin. They appear only when stdin is a
   terminal and none of `--non-interactive`, `-y`, `--yes` is given. A value set by flag,

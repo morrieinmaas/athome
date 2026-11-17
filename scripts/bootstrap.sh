@@ -70,9 +70,18 @@ trap cleanup EXIT
 install_file() {
   part="$dest_dir/.athome.$$"
   mkdir -p "$dest_dir" || die "cannot create $dest_dir"
-  cp "$1" "$part" || { rm -f "$part"; die "cannot write $part"; }
-  chmod 0755 "$part" || { rm -f "$part"; die "cannot make $part executable"; }
-  mv -f "$part" "$dest" || { rm -f "$part"; die "cannot install $dest"; }
+  cp "$1" "$part" || {
+    rm -f "$part"
+    die "cannot write $part"
+  }
+  chmod 0755 "$part" || {
+    rm -f "$part"
+    die "cannot make $part executable"
+  }
+  mv -f "$part" "$dest" || {
+    rm -f "$part"
+    die "cannot install $dest"
+  }
 }
 
 run_init() {
@@ -106,8 +115,8 @@ tag="${ATHOME_VERSION:-}"
 explicit=false
 [ -z "$tag" ] || explicit=true
 if [ -z "$tag" ]; then
-  tag="$(git -C "$repo_dir" describe --tags --exact-match HEAD 2>/dev/null ||
-    git -C "$repo_dir" describe --tags --abbrev=0 2>/dev/null || true)"
+  tag="$(git -C "$repo_dir" describe --tags --exact-match HEAD 2>/dev/null \
+    || git -C "$repo_dir" describe --tags --abbrev=0 2>/dev/null || true)"
 fi
 [ -n "$tag" ] || die "no release tag found; set ATHOME_VERSION, or $hint"
 
@@ -151,8 +160,8 @@ if [ "$rc" -ne 0 ]; then
   trap - EXIT
   exec "$repo_dir/scripts/bootstrap-legacy.sh" ${args[@]+"${args[@]}"}
 fi
-curl -fsSL "$base/$tag/checksums.txt" -o "$tmp/checksums.txt" 2>"$tmp/curl.err" ||
-  die "cannot download $base/$tag/checksums.txt: $(cat "$tmp/curl.err"); $hint"
+curl -fsSL "$base/$tag/checksums.txt" -o "$tmp/checksums.txt" 2>"$tmp/curl.err" \
+  || die "cannot download $base/$tag/checksums.txt: $(cat "$tmp/curl.err"); $hint"
 
 want="$(awk -v a="$asset" '$2 == a || $2 == "*" a { print $1; exit }' "$tmp/checksums.txt")"
 [ -n "$want" ] || die "checksums.txt has no line for $asset"

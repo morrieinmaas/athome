@@ -13,7 +13,7 @@ Global constraints:
 - Go module `github.com/morrieinmaas/athome`, test command `go test ./...`, bats command `bats test`.
 - Tests never touch the real home: temp `HOME`, temp `TMPDIR`, `TMUX`, `GROFE`, `ATHOME_CI`, `GITHUB_TOKEN` unset.
 - Asset names `athome_<os>_<arch>`, `checksums.txt`; base `ATHOME_RELEASE_BASE`, default `https://github.com/morrieinmaas/athome/releases/download`.
-- ldflags `-X github.com/morrieinmaas/athome/internal/cli.Version={{.Version}} -X github.com/morrieinmaas/athome/internal/cli.Commit={{.Commit}}`.
+- ldflags `-X github.com/morrieinmaas/athome/internal/cli.Version={{.Version}} -X github.com/morrieinmaas/athome/internal/cli.Commit={{.ShortCommit}}`. Releases embed the short commit ({{.ShortCommit}}); the e2e image embeds the full SHA.
 - Prompts go to stderr, answers from stdin; prompt wording and defaults copied from `scripts/bootstrap-legacy.sh` (lines 250, 428, 445, 633, 668, 837, 861, 990, 1025 of today's bootstrap.sh).
 - Conventional commits, no AI attribution, no em dash.
 

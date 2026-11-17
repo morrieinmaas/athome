@@ -13,7 +13,7 @@
 # (set by test/e2e/run.sh); it flows through both bootstrap passes automatically.
 set -euo pipefail
 
-cd "$(dirname "$0")/../.."   # repo root (so ./scripts/* and test/e2e/* resolve)
+cd "$(dirname "$0")/../.." # repo root (so ./scripts/* and test/e2e/* resolve)
 
 # chezmoi + mise install into ~/.local/bin; mise shims live under ~/.local/share.
 # Non-existent entries (e.g. shims before mise is installed) are simply ignored.
@@ -25,8 +25,11 @@ phase() { printf '\n\033[1;35m========== %s ==========\033[0m\n' "$1"; }
 # (scripts/bootstrap.sh, the installer, which runs athome init).
 runner="${ATHOME_E2E_RUNNER:-bash}"
 case "$runner" in
-  bash|binary) ;;
-  *) echo "unknown ATHOME_E2E_RUNNER='$runner' (expected: bash | binary)" >&2; exit 1 ;;
+  bash | binary) ;;
+  *)
+    echo "unknown ATHOME_E2E_RUNNER='$runner' (expected: bash | binary)" >&2
+    exit 1
+    ;;
 esac
 
 # The image puts athome in /usr/local/bin; the installer copies it into
@@ -71,8 +74,8 @@ bootstrap_and_verify
 phase "2/3 seed user-data canaries -> teardown --all -> verify-teardown"
 # Canaries the teardown MUST NOT touch — the safety contract under test.
 mkdir -p "$HOME/.secrets/canary" "$HOME/personal/canary-repo"
-printf 'SECRET=keepme\n' > "$HOME/.secrets/canary/.env"
-printf 'keepme\n'        > "$HOME/personal/canary-repo/keepme"
+printf 'SECRET=keepme\n' >"$HOME/.secrets/canary/.env"
+printf 'keepme\n' >"$HOME/personal/canary-repo/keepme"
 ./scripts/teardown.sh --all --execute --yes
 bash test/e2e/verify-teardown.sh
 

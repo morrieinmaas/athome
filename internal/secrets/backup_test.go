@@ -110,6 +110,33 @@ func TestBackup(t *testing.T) {
 			t.Errorf("want git add -A")
 		}
 	})
+	t.Run("failed git add exits 1 with git's stderr, never in sync", func(t *testing.T) {
+		f := newFx(t)
+		f.withVault()
+		f.fake.On("git", "add", "-A").Return(run.Result{Code: 128, Stderr: "fatal: add broke"})
+		if code := secrets.Backup(context.Background(), f.opts); code != 1 {
+			t.Errorf("code = %d", code)
+		}
+		all := f.out.String() + f.errb.String()
+		if !strings.Contains(all, "fatal: add broke") || strings.Contains(all, "in sync") {
+			t.Errorf("output %q", all)
+		}
+	})
+	t.Run("failed staged-name listing exits 1 with no commit or push", func(t *testing.T) {
+		f := newFx(t)
+		f.withVault()
+		f.fake.On("git", "diff", "--cached", "--quiet").Return(run.Result{Code: 1})
+		f.fake.On("git", "diff", "--cached", "--name-only", "-z").Return(run.Result{Code: 128, Stderr: "fatal: diff broke"})
+		if code := secrets.Backup(context.Background(), f.opts); code != 1 {
+			t.Errorf("code = %d", code)
+		}
+		if !strings.Contains(f.errb.String(), "fatal: diff broke") {
+			t.Errorf("stderr %q", f.errb.String())
+		}
+		if len(f.calls("git", "-c")) != 0 || len(f.calls("git", "push")) != 0 {
+			t.Errorf("must not commit or push")
+		}
+	})
 	t.Run("nothing staged is in sync", func(t *testing.T) {
 		f := newFx(t)
 		f.withVault()

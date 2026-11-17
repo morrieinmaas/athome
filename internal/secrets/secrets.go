@@ -85,6 +85,15 @@ func (o Opts) git(ctx context.Context, args ...string) (run.Result, error) {
 	return o.Run.Run(ctx, run.Cmd{Name: "git", Args: args, Dir: o.Vault})
 }
 
+// gitFailed reports a failed git call: the run error, else git's stderr.
+func (o Opts) gitFailed(err error, r run.Result) {
+	if err != nil {
+		o.errf("%v\n", err)
+		return
+	}
+	o.errf("git failed\n%s", r.Stderr)
+}
+
 // cryptHeader reports whether data starts with the git-crypt header: the
 // first nine bytes, NULs dropped, read GITCRYPT.
 func cryptHeader(data []byte) bool {
@@ -165,8 +174,8 @@ func Backup(ctx context.Context, o Opts) int {
 	}
 	o.mirror()
 
-	if _, err := o.git(ctx, "add", "-A"); err != nil {
-		o.errf("%v\n", err)
+	if a, err := o.git(ctx, "add", "-A"); err != nil || a.Code != 0 {
+		o.gitFailed(err, a)
 		return exitError
 	}
 	r, err := o.git(ctx, "diff", "--cached", "--quiet")
@@ -205,8 +214,8 @@ func (o Opts) mirror() {
 // the index. -z keeps non-ASCII names unquoted.
 func (o Opts) plaintextGate(ctx context.Context) int {
 	r, err := o.git(ctx, "diff", "--cached", "--name-only", "-z")
-	if err != nil {
-		o.errf("%v\n", err)
+	if err != nil || r.Code != 0 {
+		o.gitFailed(err, r)
 		return exitError
 	}
 	bad := false

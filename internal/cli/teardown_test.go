@@ -23,3 +23,14 @@ func TestTeardownIsWired(t *testing.T) {
 		t.Error("usage lacks teardown")
 	}
 }
+
+func TestTeardownKeyPathUsesTheShortHostname(t *testing.T) {
+	home := sandbox(t)
+	t.Setenv("HOSTNAME", "box.example.org")
+	defer cli.SetRunner(runtest.NewFake())()
+	code, out, _ := runMain("teardown", "--all")
+	want := "would: rm -f " + home + "/.ssh/box_ed25519 " + home + "/.ssh/box_ed25519.pub"
+	if code != 0 || !strings.Contains(out, want) {
+		t.Errorf("exit %d, want %q in:\n%s", code, want, out)
+	}
+}

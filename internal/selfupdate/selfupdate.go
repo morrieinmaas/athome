@@ -128,16 +128,9 @@ func Install(ctx context.Context, base, tag, goos, goarch, dest string) error {
 	if err != nil {
 		return fmt.Errorf("read %schecksums.txt: %w", base, err)
 	}
-	want := ""
-	for _, line := range strings.Split(string(sums), "\n") {
-		f := strings.Fields(line)
-		if len(f) == 2 && strings.TrimPrefix(f[1], "*") == asset {
-			want = f[0]
-			break
-		}
-	}
-	if want == "" {
-		return fmt.Errorf("checksums.txt has no line for %s", asset)
+	want, err := checksumFor(sums, asset)
+	if err != nil {
+		return err
 	}
 
 	part := filepath.Join(filepath.Dir(dest), fmt.Sprintf(".athome.%d", os.Getpid()))
@@ -170,6 +163,17 @@ func Install(ctx context.Context, base, tag, goos, goarch, dest string) error {
 	}
 	done = true
 	return nil
+}
+
+// checksumFor finds asset's sha256 in the text of a checksums.txt.
+func checksumFor(sums []byte, asset string) (string, error) {
+	for _, line := range strings.Split(string(sums), "\n") {
+		f := strings.Fields(line)
+		if len(f) == 2 && strings.TrimPrefix(f[1], "*") == asset {
+			return f[0], nil
+		}
+	}
+	return "", fmt.Errorf("checksums.txt has no line for %s", asset)
 }
 
 // RemoteTags lists the tag names in `git ls-remote --tags --refs` output.

@@ -277,6 +277,16 @@ func Restore(ctx context.Context, o Opts) int {
 		}
 	}
 
+	rc := o.copyTracked(files)
+	if !o.DryRun {
+		hardenSecretsTree(filepath.Join(o.Home, ".secrets"))
+	}
+	return rc
+}
+
+// copyTracked copies the vault's files into Home at mode 600, or only lists
+// them with DryRun. It returns exitError if any file failed.
+func (o Opts) copyTracked(files []string) int {
 	rc := exitOK
 	for _, f := range files {
 		if f == ".gitattributes" {
@@ -297,10 +307,6 @@ func Restore(ctx context.Context, o Opts) int {
 			continue
 		}
 		o.outf("  restored  %s\n", target)
-	}
-
-	if !o.DryRun {
-		hardenSecretsTree(filepath.Join(o.Home, ".secrets"))
 	}
 	return rc
 }

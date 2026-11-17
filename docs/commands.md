@@ -114,6 +114,10 @@ Bitwarden (`rbw`) when it is still encrypted, copies the files into `$HOME` at m
 and makes `~/.secrets` and its directories owner-only. With `--dry-run` it still clones or
 pulls and unlocks, and only skips the copy.
 
+If the git-crypt key cannot be read from Bitwarden, or `git-crypt unlock` fails, `restore`
+exits 1 before copying anything. The old script carried on and copied the still-encrypted
+files into `$HOME`.
+
 | Variable | Default | What it sets |
 | --- | --- | --- |
 | `SECRETS_VAULT` | `~/.local/share/attic` for `backup`, `~/.local/share/<name>` for `restore` | The vault checkout. |

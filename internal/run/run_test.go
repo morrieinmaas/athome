@@ -108,3 +108,14 @@ func TestExecDeadlineNotHeldByChildOfChild(t *testing.T) {
 		t.Errorf("Run held for %v after the deadline", d)
 	}
 }
+
+func TestExecSuccessWithChildHoldingPipe(t *testing.T) {
+	start := time.Now()
+	res, err := run.Exec().Run(context.Background(), run.Cmd{Name: "sh", Args: []string{"-c", "sleep 5 & exit 0"}})
+	if err != nil || res.Code != 0 {
+		t.Fatalf("a successful command whose child holds the pipe: code %d, err %v", res.Code, err)
+	}
+	if d := time.Since(start); d > 4*time.Second {
+		t.Errorf("took %v, want about WaitDelay", d)
+	}
+}

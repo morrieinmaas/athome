@@ -404,3 +404,13 @@ func TestUpdateMiseBadJSONIsAnError(t *testing.T) {
 		t.Fatalf("err %v", err)
 	}
 }
+
+func TestUpdateStepsErrorWithoutOptions(t *testing.T) {
+	for _, s := range steps.Update()[:2] {
+		fx := newFixture(t)
+		_, err := steps.Execute(context.Background(), fx.Env, []steps.Step{s})
+		if err == nil || !strings.Contains(err.Error(), "update options not set") {
+			t.Errorf("step %s without WithUpdate: err = %v, want update options not set", s.Name, err)
+		}
+	}
+}

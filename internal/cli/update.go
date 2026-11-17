@@ -102,13 +102,7 @@ func runUpdate(args []string, stdout, stderr io.Writer) int {
 	}
 	defer env.RunCleanup()
 	bindCancel(ctx, env, stderr)
-	base := os.Getenv("ATHOME_RELEASE_BASE")
-	if base == "" {
-		base = selfupdate.DefaultBase
-	}
-	ctx = steps.WithUpdate(ctx, steps.UpdateOpts{
-		Version: Version, Target: target, ToGiven: toGiven, Yes: o.Yes, Base: base, Exec: updateExec,
-	})
+	ctx = withUpdateOpts(ctx, target, toGiven, o.Yes)
 	rep, err := steps.Execute(ctx, env, steps.Update())
 	if errors.Is(err, steps.ErrUpdateCancelled) {
 		return exitOK
@@ -123,6 +117,18 @@ func runUpdate(args []string, stdout, stderr io.Writer) int {
 
 // resolveUpdateTarget fetches the tags and returns the release to move to: want
 // when given (it must exist on origin), else the highest vX.Y.Z tag.
+// withUpdateOpts carries the resolved update options to the steps, with the
+// release base from ATHOME_RELEASE_BASE or selfupdate.DefaultBase.
+func withUpdateOpts(ctx context.Context, target string, toGiven, yes bool) context.Context {
+	base := os.Getenv("ATHOME_RELEASE_BASE")
+	if base == "" {
+		base = selfupdate.DefaultBase
+	}
+	return steps.WithUpdate(ctx, steps.UpdateOpts{
+		Version: Version, Target: target, ToGiven: toGiven, Yes: yes, Base: base, Exec: updateExec,
+	})
+}
+
 func resolveUpdateTarget(ctx context.Context, r run.Runner, repo, want string) (string, error) {
 	git := func(args ...string) (run.Result, error) {
 		return r.Run(ctx, run.Cmd{Name: "git", Args: append([]string{"-C", repo}, args...)})

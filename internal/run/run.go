@@ -68,6 +68,10 @@ func (execRunner) Run(ctx context.Context, c Cmd) (Result, error) {
 
 	err := cmd.Run()
 	res := Result{Stdout: stdout.String(), Stderr: stderr.String()}
+	// A child still holding the pipe after a successful exit is not a failure.
+	if errors.Is(err, exec.ErrWaitDelay) && cmd.ProcessState != nil && cmd.ProcessState.Success() {
+		return res, nil
+	}
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) && ctx.Err() == nil {
 		res.Code = exitErr.ExitCode()

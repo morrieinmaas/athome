@@ -162,7 +162,8 @@ athome secrets restore [--dry-run]     # clone vault → unlock with the BW key 
 reads `SECRETS_VAULT_REPO` or `ATHOME_GITHUB_HANDLE` (else the logged-in `gh` user) to find the
 vault repo. `git-crypt`, `rbw` and `gh` are found on PATH. Exit codes: `backup` 1 without a vault,
 2 when a staged file is plaintext (nothing is committed); `restore` 1 when rbw is locked on an
-encrypted vault or any file failed to copy. Any other argument exits 2.
+encrypted vault, the key cannot be read or `git-crypt unlock` fails (nothing is copied; the old script
+carried on and copied still-encrypted files), or any file failed to copy. Any other argument exits 2.
 `athome init` restores in process (it offers `athome secrets restore` when rbw is unlocked and no
 `~/.secrets/*/.env` exists yet).
 - git-crypt is **deterministic** → unchanged files produce no diff, so `athome secrets backup` is a clean

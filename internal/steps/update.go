@@ -36,9 +36,14 @@ func WithUpdate(ctx context.Context, o UpdateOpts) context.Context {
 	return context.WithValue(ctx, updateKey{}, o)
 }
 
-func updateOpts(ctx context.Context) UpdateOpts {
-	o, _ := ctx.Value(updateKey{}).(UpdateOpts)
-	return o
+var errNoUpdateOpts = errors.New("update options not set")
+
+func updateOpts(ctx context.Context) (UpdateOpts, error) {
+	o, ok := ctx.Value(updateKey{}).(UpdateOpts)
+	if !ok {
+		return o, errNoUpdateOpts
+	}
+	return o, nil
 }
 
 func Update() []Step {
@@ -68,7 +73,10 @@ func updateRun(ctx context.Context, env *Env, c run.Cmd) error {
 }
 
 func selfCheck(ctx context.Context, env *Env) (bool, error) {
-	o := updateOpts(ctx)
+	o, err := updateOpts(ctx)
+	if err != nil {
+		return false, err
+	}
 	reexec := os.Getenv(updateReexecEnv) == "1"
 	if _, ok := selfupdate.Parse(o.Version); !ok {
 		if reexec {
@@ -88,7 +96,10 @@ func selfCheck(ctx context.Context, env *Env) (bool, error) {
 }
 
 func selfApply(ctx context.Context, env *Env) error {
-	o := updateOpts(ctx)
+	o, err := updateOpts(ctx)
+	if err != nil {
+		return err
+	}
 	if cur, ok := selfupdate.Normalize(o.Version); ok {
 		changelog(ctx, env, cur, o.Target)
 	} else {
@@ -142,7 +153,10 @@ func changelog(ctx context.Context, env *Env, cur, target string) {
 }
 
 func sourceApply(ctx context.Context, env *Env) error {
-	o := updateOpts(ctx)
+	o, err := updateOpts(ctx)
+	if err != nil {
+		return err
+	}
 	git := func(args ...string) (run.Result, error) {
 		return env.Run.Run(ctx, run.Cmd{Name: "git", Args: append([]string{"-C", env.RepoRoot}, args...)})
 	}

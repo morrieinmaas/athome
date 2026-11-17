@@ -401,7 +401,7 @@ Decisions:
     failing, so a rerun after a half-finished `--all` completes.
   - A failing action stops the run with exit 1 naming the command (bash exited with the
     command's own status under `set -e`); `rbw stop-agent` failures are still ignored.
-  - The hostname for the ssh key paths comes from `os.Hostname()` (bash: `uname -n`).
+  - The hostname for the ssh key paths is the one init names the key from (chezmoi's hostname, else the short hostname, the part before the first dot), not the full `os.Hostname()` (bash: `uname -n`).
   - The em dashes in bash's messages become a colon or a comma. Every substring
     `test/teardown.bats` checks is kept: `pick a tier`, `unknown argument`, `DRY-RUN`,
     `would:`, `LEFT ALONE`, `.secrets`, `aborted`.
@@ -413,7 +413,7 @@ Decisions:
   `/opt/nanobrew/prefix/bin`, which does not exist on Linux); an underivable vault owner
   exits 1 instead of cloning `/attic`; the decoded key file is removed on every path; any
   argument to `backup`, or one other than `--dry-run` to `restore`, exits 2 (the scripts
-  ignored them). A failed `git commit` in `backup` exits 1 (the script carried on to the push). A failing `git ls-files` in `restore` exits 1 with a message (the script ignored it); a
+  ignored them). A failed `git commit` in `backup` exits 1 (the script carried on to the push). A failed key read from Bitwarden or a failed `git-crypt unlock` in `restore` exits 1 before any file is copied (the script carried on and copied the still-encrypted files). A failing `git ls-files` in `restore` exits 1 with a message (the script ignored it); a
   vault with no tracked files still copies nothing and exits 0. `backup`'s default vault stays
   `~/.local/share/attic` whatever `SECRETS_VAULT_NAME` is, as in the script. `restore --dry-run` still clones or pulls and unlocks, as the script does;
   only the copy is skipped.

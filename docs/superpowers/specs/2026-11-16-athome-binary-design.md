@@ -368,3 +368,340 @@ Test list (unit unless marked):
 
 Out of scope for build 2: the TUI, `teardown`, `secrets`, `update`, `status`, self-update,
 and moving the release host to termage.
+
+## Build 4: teardown, secrets, update and status (migration step 4)
+
+Goal: `athome teardown`, `athome secrets backup|restore`, `athome update` and `athome status`
+replace the bash that did those jobs, and the bash kept for one release
+(`bootstrap-legacy.sh`, the installer's fallback to it, the e2e `bash` runner) is deleted,
+with the e2e round trip tearing down through `athome teardown`.
+
+Decisions:
+
+- **New packages:** `internal/teardown`, `internal/secrets`, `internal/selfupdate` and
+  `internal/status`, each reaching external tools only through `run.Runner`. The update
+  list is `steps.Update()` in `internal/steps`, built from `steps.Step` like `steps.All`,
+  so a progress view can run it. No new dependencies.
+- **`scripts/teardown.sh` is deleted, not wrapped.** Every machine bootstrapped since
+  build 2 has `~/.local/bin/athome`, and a wrapper would have to find the binary that
+  `--all` deletes. `test/teardown.bats` is ported to Go tests and deleted, the
+  `mise run teardown` task runs `athome teardown`, and `scripts/lib/colors.sh` and
+  `scripts/lib/pm.sh` go with their last users. `scripts/lib/ssh.sh` stays, because
+  `internal/steps/github_config_test.go` reads it.
+- **Teardown is a 1:1 port.** Same flags (`--state`, `--dotfiles`, `--all`, the last one
+  given wins; `--execute` and its alias `--run`; `--dry-run`; `--yes` and `-y`; `-h`,
+  `--help`), same tiers, same section titles, same order, same `  would: <cmd>` and
+  `  + <cmd>` lines, colour only when stdout is a terminal. File removals run in process
+  (`os.Remove`, `os.RemoveAll`, a missing path is not an error) and print as the `rm -f`
+  or `rm -rf` line bash printed. `--execute` prints the dry-run plan, asks for the typed
+  tier name (unless `--yes`), then runs the plan. Deliberate differences from bash:
+  - `--all` adds a section `athome binary` before the user-data note, removing
+    `~/.local/bin/athome` only (a binary elsewhere on PATH is left alone).
+  - With `chezmoi` not on PATH, its two calls print `  skip: chezmoi not found` instead of
+    failing, so a rerun after a half-finished `--all` completes.
+  - A failing action stops the run with exit 1 naming the command (bash exited with the
+    command's own status under `set -e`); `rbw stop-agent` failures are still ignored.
+  - The hostname for the ssh key paths comes from `os.Hostname()` (bash: `uname -n`).
+  - The em dashes in bash's messages become a colon or a comma. Every substring
+    `test/teardown.bats` checks is kept: `pick a tier`, `unknown argument`, `DRY-RUN`,
+    `would:`, `LEFT ALONE`, `.secrets`, `aborted`.
+- **`athome secrets backup` and `restore` are 1:1 ports** of the two scripts: the same
+  mirrored paths and exclusions, the same vault (`SECRETS_VAULT`, default
+  `~/.local/share/attic`; `SECRETS_VAULT_NAME`, default `attic`), the same plaintext gate,
+  commit identity (`secrets-backup <secrets@local>`) and message, and the same exit codes.
+  Deliberate differences: `git-crypt` and `rbw` are found on PATH (the scripts hardcoded
+  `/opt/nanobrew/prefix/bin`, which does not exist on Linux); an underivable vault owner
+  exits 1 instead of cloning `/attic`; the decoded key file is removed on every path; any
+  argument to `backup`, or one other than `--dry-run` to `restore`, exits 2 (the scripts
+  ignored them). `restore --dry-run` still clones or pulls and unlocks, as the script does;
+  only the copy is skipped.
+- **The old names stay one release as wrappers.** `home/dot_local/bin/executable_secrets-backup`
+  and `executable_secrets-restore` become a shebang plus one line,
+  `exec athome secrets backup "$@"` and `exec athome secrets restore "$@"`, and go in the
+  next release. `executable_mise-secret-init` and `run_once_17-secrets-restore-reminder.sh`
+  call and name `athome secrets backup|restore`.
+- **init restores in process.** The `secrets-restore` step of `athome init` calls
+  `internal/secrets` instead of running `~/.local/bin/secrets-restore`, so the
+  "no script yet" state and the `secrets-restore-hint` step go. The prompt reads
+  `restore your encrypted secrets now (athome secrets restore)?` and the follow-up line
+  names `athome secrets restore`. Build 1 acceptance criterion 7's "no `secrets-restore`
+  script" exception no longer applies.
+- **What "pinned versions" means.** athome's own version is the release tag; the binary
+  and the chezmoi source come from one tag, so nothing else pins it. grofe and canopy are
+  pinned in one new file, `home/.chezmoidata/pins.toml`:
+
+  ```toml
+  [pins]
+  grofe = "v0.3.1"
+  canopy = "f445cd0f9f665d2ea3fb6e0694934ae45ef10942"
+  ```
+
+  `run_onchange_17-install-grofe.sh.tmpl` and `run_onchange_18-install-canopy.sh.tmpl`
+  render `{{ .pins.grofe }}` and `{{ .pins.canopy }}` in place of their hardcoded refs, so
+  bumping either is one edit and chezmoi reruns the script because its rendered text
+  changed. Those two scripts are the tools' own updaters; athome never installs grofe or
+  canopy itself, it only applies. `athome status` reads the pins from this file.
+- **grofe installs from its release.** `run_onchange_17` keeps `ATHOME_GROFE_BIN` first,
+  then downloads
+  `https://github.com/termage/grofe/releases/download/<pin>/grofe-<pin>-<target>.tar.gz`
+  and `SHA256SUMS` from the same release, targets `x86_64-unknown-linux-musl`,
+  `aarch64-unknown-linux-musl`, `x86_64-apple-darwin`, `aarch64-apple-darwin`, checks the
+  sha256 (`sha256sum`, else `shasum -a 256`), and installs `grofe-<pin>-<target>/grofe`.
+  The cargo build goes. A download that fails prints
+  `grofe: cannot download <url>, so grofe is not installed; tmux stays tmux` and exits 0, as
+  an unreachable repo does today; a checksum mismatch or a missing `SHA256SUMS` line exits 1.
+- **`athome update [--to <version>] [--yes|-y]`** first resolves the target, so the step
+  checks only read: `git -C <repo> fetch --quiet --tags --force origin`, then `--to`, else
+  the highest local `vX.Y.Z` tag. A failed fetch exits 1 before any step. It then runs
+  `steps.Update()`, four steps:
+  1. `self`: check: the running version, with any leading `v` stripped, equals the
+     target's, or is newer and `--to` was not given. Apply: print the
+     changelog, `git -C <repo> log --no-merges --format='  %s' v<current>..<target>`
+     (omitted, with a note, when the current version is not a tag); on a terminal without
+     `--yes`, confirm `update athome from <current> to <target>?` (default yes; no prints
+     `athome update: cancelled, nothing changed` and exits 0); download
+     `<base>/<target>/athome_<os>_<arch>` and `checksums.txt` with the installer's
+     `ATHOME_RELEASE_BASE` and default, check the sha256, write `~/.local/bin/.athome.<pid>`
+     with mode 0755 and rename it over `~/.local/bin/athome`, then exec
+     `~/.local/bin/athome update --to <target>` with `--yes` passed on if given. The new
+     binary's `self` check passes and the run continues there.
+     Without `--to`, a target older than the running version is not installed (no
+     downgrade); with `--to` it is, because a box is told its version by the laptop.
+     A version that is not `X.Y.Z` (`dev`, `e2e`, a snapshot) skips `self` with
+     `athome: <version> is not a release; not replacing it (pass --to to install one)`,
+     unless `--to` is given.
+  2. `source`: on a branch, `git -C <repo> pull --ff-only`. On a detached HEAD at a tag
+     (a box), `git -C <repo> checkout --quiet --detach <target>`, so the source matches
+     the binary. A detached HEAD at no tag is left as is, with a note. Check: none, it
+     always runs.
+  3. `apply`: `chezmoi apply`. This installs new native packages (`run_onchange_02` keyed
+     on `packages.yaml`) and moves grofe and canopy when their pins changed. athome does
+     not upgrade OS packages (`nb upgrade`, `pacman -Syu`, `dnf upgrade`). Check: none.
+  4. `mise`: check `mise ls --missing --json` lists nothing; apply `mise install`, run in
+     `$HOME`.
+
+  It ends with the init summary line, `athome: applied N, skipped M`. Exit codes: 0 done
+  or cancelled, 1 a step failed (the error names the step, as init does), 2 a usage error,
+  130 Ctrl-C at the prompt. `--to` takes `vX.Y.Z` or `X.Y.Z`; anything else exits 2, and a
+  well-formed tag that `origin` lacks exits 1 naming it. `sync --all` joins the end of the
+  list with the remote-machines spec.
+- **`athome status [--json]`** reads, never writes, and reports five components:
+  - `athome`: the running version against the highest `vX.Y.Z` tag from
+    `git -C <repo> ls-remote --tags --refs origin`, 10 second timeout.
+  - `dotfiles`: `chezmoi status --exclude=scripts`; current when it prints nothing.
+  - `mise`: `mise ls --missing --json`; current when it lists nothing.
+  - `grofe`: `~/.local/lib/grofe/grofe -V` (`grofe 0.3.1`) against `pins.grofe`, a leading
+    `v` ignored.
+  - `canopy`: `git -C ~/.local/share/canopy rev-parse HEAD` against
+    `git -C ~/.local/share/canopy rev-parse --verify <pins.canopy>^{commit}`.
+
+  Each status is one of `current`, `not current`, `not installed` (the tool or its store is
+  missing) or `unknown` (offline, no `pins.toml`, a version that is not a release). Text
+  output is a header `athome <version> (<commit>), repo <repo> at <ref>`, `<ref>` being
+  the branch, else the exact tag, else the short commit, then one line per component,
+  `fmt.Sprintf("%-9s %-14s %s", name, status, detail)`. `--json` prints
+
+  ```json
+  {"version": "0.5.0", "commit": "abc1234", "repo": "/home/u/athome", "ref": "main",
+   "current": false,
+   "components": [{"name": "athome", "status": "not current",
+                   "installed": "0.5.0", "wanted": "v0.5.2", "detail": ""}]}
+  ```
+
+  with the five components in the order above, and top-level `current` true only when all
+  five are `current`. Exit 0 whenever the report printed, whatever it says; 1 when the
+  repo is not found (the init lookup and message); 2 a usage error.
+- **TUI:** build 4 imports nothing from `internal/tui`. Once build 3 and build 4 are both
+  in, the home menu gains `update`, running `steps.Update()` in the progress view;
+  whichever of the two merges second adds the entry and its test.
+- **Legacy goes.** `scripts/bootstrap-legacy.sh` is deleted. In `scripts/bootstrap.sh`, a
+  missing asset (404, or a missing file over `file://`) now exits 1 with
+  `bootstrap: no athome release asset for <tag> at <url>; <hint>` whether the tag came
+  from git or `ATHOME_VERSION`, and the `explicit` flag goes. `test/e2e/scenario.sh`
+  drops `ATHOME_E2E_RUNNER` and its `bash` branch, always bootstraps through
+  `scripts/bootstrap.sh --install-from "$athome_src"`, always checks the second init is a
+  no-op, and tears down with `athome teardown --all --execute --yes` (the
+  `~/.local/bin/athome` the bootstrap installed, which deletes itself; phase 3 reinstalls
+  from `$athome_src`, `/usr/local/bin/athome` in the image). `test/e2e/run.sh` and
+  `.github/workflows/e2e.yml` drop the runner, leaving one job per distro.
+- **`athome` usage** lists `init`, `update`, `status`, `teardown`, `secrets`, `version`.
+  `athome secrets` with no subcommand, or one other than `backup` or `restore` (`rekey`
+  included), exits 2 with usage naming `backup|restore`.
+
+Acceptance criteria:
+
+1. `athome teardown` with no tier exits 2 printing usage and `pick a tier: --state |
+   --dotfiles | --all`; an unknown argument exits 2 with
+   `athome teardown: unknown argument: <arg> (try --help)`; `--help` exits 0 and names all
+   three tiers.
+2. Without `--execute`, teardown prints the header
+   `athome teardown: tier=<tier>  mode=DRY-RUN (no changes)`, only `  would: ` action lines,
+   and `Dry run only, nothing changed. Re-run with --execute to apply.`; it changes nothing
+   and runs no external command except the read-only `chezmoi managed`,
+   `chezmoi source-path` and `nb list`.
+3. Each tier plans exactly what `scripts/teardown.sh` plans for the same home and OS, in
+   the same order, plus, for `--all`, `rm -f <home>/.local/bin/athome` in the `athome binary`
+   section; `--all` ends with the user-data note naming `~/.secrets` and
+   `~/personal, ~/sidebiz, ~/work` under `LEFT ALONE`, and nothing under those paths is
+   ever removed.
+4. `--execute` prints the dry-run plan, then
+   `This will PERMANENTLY remove the above for tier "<tier>".` and
+   `Type <tier> to proceed (anything else aborts): `, and reads one line from stdin. The
+   tier name, spaces trimmed, proceeds; anything else, or EOF, prints
+   `athome teardown: aborted, nothing was changed` and exits 2 having changed nothing.
+   `--yes` skips the question.
+5. A completed `--execute` prints `+ <cmd>` per action and ends with
+   `✓ teardown (<tier>) complete. Re-run ./scripts/bootstrap.sh for a fresh start.`, exit 0.
+   A failing action exits 1 naming it, after the actions before it ran.
+6. `athome secrets backup` mirrors the same files into the vault as `secrets-backup`, prints
+   `✓ vault already in sync (no changes)` and exits 0 when nothing changed, exits 2 with
+   `ABORT: plaintext detected in staged files` and no commit when any staged file lacks the
+   git-crypt header, commits and pushes otherwise (a failed push prints the
+   `committed locally ... but push failed` warning and still exits 0), and exits 1 with
+   `vault not found at <vault>; run 'athome secrets restore' to clone it first` without a
+   vault.
+7. `athome secrets restore` clones (or pulls, ignoring a failed pull), unlocks with the key
+   from `rbw get git-crypt/<name>-key` when the first tracked file is encrypted, copies
+   every tracked file except `.gitattributes` to `$HOME/<path>` with mode 0600, makes
+   `~/.secrets` and its directories 0700, and exits 1 if any copy failed. A locked or
+   missing rbw on an encrypted vault exits 1 with
+   `rbw is locked; run: rbw unlock, then re-run athome secrets restore`. `--dry-run` prints
+   `  would restore  <target>` per file and writes nothing under `$HOME`.
+8. `secrets-backup` and `secrets-restore` on PATH run the matching `athome secrets`
+   command with their arguments and exit code.
+9. `athome init`'s `secrets-restore` step restores in process; init's step list no longer
+   has `secrets-restore-hint`, and its prompt and follow-up name `athome secrets restore`.
+10. `athome update` with a newer release replaces `~/.local/bin/athome` only after its
+    sha256 matches `checksums.txt`, prints the commit subjects between the two tags first,
+    then runs `source`, `apply` and `mise` in the new binary. A checksum mismatch, a
+    missing checksums line or a missing asset exits 1 with the installed binary unchanged
+    and no `.athome.*` file left behind.
+11. `athome update --to <version>` installs that version, older or newer; without `--to` a
+    newer running version is kept. Already at the target, `self` is skipped and nothing is
+    downloaded.
+12. On a branch `source` runs `git pull --ff-only`; on a detached HEAD at a tag it checks
+    out the target tag; at a detached untagged commit it changes nothing and prints a note.
+13. `athome status` prints the header and the five rows; `--json` prints the documented
+    object; both exit 0 whatever the statuses, with `unknown` for `athome` when `origin` is
+    unreachable.
+14. `home/.chezmoidata/pins.toml` holds the grofe and canopy pins; the two install scripts
+    render them and contain no other copy of the refs; changing a pin changes the rendered
+    script (so chezmoi reruns it).
+15. `run_onchange_17` installs grofe from the pinned release after checking the sha256,
+    exits 0 with a note when the download fails, and exits 1 on a checksum mismatch.
+16. `scripts/bootstrap-legacy.sh`, `scripts/teardown.sh`, `test/teardown.bats`,
+    `scripts/lib/colors.sh` and `scripts/lib/pm.sh` are gone; no file in the repo outside
+    `docs/superpowers`, `docs/plans` and the Go `B:` comments names them, and nothing reads
+    `ATHOME_E2E_RUNNER`.
+17. The e2e jobs (arch, fedora) pass `verify-baseline.sh`, `verify.sh` and
+    `verify-teardown.sh`, the last with one new check that `~/.local/bin/athome` is gone,
+    with the teardown done by `athome teardown`; after phase 1, `athome status --json`
+    exits 0 and reports `dotfiles` as `current`.
+
+Edge cases: two tier flags (the last wins); `--execute` with stdin closed (aborts, exit
+2); an answer of ` all ` (proceeds); `chezmoi` missing (both calls skipped with a note); a
+managed path that is a directory or a dangling symlink (skipped, as `-f` does); a managed
+path or `$HOME` with spaces; `~/.claude/CLAUDE.md` a symlink into a different directory, or
+a real file (kept); `athome` run from `/usr/local/bin` (only `~/.local/bin/athome` removed);
+a rerun of `--all --execute` after a run that failed halfway; a vault with no tracked
+files (restore copies nothing, exit 0); a vault already unlocked (no `rbw` call); neither
+`ATHOME_GITHUB_HANDLE`, `gh` nor `SECRETS_VAULT_REPO` (restore exits 1 naming them); a
+`.env.example` in `~/.secrets` (not mirrored); `update` offline (the fetch fails, exit 1, no
+step runs); a tag pushed before its release assets exist (exit 1, asset URL named);
+`~/.local/bin` not writable (exit 1, binary unchanged); a branch that has diverged from
+its upstream (`source` fails, exit 1); a dev build with and without `--to`; `--to v0.5`
+(exit 2); `status` with no `pins.toml` (an older clone: grofe and canopy `unknown`), with
+grofe or the canopy store missing (`not installed`), or with a pin the canopy store has
+not fetched (`not current`, the pin named).
+
+Test list (unit unless marked):
+
+- teardown flags: no tier exits 2 with `pick a tier`; `--bogus` exits 2 with
+  `unknown argument`; `--help` exits 0 and names `--state`, `--dotfiles`, `--all`;
+  `--state --all` plans `all`; `--run` equals `--execute`; `-y` equals `--yes`.
+- teardown plan, against a temp home with a fake runner, for `OS` darwin and linux (arch,
+  and fedora: `dnf` found, `pacman` not): golden plan per tier, captured from
+  `scripts/teardown.sh`'s dry run on the same fixture before it is deleted, with only the
+  differences listed under Decisions applied; `--state` names the three `~/.local/state/athome` markers; `--all` names
+  `nanobrew` on darwin and `pacman` on arch, `rm -f <home>/.local/bin/athome`, `.secrets`
+  and `LEFT ALONE`; a dry run records only `chezmoi managed`, `chezmoi source-path` and
+  `nb list`, and no file in the fixture changes.
+- teardown fixture: `chezmoi managed` lists a regular file, a directory, a dangling
+  symlink and a path with a space; only the regular file and the spaced path are planned;
+  `(2 managed files)`. `~/.claude/skills` pointing into `~/.config/agents` is planned,
+  `~/.claude/CLAUDE.md` pointing into `/elsewhere` and a real `~/.claude/RTK.md` are not.
+- teardown execute: stdin `"\n"` exits 2 with `aborted` and no file removed; stdin
+  `" dotfiles \n"` with `--dotfiles --execute` removes the planned files and keeps
+  `~/.secrets/x/.env` and `~/personal/r/f`; `--yes` reads no stdin; a fake
+  `chezmoi state reset` exiting 1 makes the run exit 1 naming it with nothing after it
+  run; `chezmoi` absent prints `skip: chezmoi not found` twice and exits 0.
+- secrets backup, against a temp vault (a real git repo whose index content is faked
+  with and without the `\x00GITCRYPT` header): `~/.secrets/a/.env`, `.env.local` and
+  `.env.example` mirror the first two only; the five fixed paths mirror when present;
+  no change prints `vault already in sync` exit 0; a plaintext staged file exits 2 with no
+  commit; a push to an unreachable remote warns and exits 0; no vault exits 1; any
+  argument exits 2.
+- secrets restore (fake `gh`, `rbw`, `git-crypt`): a missing vault records
+  `gh repo clone <owner>/attic <vault> -- -q`; owner from `ATHOME_GITHUB_HANDLE`, else
+  `gh api user -q .login`, `SECRETS_VAULT_REPO` over both; an encrypted sentinel with rbw
+  locked exits 1 with the message above; unlocked, records
+  `rbw get git-crypt/attic-key` and `git-crypt unlock <tmpfile>` and the tmpfile is gone
+  afterwards; files land with mode 0600 and `~/.secrets/a` is 0700; `--dry-run` prints
+  `would restore` lines and writes nothing under `$HOME`; `--bogus` exits 2.
+- wrappers (bats, `test/secrets-wrappers.bats`): with a stub `athome` on PATH recording
+  its args, `secrets-restore --dry-run` records `secrets restore --dry-run` and returns
+  the stub's exit code 3.
+- init: the `secrets-restore` step with rbw unlocked and no `.env` calls the in-process
+  restore (recorded `gh repo clone`); `steps.All` has no `secrets-restore-hint`.
+- update self (httptest release server, fake runner for git): current 0.5.0, tags
+  v0.5.0 and v0.5.2 installs v0.5.2 after printing the faked `git log` subjects, then
+  records the exec of `~/.local/bin/athome update --to v0.5.2`; a wrong checksum, no
+  checksums line, and a 404 asset each exit 1 with the old binary byte-identical and no
+  `.athome.*` left; current v0.5.2 with `--to v0.5.2` downloads nothing; current v0.5.2,
+  latest v0.5.0, no `--to`, downloads nothing; `--to v0.5.0` downgrades; version `dev`
+  without `--to` skips with the note; `--to v0.5` and `--to latest` exit 2; `--to v9.9.9`
+  absent from the tag list exits 1 naming it; a scripted `n` at the prompt prints
+  `cancelled` and exits 0; `--yes` reads no stdin.
+- update steps: `source` on a branch records `git pull --ff-only`, at a detached tag
+  records `checkout --quiet --detach v0.5.2`, at an untagged detached commit records no
+  checkout; `apply` records `chezmoi apply`; `mise` with `mise ls --missing --json`
+  printing `{}` is skipped, with a missing tool records `mise install`; a failing step
+  exits 1 naming it; the last line is `athome: applied N, skipped M`.
+- status (fake runner, temp home): all current gives five `current` rows and top-level
+  `"current": true`; ls-remote failing gives `athome` `unknown` and exit 0; `chezmoi
+  status` printing two lines gives `dotfiles` `not current`; grofe `-V` printing
+  `grofe 0.3.0` against pin `v0.3.1` gives `not current`; no `~/.local/lib/grofe/grofe`
+  gives `not installed`; no `pins.toml` gives grofe and canopy `unknown`; the JSON has the
+  documented keys and component order; the header shows the branch, else the tag, else
+  the short commit; a missing repo exits 1; `--bogus` exits 2.
+- pins: `chezmoi execute-template` of both install scripts against `pins.toml` contains
+  the pinned values and no other 40-hex or `v*` ref literal; changing `pins.grofe`
+  changes the rendered `run_onchange_17`.
+- grofe install script (bats, `test/install-grofe.bats`, release served from a `file://`
+  base through a `GROFE_RELEASE_BASE` override, rendered with a fake home): a good
+  tarball installs `~/.local/lib/grofe/grofe` and the `bin/tmux` link; a wrong
+  `SHA256SUMS` line exits 1 with nothing installed; a missing tarball exits 0 with the
+  `tmux stays tmux` note; `ATHOME_GROFE_BIN` wins over the download.
+- installer (bats, `test/bootstrap.bats`): the fallback test becomes a missing asset
+  exiting 1 naming the tag and URL with no legacy script run, with and without
+  `ATHOME_VERSION`.
+- cli: `athome` usage lists the six commands; `athome secrets`, `athome secrets rekey` and
+  `athome secrets bogus` exit 2.
+- e2e: arch and fedora, one job each, `athome teardown --all --execute --yes`, the
+  verify scripts with the new `~/.local/bin/athome` check, and `athome status --json`
+  after phase 1.
+
+Docs (same PR): `README.md` teardown block uses `athome teardown`; `docs/commands.md`
+gains `update`, `status`, `teardown` and `secrets` with every flag and exit code;
+`docs/secrets.md` and `AGENTS.md` name `athome secrets backup|restore`; `docs/install.md`
+drops the legacy fallback; `docs/how-it-works.md` drops `scripts/teardown.sh` from the tree,
+adds `pins.toml` and how `update` orders its steps; `docs/customizing.md` drops
+`colors.sh` and `pm.sh` and says a grofe or canopy bump is one edit in `pins.toml`.
+
+Out of scope for build 4: `athome secrets rekey` and restoring the inventory (keys and
+recovery spec); `sync --all` at the end of `update`, `machine` and `project` (remote
+machines spec); the TUI `update` entry (whichever of build 3 and 4 lands second); removing
+the `secrets-backup` and `secrets-restore` wrappers (the release after this one);
+upgrading OS packages; release attestations; moving the release host to termage;
+deleting `scripts/lib/ssh.sh`; rewording the Go comments that cite `bootstrap-legacy.sh`
+line numbers (the file stays in git history).

@@ -121,12 +121,12 @@ per-machine extra packages that never touch the repo.
 
 ## Starting over
 
-`scripts/teardown.sh` removes what athome installed. It's a dry run unless you
+`athome teardown` removes what athome installed. It's a dry run unless you
 pass `--execute`, and it never touches your project folders or `~/.secrets`.
 
 ```bash
-./scripts/teardown.sh --all             # preview
-./scripts/teardown.sh --all --execute   # do it, then run bootstrap again
+athome teardown --all             # preview
+athome teardown --all --execute   # do it, then run bootstrap again
 ```
 
 ## More docs

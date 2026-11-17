@@ -154,7 +154,6 @@ brings the links in line with the lock; pulling the repo
 ```text
 athome/
 ├── scripts/bootstrap.sh       the installer
-├── scripts/teardown.sh        undo it (dry run by default)
 ├── mise.toml                  repo tasks: mise run apply / diff / test …
 ├── docs/                      you are here
 ├── examples/                  bootstrap answers, starter .envrc files
@@ -206,7 +205,7 @@ chezmoi apply
 | gitleaks | every commit | on push, PR and weekly |
 
 The end-to-end test installs athome in a clean container with dummy answers,
-checks the result, tears it down with `teardown.sh --all`, checks that user
+checks the result, tears it down with `athome teardown --all`, checks that user
 data survived, and installs again.
 
 ## More than one machine: pyinfra

@@ -130,4 +130,4 @@ run = "ATHOME_E2E_DISTRO=fedora ./test/e2e/run.sh --clean"
 
 [tasks.teardown]
 description = "reset for a from-scratch retry (dry-run by default; --all --execute to wipe)"
-run = "./scripts/teardown.sh"
+run = "athome teardown"

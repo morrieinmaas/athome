@@ -34,6 +34,36 @@ in [unattended installs](install.md#unattended-installs).
 `.chezmoiroot`; the installer sets it), the current directory, the `sourceDir`
 pinned in `~/.config/chezmoi/chezmoi.toml`, or `~/.local/share/chezmoi`.
 
+## athome teardown
+
+Undoes athome on this machine for a from-scratch retry. A dry run unless you pass
+`--execute`.
+
+```bash
+athome teardown (--state | --dotfiles | --all) [--execute] [--yes]
+```
+
+| Tier | What it removes (each includes the ones above it) |
+| --- | --- |
+| `--state` | chezmoi's persistent state and cache, and athome's marker files. Nothing leaves `$HOME`. |
+| `--dotfiles` | Every chezmoi-managed file in `$HOME` and `~/.config/chezmoi`. The source repo stays. |
+| `--all` | mise and its tools, chezmoi externals and app data, the stale `~/.claude` links into `~/.config/agents`, nanobrew with its casks (macOS, needs sudo; on Linux the system packages stay, with a hint), rbw data, this machine's SSH key, and `~/.local/bin/athome`. |
+
+| Flag | What it does |
+| --- | --- |
+| `--execute`, `--run` | Do it. Prints the plan, asks you to type the tier name, then runs it. |
+| `--dry-run` | Preview only (the default). The last of `--execute` and `--dry-run` wins, as does the last tier. |
+| `--yes`, `-y` | Skip the typed confirmation. |
+| `-h`, `--help` | Print the usage. |
+
+Dry run prints `  would: <command>` lines and changes nothing. `~/.secrets`, `~/personal`,
+`~/sidebiz` and `~/work` are never removed. Without `chezmoi` on PATH its two calls print
+`skip: chezmoi not found`, so a rerun after a half-finished `--all` completes. A binary
+elsewhere on PATH is left alone.
+
+Exit codes: 0 done (or dry run); 1 an action failed (the output names it; the actions before
+it ran); 2 no tier, an unknown argument, or the confirmation not given.
+
 ## athome version
 
 Prints the version and commit, e.g. `athome 0.5.0 (abc1234)`.

@@ -255,3 +255,25 @@ func TestSeedDropsStoredGithubIdWhenHandleDiffers(t *testing.T) {
 		t.Errorf("same handle: id = %q, want 42", vals["githubId"])
 	}
 }
+
+// ctxRunner records whether the context handed to Run carries a deadline.
+type ctxRunner struct{ hasDeadline bool }
+
+func (c *ctxRunner) Run(ctx context.Context, _ run.Cmd) (run.Result, error) {
+	_, c.hasDeadline = ctx.Deadline()
+	return run.Result{Stdout: "octo\n"}, nil
+}
+func (c *ctxRunner) LookPath(string) (string, error) { return "/usr/bin/gh", nil }
+
+// `gh api user` runs before the form: a hung gh must not block it for ever.
+func TestSeedDerivedDefaultsBoundsGhLookup(t *testing.T) {
+	r := &ctxRunner{}
+	vals := map[string]string{"hostname": "h"}
+	seedDerivedDefaults(context.Background(), &steps.Env{Run: r}, vals)
+	if !r.hasDeadline {
+		t.Error("gh api user ran without a timeout")
+	}
+	if vals["githubHandle"] != "octo" {
+		t.Errorf("handle = %q", vals["githubHandle"])
+	}
+}

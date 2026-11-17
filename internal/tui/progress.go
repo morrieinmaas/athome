@@ -7,6 +7,7 @@ import (
 	"io"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
@@ -224,6 +225,7 @@ type progressRun struct {
 	origEv   func(steps.Event)
 	release  func() error // the terminal hand-over around fn; nil means p's own
 	restore  func() error
+	running  atomic.Bool // the program is alive: only then may the terminal be handed over
 	finished chan struct{}
 	rep      steps.Report // Execute's own result, set before finished closes
 	err      error
@@ -252,6 +254,7 @@ func newProgressRun(ctx context.Context, env *steps.Env, list []steps.Step) *pro
 // start hooks env to p and runs the steps once the program has started.
 func (r *progressRun) start(p *tea.Program, wire func(around func(func()))) {
 	r.m.log.p = p
+	r.running.Store(true)
 	env := r.env
 	env.Log = r.m.log // the real stdout would garble the view; the view shows this log
 	env.Events = func(e steps.Event) {
@@ -269,6 +272,10 @@ func (r *progressRun) start(p *tea.Program, wire func(around func(func()))) {
 			restore = p.RestoreTerminal
 		}
 		wire(func(fn func()) {
+			if !r.running.Load() { // the view quit: nothing to release, and restoring would revive a dead program
+				fn()
+				return
+			}
 			_ = release()
 			defer func() { _ = restore() }()
 			fn()
@@ -290,6 +297,7 @@ func (r *progressRun) start(p *tea.Program, wire func(around func(func()))) {
 // program to Execute's report and error. A program that quit before the done
 // message (SIGTERM becomes a quit message) still returns Execute's own result.
 func (r *progressRun) result(runErr error) (steps.Report, error) {
+	r.running.Store(false)
 	r.cancel()
 	<-r.finished
 	r.env.Log, r.env.Events = r.origLog, r.origEv
@@ -320,5 +328,6 @@ func RunProgress(ctx context.Context, in io.Reader, out io.Writer, env *steps.En
 	p := tea.NewProgram(r.m, tea.WithInput(in), tea.WithOutput(out))
 	r.start(p, wire)
 	_, runErr := p.Run()
+	r.running.Store(false)
 	return r.result(runErr)
 }

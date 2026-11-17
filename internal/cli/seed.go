@@ -87,6 +87,8 @@ func seedPrecedence(stored map[string]string, cfg config.Config, o initOpts, env
 func seedDerivedDefaults(ctx context.Context, env *steps.Env, vals map[string]string) {
 	if vals["githubHandle"] == "" {
 		if _, err := env.Run.LookPath("gh"); err == nil {
+			ctx, cancel := context.WithTimeout(ctx, checkTimeout)
+			defer cancel()
 			if r, err := env.Run.Run(ctx, run.Cmd{Name: "gh", Args: []string{"api", "user", "--jq", ".login"}}); err == nil && r.Code == 0 {
 				vals["githubHandle"] = strings.TrimSpace(r.Stdout)
 			}

@@ -217,6 +217,11 @@ func TestCheckURLAndHandle(t *testing.T) {
 	if err := checkURL(context.Background(), "https://x"); err != nil {
 		t.Error(err)
 	}
+	for _, bad := range []string{"https://", "https://exa mple.com"} {
+		if err := checkURL(context.Background(), bad); err == nil || errors.Is(err, tui.ErrCheckUnavailable) {
+			t.Errorf("%q must be rejected for good: %v", bad, err)
+		}
+	}
 	httpGet = func(context.Context, string) (int, error) { return 0, errors.New("no route") }
 	if err := checkURL(context.Background(), "https://x"); !errors.Is(err, tui.ErrCheckUnavailable) {
 		t.Errorf("a transport error is overridable: %v", err)

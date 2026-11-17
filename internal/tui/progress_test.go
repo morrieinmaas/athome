@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -119,6 +120,33 @@ func TestProgressAroundReleasesAndRestores(t *testing.T) {
 	defer mu.Unlock()
 	if got := strings.Join(order, ","); got != "release,fn,restore" {
 		t.Errorf("order = %q, want release,fn,restore", got)
+	}
+}
+
+// A step that runs an interactive command after the view quit must not release
+// or restore the dead program: the command just runs.
+func TestProgressAroundAfterQuitSkipsTerminalHandOver(t *testing.T) {
+	var around func(func())
+	var calls, ran atomic.Int32
+	list := []steps.Step{fake("slow", false, func(ctx context.Context, _ *steps.Env) error {
+		<-ctx.Done() // result() cancels after the program is gone
+		around(func() { ran.Add(1) })
+		return ctx.Err()
+	})}
+	r := newProgressRun(context.Background(), &steps.Env{}, list)
+	tm := teatest.NewTestModel(t, r.m, teatest.WithInitialTermSize(80, 24))
+	r.release = func() error { calls.Add(1); return nil }
+	r.restore = func() error { calls.Add(1); return nil }
+	r.start(tm.GetProgram(), func(a func(func())) { around = a })
+	waitOutput(t, tm, "slow")
+	tm.Send(tea.QuitMsg{})
+	tm.WaitFinished(t, teatest.WithFinalTimeout(5*time.Second))
+	_, _ = r.result(nil)
+	if ran.Load() != 1 {
+		t.Errorf("fn ran %d times, want 1", ran.Load())
+	}
+	if calls.Load() != 0 {
+		t.Errorf("release/restore called %d times after the view quit", calls.Load())
 	}
 }
 

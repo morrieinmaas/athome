@@ -57,6 +57,9 @@ func checkURL(ctx context.Context, u string) error {
 	if !strings.HasPrefix(u, "https://") {
 		return errors.New("the URL must start with https://")
 	}
+	if pu, err := url.Parse(u); err != nil || pu.Host == "" {
+		return fmt.Errorf("%q is not a valid URL", u)
+	}
 	ctx, cancel := context.WithTimeout(ctx, checkTimeout)
 	defer cancel()
 	if _, err := httpGet(ctx, u); err != nil {

@@ -48,34 +48,33 @@ func TestPresetUploadSshKeys(t *testing.T) {
 }
 
 func TestPresetRestoreSecrets(t *testing.T) {
-	setup := func(t *testing.T, v string) (*fixture, string) {
+	setup := func(t *testing.T, v string) *fixture {
 		fx := newFixture(t)
 		fx.Env.Cfg.Data["useBitwarden"] = "true"
 		fx.Env.Cfg.Data["restoreSecrets"] = v
 		fx.Fake.Have("rbw")
-		p := fx.Path(".local", "bin", "secrets-restore")
-		writeFile(t, p, "#!/bin/sh\nexit 0\n", 0o755)
+		seedVault(fx)
 		presetAsk(t, fx)
-		return fx, p
+		return fx
 	}
 	t.Run("false: follow-up, no run, no ask", func(t *testing.T) {
-		fx, p := setup(t, "false")
+		fx := setup(t, "false")
 		fx.MustExec(steps.Finish())
-		if fx.mentions(p) {
+		if restoreRan(fx) {
 			t.Errorf("restore ran:\n%s", fx.dump())
 		}
 		if exists(fx.Path(".local", "state", "athome", "secrets-restore-attempted")) {
 			t.Errorf("a decline must not be remembered")
 		}
 		got, _ := os.ReadFile(steps.FollowupLogPath())
-		if !strings.Contains(string(got), "Secrets: run `secrets-restore` to recover") {
+		if !strings.Contains(string(got), "Secrets: run `athome secrets restore` to recover") {
 			t.Errorf("no secrets follow-up line, log: %q", got)
 		}
 	})
 	t.Run("true: runs without asking", func(t *testing.T) {
-		fx, p := setup(t, "true")
+		fx := setup(t, "true")
 		fx.MustExec(steps.Finish())
-		if !fx.mentions(p) {
+		if !restoreRan(fx) {
 			t.Errorf("restore did not run:\n%s", fx.dump())
 		}
 	})

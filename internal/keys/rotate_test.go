@@ -335,11 +335,19 @@ func TestCorruptState(t *testing.T) {
 }
 
 func TestResumeOldKeyAlreadyGone(t *testing.T) {
-	o, f, _ := rotateHome(t)
+	o, f, key := rotateHome(t)
 	withInventory(t)
-	// GitHub lists neither blob: nothing to delete, and that is fine.
-	if err := Rotate(context.Background(), o, Kinds{Laptop: true}); err != nil {
+	f.On("ssh", loginArgs(key+".rotate")...).Return(run.Result{Code: 255})
+	if err := Rotate(context.Background(), o, Kinds{Laptop: true}); err == nil {
+		t.Fatal("want the login check to fail")
+	}
+	// On resume GitHub lists neither blob (removed by hand meanwhile): nothing to delete, and that is fine.
+	f.On("ssh", loginArgs(key+".rotate")...).Return(run.Result{Code: 1, Stderr: "successfully authenticated"})
+	if err := Resume(context.Background(), o); err != nil {
 		t.Fatal(err)
+	}
+	if st, _ := loadState(o.Home); len(st.Jobs) != 0 {
+		t.Errorf("job left: %+v", st.Jobs)
 	}
 	if indexOf(cmdLines(f, o.Home), "gh api -X DELETE") >= 0 {
 		t.Error("deleted a key GitHub did not list")

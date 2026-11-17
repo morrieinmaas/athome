@@ -334,8 +334,8 @@ Decisions:
   1. `restore-bitwarden`: done when `rbw unlocked` exits 0. Apply runs `bw-setup` on a
      terminal; without one, or if rbw is still locked after it, it fails with
      `rbw is not unlocked: run bw-setup, then re-run athome init --restore`.
-  2. `restore-gh`: done when `gh auth status` exits 0. Apply runs `gh auth login`
-     interactively on a terminal; without one it fails with
+  2. `restore-gh`: done when `gh auth status` exits 0. Apply runs `gh auth login --git-protocol https --skip-ssh-key`
+     interactively on a terminal (so gh never makes a key before the old one is restored); without one it fails with
      `gh is not logged in: run gh auth login, then re-run athome init --restore`.
   3. `restore-ssh-key`: done when the laptop key exists (kept, never overwritten). Apply
      picks the item: `--import-ssh-bw` when given, else the one `rbw list` name matching

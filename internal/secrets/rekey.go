@@ -188,7 +188,7 @@ func (o RekeyOpts) preconditions(ctx context.Context) int {
 		o.errf("the vault is locked; run git-crypt unlock, then re-run athome secrets rekey\n")
 		return exitError
 	}
-	r, err = o.git(ctx, "status", "--porcelain")
+	r, err = o.git(ctx, "status", "--porcelain", "--ignored")
 	if err != nil || r.Code != 0 {
 		o.gitFailed(err, r)
 		return exitError

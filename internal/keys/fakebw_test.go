@@ -30,7 +30,9 @@ type fakeBW struct {
 }
 
 func newFakeBW(t *testing.T) *fakeBW {
-	return &fakeBW{Fake: runtest.NewFake(), t: t, items: map[string][]string{}, keygenOK: true}
+	f := &fakeBW{Fake: runtest.NewFake(), t: t, items: map[string][]string{}, keygenOK: true}
+	f.Have("rbw")
+	return f
 }
 
 func (f *fakeBW) put(name, content string) {

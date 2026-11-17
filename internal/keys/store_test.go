@@ -2,10 +2,13 @@ package keys
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/morrieinmaas/athome/internal/run/runtest"
 )
 
 const pem = "fake private key\nsecretbytes\nend"
@@ -97,5 +100,13 @@ func TestStoreListFails(t *testing.T) {
 	}
 	if len(f.get("x")) != 0 {
 		t.Error("stored despite the failed list")
+	}
+}
+
+func TestStoreWithoutRbw(t *testing.T) {
+	f := newFakeBW(t)
+	f.Fake = runtest.NewFake() // no rbw on PATH
+	if err := Store(context.Background(), f, "x", "p", "n"); !errors.Is(err, ErrNoRbw) {
+		t.Errorf("err = %v, want ErrNoRbw (not a locked message)", err)
 	}
 }

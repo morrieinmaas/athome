@@ -141,6 +141,9 @@ func runJobs(ctx context.Context, o Options, st *state, boxes []Box) error {
 	for _, j := range st.Jobs {
 		if jobDone(j) {
 			removeOldKey(j) // a crash after the last save can leave it
+			if j.Kind == kindLaptop {
+				st.LastRotated = now().UTC().Format(time.RFC3339)
+			}
 			continue
 		}
 		save := func() error { return st.save(o.Home) }
@@ -277,6 +280,9 @@ func exists(path string) bool {
 // requireUnlocked stops a run before any job is saved or touched: every job
 // reads or writes Bitwarden, and a locked rbw must never look like a missing item.
 func requireUnlocked(ctx context.Context, o Options) error {
+	if _, err := o.Run.LookPath("rbw"); err != nil {
+		return ErrNoRbw
+	}
 	if res, err := o.Run.Run(ctx, run.Cmd{Name: "rbw", Args: []string{"unlocked"}}); err != nil || res.Code != 0 {
 		return ErrLocked
 	}

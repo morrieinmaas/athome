@@ -1,9 +1,11 @@
 package steps_test
 
 import (
+	"io"
 	"strings"
 	"testing"
 
+	"github.com/morrieinmaas/athome/internal/prompt"
 	"github.com/morrieinmaas/athome/internal/run"
 	"github.com/morrieinmaas/athome/internal/steps"
 )
@@ -229,5 +231,19 @@ func TestBWBackupEditsExistingItem(t *testing.T) {
 	fx.MustExec(steps.SSHKey())
 	if !fx.called("rbw", "edit", item) || fx.called("rbw", "add") {
 		t.Errorf("want rbw edit, not add:\n%s", fx.dump())
+	}
+}
+
+// gh's login must not offer to generate an ssh key: that would become the
+// laptop key before the old one is restored.
+func TestRestoreGhLoginMakesNoKey(t *testing.T) {
+	fx := newFixture(t)
+	fx.Fake.Have("rbw", "gh")
+	fx.Fake.On("gh", "auth", "status").Return(run.Result{Code: 1})
+	fx.Env.Ask = prompt.New(strings.NewReader(""), io.Discard)
+	fx.Exec(restoreRun())
+	logins := fx.callsTo("gh", "auth", "login")
+	if len(logins) != 1 || strings.Join(logins[0].Args, " ") != "auth login --git-protocol https --skip-ssh-key" {
+		t.Errorf("gh auth login calls = %+v", logins)
 	}
 }

@@ -33,10 +33,16 @@ func ItemFor(key string) string { return "ssh/" + filepath.Base(key) }
 // ErrLocked is returned when rbw is not unlocked.
 var ErrLocked = errors.New("rbw is locked; run: rbw unlock, then re-run")
 
+// ErrNoRbw is returned when rbw is not installed.
+var ErrNoRbw = errors.New("rbw is not installed; install it (athome init does), then re-run")
+
 // Store writes password and notes to the Bitwarden item, adding it when absent
 // and editing it in place when present, so a name never has two items. The
 // content reaches rbw through an EDITOR script, never on a command line.
 func Store(ctx context.Context, r run.Runner, item, password, notes string) error {
+	if _, err := r.LookPath("rbw"); err != nil {
+		return ErrNoRbw
+	}
 	if res, err := r.Run(ctx, run.Cmd{Name: "rbw", Args: []string{"unlocked"}}); err != nil || res.Code != 0 {
 		return ErrLocked
 	}

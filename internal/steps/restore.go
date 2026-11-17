@@ -57,7 +57,7 @@ func restoreGHCheck(ctx context.Context, env *Env) (bool, error) {
 
 func restoreGHApply(ctx context.Context, env *Env) error {
 	if env.Ask != nil {
-		env.Run.Run(ctx, run.Cmd{Name: "gh", Args: []string{"auth", "login"}, Interactive: true})
+		env.Run.Run(ctx, run.Cmd{Name: "gh", Args: []string{"auth", "login", "--git-protocol", "https", "--skip-ssh-key"}, Interactive: true})
 		if ghLoggedIn(ctx, env) {
 			return nil
 		}

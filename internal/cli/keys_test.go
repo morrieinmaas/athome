@@ -18,6 +18,7 @@ func runKeysMain(t *testing.T, args ...string) (int, string, string) {
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("TMPDIR", t.TempDir())
 	f := runtest.NewFake()
+	f.Have("rbw")
 	f.Have("chezmoi")
 	t.Cleanup(cli.SetRunner(f))
 	var out, errw bytes.Buffer
@@ -66,6 +67,7 @@ func TestKeysPendingAndAll(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("TMPDIR", t.TempDir())
 	f := runtest.NewFake()
+	f.Have("rbw")
 	t.Cleanup(cli.SetRunner(f))
 	state := keys.StatePath(home)
 	os.MkdirAll(filepath.Dir(state), 0o755)

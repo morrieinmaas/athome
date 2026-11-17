@@ -204,7 +204,7 @@ it takes.
 | --- | --- |
 | `--install-from <path>` | Install this `athome` binary instead of downloading one (a local build, or CI). |
 | `--help` | Print the installer's usage, not the init flags; run `athome init --help` to list those. |
-| `ATHOME_VERSION` | Release to install, e.g. `v0.4.0`. Default: the tag at `HEAD`, else the nearest tag. |
+| `ATHOME_VERSION` | Release to install, e.g. `v0.5.0`. Default: the tag at `HEAD`, else the nearest tag. |
 | `ATHOME_RELEASE_BASE` | Base URL to download releases from, for a mirror or a test server. |
 | `ATHOME_REPO` | Set by the installer to its own checkout, so `athome init` finds the repo from any directory. |
 

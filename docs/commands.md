@@ -6,8 +6,10 @@
 ## athome init
 
 Sets up this machine: the same baseline steps as the old bash bootstrap. A
-second run skips whatever is already done and ends with
-`athome: applied 0, skipped N`.
+second run skips whatever is already done and, with `-y` or non-interactively,
+ends with `athome: applied 0, skipped N`. An interactive rerun asks some questions
+again (ssh key choice, Bitwarden, an empty handle or URL), so those steps count as
+applied.
 
 ```bash
 athome init [flags]

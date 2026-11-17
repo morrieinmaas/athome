@@ -51,12 +51,28 @@ FAKE
   cp "$ROOT/scripts/bootstrap.sh" "$BATS_TEST_TMPDIR/lclone/scripts/"
   printf '#!/bin/sh\necho "legacy-args:$*" >> "$HOME/calls"\n' >"$BATS_TEST_TMPDIR/lclone/scripts/bootstrap-legacy.sh"
   chmod 0755 "$BATS_TEST_TMPDIR/lclone/scripts/bootstrap-legacy.sh"
-  ATHOME_VERSION=v0.0.1 run bash "$BATS_TEST_TMPDIR/lclone/scripts/bootstrap.sh" --machine work -y
+  git -C "$BATS_TEST_TMPDIR/lclone" init -q
+  git -C "$BATS_TEST_TMPDIR/lclone" -c user.name=t -c user.email=t@t commit -q --allow-empty -m x
+  git -C "$BATS_TEST_TMPDIR/lclone" tag v0.0.1
+  unset ATHOME_VERSION
+  run bash "$BATS_TEST_TMPDIR/lclone/scripts/bootstrap.sh" --machine work -y
   [ "$status" -eq 0 ]
   [[ "$output" == *"no athome release for v0.0.1; falling back to scripts/bootstrap-legacy.sh for this release"* ]]
   grep -qx 'legacy-args:--machine work -y' "$HOME/calls"
   [ ! -e "$DEST" ]
   [ -z "$(ls -d "$TMPDIR"/athome-install.* 2>/dev/null)" ]
+}
+
+@test "an explicit ATHOME_VERSION with a missing asset exits 1 without the legacy script" {
+  mkdir -p "$BATS_TEST_TMPDIR/lclone/scripts"
+  cp "$ROOT/scripts/bootstrap.sh" "$BATS_TEST_TMPDIR/lclone/scripts/"
+  printf '#!/bin/sh\necho "legacy-args:$*" >> "$HOME/calls"\n' >"$BATS_TEST_TMPDIR/lclone/scripts/bootstrap-legacy.sh"
+  chmod 0755 "$BATS_TEST_TMPDIR/lclone/scripts/bootstrap-legacy.sh"
+  ATHOME_VERSION=v0.0.1 run bash "$BATS_TEST_TMPDIR/lclone/scripts/bootstrap.sh" -y
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"v0.0.1"* && "$output" == *"$REL/v0.0.1/$ASSET"* ]]
+  [ ! -e "$HOME/calls" ]
+  [ ! -e "$DEST" ]
 }
 
 @test "an unreachable release base dies naming the URL, without falling back" {
@@ -115,6 +131,10 @@ legacy_clone() {
 @test "an HTTP 404 for the asset falls back to bootstrap-legacy.sh" {
   fake_curl
   legacy_clone
+  git -C "$BATS_TEST_TMPDIR/lclone" init -q
+  git -C "$BATS_TEST_TMPDIR/lclone" -c user.name=t -c user.email=t@t commit -q --allow-empty -m x
+  git -C "$BATS_TEST_TMPDIR/lclone" tag v0.0.1
+  unset ATHOME_VERSION
   FAKE_ASSET_CODE=404 ATHOME_RELEASE_BASE=https://releases.invalid run bash "$BATS_TEST_TMPDIR/lclone/scripts/bootstrap.sh" -y
   [ "$status" -eq 0 ]
   [[ "$output" == *"falling back to scripts/bootstrap-legacy.sh"* ]]

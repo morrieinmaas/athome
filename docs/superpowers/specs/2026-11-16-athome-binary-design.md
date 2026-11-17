@@ -279,8 +279,8 @@ Decisions:
   nearest tag (`git describe --tags --abbrev=0`). `ATHOME_VERSION` overrides it. With no
   tag it exits 1 and names `--install-from` and `go build`. If the asset download for the
   tag finds no release asset (HTTP 404, or a missing file under a `file://` base) and
-  `--install-from` was not given, it prints a note to stderr and execs
-  `scripts/bootstrap-legacy.sh` with the same arguments. Any other download failure
+  `--install-from` was not given and `ATHOME_VERSION` was not set (the tag came from git), it prints a note to stderr and execs
+  `scripts/bootstrap-legacy.sh` with the same arguments. With `ATHOME_VERSION` set, a missing asset exits 1 naming the tag and URL instead. Any other download failure
   (network, 5xx) exits 1 naming the URL and curl's error, and a missing `curl` exits 1
   naming it. The fallback is for one
   release only: tags v0.4.0 to v0.4.3 have no athome assets, so a fresh clone would

@@ -260,6 +260,7 @@ func bindCancel(ctx context.Context, env *steps.Env, stderr io.Writer) {
 	}
 	env.Ask.Done = ctx.Done()
 	env.Ask.OnCancel = func() {
+		// ponytail: SIGTERM at a prompt also exits 130 (bash would exit 143); exit 128+signo if it ever matters.
 		fmt.Fprint(stderr, "\nathome: interrupted\n")
 		env.RunCleanup()
 		exit(exitInterrupted)

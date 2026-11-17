@@ -54,7 +54,7 @@ func (s *formState) trackSubmit(_ tea.Model, msg tea.Msg) tea.Msg {
 var formKeys = []string{
 	"machineType", "hostname", "githubHandle", "githubId",
 	"personalName", "workEmail", "workName", "sidebizEmail", "sidebizName",
-	"bitwardenUrl", "useBitwarden", "uploadSshKeys", "restoreSecrets",
+	"bitwardenUrl", "useBitwarden", "bwBackupSshKey", "uploadSshKeys", "restoreSecrets",
 	"meshProvider", "nordvpnCountry", "netbirdManagementUrl",
 	"includeAgents", "agentsRepo", "extraPackages",
 	"slackDefaultWorkspace", "slackTeamId", "matterhornHost", "matterhornUser",
@@ -62,7 +62,7 @@ var formKeys = []string{
 
 var formDefaults = map[string]string{
 	"machineType": "personal", "meshProvider": "meshnet", "includeAgents": "true",
-	"useBitwarden": "true", "uploadSshKeys": "true", "restoreSecrets": "true",
+	"useBitwarden": "true", "bwBackupSshKey": "true", "uploadSshKeys": "true", "restoreSecrets": "true",
 }
 
 func newFormState(seed Seed) *formState {
@@ -112,17 +112,12 @@ func (s *formState) answers() map[string]string {
 	for k, p := range s.v {
 		out[k] = *p
 	}
-	switch *s.v["meshProvider"] {
-	case "none":
-		out["nordvpnCountry"], out["netbirdManagementUrl"] = "", ""
-	case "meshnet":
-		out["netbirdManagementUrl"] = ""
-	case "netbird":
-		out["nordvpnCountry"] = ""
-	}
 	if *s.v["useBitwarden"] == "false" { // the questions for these are hidden
 		delete(out, "bitwardenUrl") // not asked, so not answered: a stored URL is kept
 		out["restoreSecrets"] = "false"
+	}
+	if !s.generatesKey() || *s.v["useBitwarden"] == "false" { // the question is hidden
+		delete(out, "bwBackupSshKey")
 	}
 	if s.sshHasKey {
 		out["sshKeyAction"] = s.ssh
@@ -144,7 +139,24 @@ func (s *formState) answers() map[string]string {
 			out[k] = val
 		}
 	}
+	// The hidden mesh fields are blank, locked or not.
+	switch *s.v["meshProvider"] {
+	case "none":
+		out["nordvpnCountry"], out["netbirdManagementUrl"] = "", ""
+	case "meshnet":
+		out["netbirdManagementUrl"] = ""
+	case "netbird":
+		out["nordvpnCountry"] = ""
+	}
 	return out
+}
+
+// generatesKey reports whether the answered ssh choice makes a new key.
+func (s *formState) generatesKey() bool {
+	if s.sshHasKey {
+		return s.ssh == "generate"
+	}
+	return s.ssh != "skip"
 }
 
 func (s *formState) locked(k string) bool { return s.seed.Locked[k] }
@@ -231,6 +243,9 @@ func (s *formState) pages(ctx context.Context) []func() *huh.Form {
 					s.input("bitwardenUrl", "Bitwarden server URL", "empty = US cloud; EU = https://vault.bitwarden.eu; or your Vaultwarden URL", validBitwardenURL(s.seed.CheckURL, ctx, s.isSubmitting)),
 					s.yesNo("restoreSecrets", "Restore secrets from Bitwarden?"),
 				).Title("Bitwarden").WithHideFunc(func() bool { return *s.v["useBitwarden"] == "false" }),
+				huh.NewGroup(
+					s.yesNo("bwBackupSshKey", "Store the ssh key in Bitwarden?"),
+				).WithHideFunc(func() bool { return *s.v["useBitwarden"] == "false" || !s.generatesKey() }),
 			)
 		},
 		func() *huh.Form {
@@ -276,7 +291,7 @@ func (m *reviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.choice = "apply"
 		case "b":
 			m.choice = "back"
-		case "q", "ctrl+c", "esc":
+		case "q", "ctrl+c":
 			m.choice = "quit"
 		default:
 			return m, nil

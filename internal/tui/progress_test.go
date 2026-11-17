@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -286,5 +287,53 @@ func TestProgressParentCancelQuitsAsCancel(t *testing.T) {
 				t.Fatalf("err = %v, want a cancel", err)
 			}
 		})
+	}
+}
+
+// With more steps than rows, bubbletea would drop the top of the view: the view
+// must fit the terminal, keep the running step and, with the log on, its last line.
+func TestProgressViewFitsTerminalHeight(t *testing.T) {
+	var list []steps.Step
+	for i := 0; i < 32; i++ {
+		list = append(list, fake(fmt.Sprintf("step-%02d", i), true, nil))
+	}
+	r := newProgressRun(context.Background(), &steps.Env{}, list)
+	defer r.cancel()
+	m := r.m
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	for i := range m.rows {
+		switch {
+		case i < 20:
+			m.rows[i].state = "done"
+		case i == 20:
+			m.rows[i].state = "apply"
+		}
+	}
+	for i := 0; i < 40; i++ {
+		fmt.Fprintf(m.log, "log line %02d\n", i)
+	}
+	check := func(name string, wantLog bool) {
+		t.Helper()
+		v := m.View()
+		if n := strings.Count(v, "\n") + 1; n > 24 {
+			t.Errorf("%s: view has %d lines, the terminal has 24:\n%s", name, n, v)
+		}
+		if !strings.Contains(v, "step-20") {
+			t.Errorf("%s: the running step is not visible:\n%s", name, v)
+		}
+		if got := strings.Contains(v, "log line 39"); got != wantLog {
+			t.Errorf("%s: last log line visible = %v, want %v:\n%s", name, got, wantLog, v)
+		}
+	}
+	check("log off", false)
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
+	check("log on", true)
+
+	m.rows[20].state = "done"
+	for i := 21; i < len(m.rows); i++ {
+		m.rows[i].state = "done"
+	}
+	if v := m.View(); !strings.Contains(v, "step-31") {
+		t.Errorf("the last step is not visible when all are done:\n%s", v)
 	}
 }

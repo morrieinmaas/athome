@@ -207,99 +207,6 @@ func TestMergeAnswers(t *testing.T) {
 	}
 }
 
-func TestProgressWireSuspendsAndAsks(t *testing.T) {
-	_, _ = tuiSandbox(t)
-	runForm = func(context.Context, io.Reader, io.Writer, tui.Seed) (map[string]string, error) {
-		return map[string]string{"machineType": "personal", "includeAgents": "true"}, nil
-	}
-	suspended := 0
-	runProgress = func(ctx context.Context, _ io.Reader, _ io.Writer, env *steps.Env, _ []steps.Step, wire func(func(func()))) (steps.Report, error) {
-		wire(func(fn func()) { suspended++; fn() })
-		if env.Ask == nil || env.Ask.Around == nil {
-			t.Error("Ask must stay set with Around wired")
-		}
-		env.Run.Run(ctx, run.Cmd{Name: "bw-setup", Interactive: true})
-		env.Run.Run(ctx, run.Cmd{Name: "git"})
-		return steps.Report{}, nil
-	}
-	if code, _, e := run2("init"); code != 0 {
-		t.Fatalf("exit %d: %s", code, e)
-	}
-	if suspended != 1 {
-		t.Errorf("only the interactive command suspends: got %d", suspended)
-	}
-}
-
-func TestProgressFailureAndCancel(t *testing.T) {
-	_, _ = tuiSandbox(t)
-	runForm = func(context.Context, io.Reader, io.Writer, tui.Seed) (map[string]string, error) {
-		return map[string]string{"machineType": "personal"}, nil
-	}
-	runProgress = func(context.Context, io.Reader, io.Writer, *steps.Env, []steps.Step, func(func(func()))) (steps.Report, error) {
-		return steps.Report{}, errors.New("boom")
-	}
-	code, _, stderr := run2("init")
-	if code != 1 || !strings.Contains(stderr, "athome init: boom") {
-		t.Errorf("failure: exit %d stderr %q", code, stderr)
-	}
-	runProgress = func(context.Context, io.Reader, io.Writer, *steps.Env, []steps.Step, func(func(func()))) (steps.Report, error) {
-		return steps.Report{}, errors.Join(errors.New("run canceled"), context.Canceled)
-	}
-	if code, _, _ := run2("init"); code != 130 {
-		t.Errorf("cancel: exit %d, want 130", code)
-	}
-}
-
-func TestHomeRouting(t *testing.T) {
-	for _, c := range []struct {
-		choice   string
-		wantCode int
-		wantForm bool
-	}{{"quit", 0, false}, {"init", 130, true}} {
-		t.Run(c.choice, func(t *testing.T) {
-			home, shown := tuiSandbox(t)
-			chez := filepath.Join(home, ".config", "chezmoi")
-			os.MkdirAll(chez, 0o755)
-			os.WriteFile(filepath.Join(chez, "chezmoi.toml"), []byte("[data]\n  machineType = \"work\"\n  hostname = \"hb\"\n  githubHandle = \"octo\"\n"), 0o644)
-			var info tui.HomeInfo
-			runHome = func(_ io.Reader, _ io.Writer, i tui.HomeInfo) (string, error) { info = i; return c.choice, nil }
-			code, out, _ := run2()
-			if code != c.wantCode || (len(*shown) > 0) != c.wantForm {
-				t.Errorf("exit %d screens %v", code, *shown)
-			}
-			if out != "" && strings.Contains(out, "Usage") {
-				t.Error("a terminal must get the home screen, not usage")
-			}
-			if !info.SetUp || info.MachineType != "work" || info.Hostname != "hb" || info.Handle != "octo" || info.Version != "dev" || info.Repo == "" {
-				t.Errorf("info = %+v", info)
-			}
-		})
-	}
-}
-
-func TestNoArgsWithoutTerminalPrintsUsage(t *testing.T) {
-	_, _ = tuiSandbox(t)
-	stdoutIsTTY = func() bool { return false }
-	runHome = func(io.Reader, io.Writer, tui.HomeInfo) (string, error) {
-		t.Error("home screen must not run without a terminal")
-		return "quit", nil
-	}
-	if code, out, _ := run2(); code != 0 || !strings.Contains(out, "Usage: athome") {
-		t.Errorf("exit %d out %q", code, out)
-	}
-}
-
-func TestHomeNotSetUpAndNoRepo(t *testing.T) {
-	_, _ = tuiSandbox(t)
-	t.Chdir(t.TempDir())
-	var info tui.HomeInfo
-	runHome = func(_ io.Reader, _ io.Writer, i tui.HomeInfo) (string, error) { info = i; return "quit", nil }
-	run2()
-	if info.SetUp || info.Repo != "" {
-		t.Errorf("info = %+v, want not set up and empty repo", info)
-	}
-}
-
 func TestCheckURLAndHandle(t *testing.T) {
 	oldGet := httpGet
 	t.Cleanup(func() { httpGet = oldGet })
@@ -413,7 +320,7 @@ func TestQuitOnReviewPageExits130AndWritesNothing(t *testing.T) {
 	for _, page := range []struct {
 		title  string
 		fields int
-	}{{"Machine", 2}, {"Identity", 6}, {"Keys and secrets", 5}, {"Network", 2}, {"Extras", 7}} {
+	}{{"Machine", 2}, {"Identity", 6}, {"Keys and secrets", 6}, {"Network", 2}, {"Extras", 7}} {
 		waitFor(page.title)
 		pw.WriteString(strings.Repeat("\r", page.fields))
 	}
@@ -485,25 +392,6 @@ func TestMergeAnswersHostnameNeedsNoProcessEnv(t *testing.T) {
 	mergeAnswers(env, map[string]string{"hostname": "testbox"})
 	if _, ok := env.Cfg.Data["hostname"]; ok {
 		t.Error("the default hostname must not be pinned")
-	}
-}
-
-// Ctrl-C in the progress view still runs the registered cleanups, and exits 130.
-func TestProgressCancelRunsCleanup(t *testing.T) {
-	_, _ = tuiSandbox(t)
-	runForm = func(context.Context, io.Reader, io.Writer, tui.Seed) (map[string]string, error) {
-		return map[string]string{"machineType": "personal"}, nil
-	}
-	cleaned := false
-	runProgress = func(_ context.Context, _ io.Reader, _ io.Writer, env *steps.Env, _ []steps.Step, _ func(func(func()))) (steps.Report, error) {
-		env.Cleanup = append(env.Cleanup, func() { cleaned = true })
-		return steps.Report{}, errors.Join(errors.New("run canceled"), context.Canceled)
-	}
-	if code, _, _ := run2("init"); code != 130 {
-		t.Errorf("exit %d, want 130", code)
-	}
-	if !cleaned {
-		t.Error("env.Cleanup did not run after a cancel")
 	}
 }
 

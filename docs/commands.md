@@ -43,9 +43,10 @@ and the machine type, hostname and GitHub handle from `chezmoi.toml` (or "not se
 with `init` and `quit`. Without a terminal it prints usage.
 
 Questions are asked only on a terminal. A value from a flag or `ATHOME_*`
-variable is read-only; a value from the config file is prefilled and editable.
-`--config` is unattended only with `-y` or without a terminal; on a terminal it
-uses line prompts, not the TUI. Details on the answers are
+variable is read-only. A value from the config file is prefilled and editable
+only in the form; line prompts (`--plain`, or a `--config` run on a terminal)
+never ask for it and use it as is. `--config` is unattended only with `-y` or
+without a terminal; on a terminal it uses line prompts, not the TUI. Details on the answers are
 in [unattended installs](install.md#unattended-installs).
 
 `athome init` finds the repo through `ATHOME_REPO` (a path that must hold

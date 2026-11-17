@@ -64,6 +64,7 @@ type progressModel struct {
 	runCtx   context.Context
 	rep      steps.Report
 	err      error
+	height   int // terminal rows from the last tea.WindowSizeMsg; 0 until one arrives
 }
 
 func (m *progressModel) Init() tea.Cmd {
@@ -89,6 +90,8 @@ func (m *progressModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err == nil || m.canceled {
 			return m, tea.Quit
 		}
+	case tea.WindowSizeMsg:
+		m.height = msg.Height
 	case spinner.TickMsg:
 		var cmd tea.Cmd
 		m.spin, cmd = m.spin.Update(msg)
@@ -108,31 +111,104 @@ func (m *progressModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *progressModel) View() string {
-	var b strings.Builder
+// stepLines renders one line per step.
+func (m *progressModel) stepLines() []string {
+	lines := make([]string, 0, len(m.rows))
 	for _, r := range m.rows {
 		switch r.state {
 		case "check", "apply":
-			fmt.Fprintf(&b, "%s %s\n", m.spin.View(), r.name)
+			lines = append(lines, fmt.Sprintf("%s %s", m.spin.View(), r.name))
 		case "done":
-			fmt.Fprintf(&b, "✓ %s\n", r.name)
+			lines = append(lines, "✓ "+r.name)
 		case "skip":
-			fmt.Fprintf(&b, "- %s (skipped)\n", r.name)
+			lines = append(lines, "- "+r.name+" (skipped)")
 		case "fail":
-			fmt.Fprintf(&b, "✗ %s: %v\n", r.name, r.err)
+			lines = append(lines, fmt.Sprintf("✗ %s: %v", r.name, r.err))
 		default:
-			fmt.Fprintf(&b, "  %s\n", r.name)
+			lines = append(lines, "  "+r.name)
 		}
 	}
-	if m.showLog {
-		b.WriteString("\n--- run log ---\n" + m.log.String())
+	return lines
+}
+
+// focusRow is the row a window of steps is centred on: the running step, else
+// the failed one, else the last step that has finished.
+func (m *progressModel) focusRow() int {
+	last := 0
+	for i, r := range m.rows {
+		switch r.state {
+		case "check", "apply", "fail":
+			return i
+		case "done", "skip":
+			last = i
+		}
 	}
+	return last
+}
+
+// window picks h of the lines around focus.
+func window(lines []string, focus, h int) []string {
+	if h >= len(lines) {
+		return lines
+	}
+	start := focus - h/2
+	if start > len(lines)-h {
+		start = len(lines) - h
+	}
+	if start < 0 {
+		start = 0
+	}
+	return lines[start : start+h]
+}
+
+// View fits the terminal height once it is known: bubbletea drops the top lines
+// of a taller view, which would hide the steps. The steps show a window around
+// the running one, and the log gets the lines that are left, at least a third of
+// the screen when the steps alone would fill it.
+func (m *progressModel) View() string {
+	lines := m.stepLines()
+	var footer string
 	switch {
 	case m.finished && m.err != nil:
-		b.WriteString("\nl: toggle log   any other key: exit\n")
+		footer = "\nl: toggle log   any other key: exit\n"
 	case !m.finished:
-		b.WriteString("\nl: toggle log   ctrl-c: cancel\n")
+		footer = "\nl: toggle log   ctrl-c: cancel\n"
 	}
+	var log []string
+	if m.showLog {
+		log = strings.Split(strings.TrimRight(m.log.String(), "\n"), "\n")
+		if len(log) == 1 && log[0] == "" {
+			log = nil
+		}
+	}
+	if m.height > 0 {
+		// The newline that ends the view counts as a line of its own.
+		body := m.height - 1 - strings.Count(footer, "\n")
+		if body < 1 {
+			body = 1
+		}
+		if m.showLog {
+			content := min(len(log), max(1, body/3-2))
+			if free := body - 2 - len(lines); free > content {
+				content = min(len(log), free)
+			}
+			log = log[len(log)-content:]
+			lines = window(lines, m.focusRow(), max(1, body-2-content))
+		} else {
+			lines = window(lines, m.focusRow(), body)
+		}
+	}
+	var b strings.Builder
+	for _, l := range lines {
+		b.WriteString(l + "\n")
+	}
+	if m.showLog {
+		b.WriteString("\n--- run log ---\n")
+		for _, l := range log {
+			b.WriteString(l + "\n")
+		}
+	}
+	b.WriteString(footer)
 	return b.String()
 }
 

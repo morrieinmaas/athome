@@ -81,6 +81,62 @@ func TestFormMeshNoneBlanksBoth(t *testing.T) {
 	if got["nordvpnCountry"] != "" || got["netbirdManagementUrl"] != "" {
 		t.Errorf("mesh fields not blanked: %q %q", got["nordvpnCountry"], got["netbirdManagementUrl"])
 	}
+	// Both fields are hidden for none, so an env lock must not keep their values.
+	v["netbirdManagementUrl"] = "https://nb.example"
+	got = newFormState(Seed{Values: v, Locked: map[string]bool{"nordvpnCountry": true, "netbirdManagementUrl": true}}).answers()
+	if got["nordvpnCountry"] != "" || got["netbirdManagementUrl"] != "" {
+		t.Errorf("locked mesh fields not blanked: %q %q", got["nordvpnCountry"], got["netbirdManagementUrl"])
+	}
+}
+
+func TestFormBwBackupAnswer(t *testing.T) {
+	noKey := func(v map[string]string) map[string]string {
+		return newFormState(Seed{Values: v}).answers()
+	}
+	if got := noKey(map[string]string{})["bwBackupSshKey"]; got != "true" {
+		t.Errorf("a generated key with Bitwarden defaults to storing it, got %q", got)
+	}
+	if got := noKey(map[string]string{"bwBackupSshKey": "false"})["bwBackupSshKey"]; got != "false" {
+		t.Errorf("a seeded no is kept, got %q", got)
+	}
+	for name, v := range map[string]map[string]string{
+		"bitwarden off": {"useBitwarden": "false"},
+		"key skipped":   {"generateSshKey": "false"},
+	} {
+		if got, ok := noKey(v)["bwBackupSshKey"]; ok {
+			t.Errorf("%s: the question is hidden, so no answer: %q", name, got)
+		}
+	}
+	withKey := func(action string) map[string]string {
+		return newFormState(Seed{Values: map[string]string{"sshKeyAction": action}, KeyExists: func(string) bool { return true }}).answers()
+	}
+	if got, ok := withKey("use")["bwBackupSshKey"]; ok {
+		t.Errorf("an existing key kept is not stored again: %q", got)
+	}
+	if got := withKey("generate")["bwBackupSshKey"]; got != "true" {
+		t.Errorf("an existing key replaced by a generated one: %q", got)
+	}
+}
+
+func TestReviewPageQuitKeys(t *testing.T) {
+	for k, want := range map[string]string{"q": "quit", "ctrl+c": "quit", "enter": "apply", "b": "back", "esc": ""} {
+		m := &reviewModel{}
+		var msg tea.KeyMsg
+		switch k {
+		case "ctrl+c":
+			msg = tea.KeyMsg{Type: tea.KeyCtrlC}
+		case "enter":
+			msg = tea.KeyMsg{Type: tea.KeyEnter}
+		case "esc":
+			msg = tea.KeyMsg{Type: tea.KeyEsc}
+		default:
+			msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(k)}
+		}
+		m.Update(msg)
+		if m.choice != want {
+			t.Errorf("key %q: choice %q, want %q", k, m.choice, want)
+		}
+	}
 }
 
 func TestFormSshKeyMapping(t *testing.T) {
@@ -232,8 +288,10 @@ func runLockedToReview(t *testing.T, ctx context.Context) (*syncBuf, *os.File, c
 			}
 		}
 	}
-	// huh skips groups that hold only read-only notes, so only the last form
-	// shows a page to confirm.
+	// huh skips groups that hold only read-only notes, except a group of a single
+	// note, which it shows: the store-the-key question is one.
+	waitFor("Store the ssh key in Bitwarden?")
+	pw2.WriteString("\r")
 	waitFor("Network")
 	pw2.WriteString("\r")
 	waitFor("enter apply, b back to edit, q quit")

@@ -131,7 +131,7 @@ See the [Arch wiki on netboot](https://wiki.archlinux.org/title/Netboot).
 Three ways to run the same steps:
 
 - **Interactive form** (default on a terminal): `./scripts/bootstrap.sh` opens a full-screen form,
-  then a progress view. Answers set by a flag or `ATHOME_*` variable are read-only; answers from a config file are prefilled and editable.
+  then a progress view. Answers set by a flag or `ATHOME_*` variable are read-only; answers from a config file are prefilled and editable in the form only.
 - **Plain prompts**: `--plain` (or `ATHOME_PLAIN=1`) asks line by line, as older releases did.
 - **Unattended**: `-y` or no terminal never asks; a `--config` file supplies the answers. On a terminal without `-y`, `--config` uses line prompts, not the TUI.
 
@@ -220,7 +220,8 @@ it takes.
 Prompts are plain questions asked only on a terminal. They are skipped with
 `-y` or `--non-interactive`. A value from a flag or `ATHOME_*` variable is
 read-only and never asked; a value from the config file is prefilled and
-editable. `--config` is unattended only with `-y` or without a terminal; on a
+editable only in the form, while line prompts (`--plain`) never ask for it and
+use it as is. `--config` is unattended only with `-y` or without a terminal; on a
 terminal it uses line prompts, not the TUI.
 
 The installer needs a release that carries `athome` binaries; the first is the

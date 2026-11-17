@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -170,4 +171,13 @@ func TestInstallTagWithoutAssetsNamesAssetURL(t *testing.T) {
 		t.Fatalf("error does not name the asset URL: %v", err)
 	}
 	noPart(t, d)
+}
+
+func TestRemoteTags(t *testing.T) {
+	out := "abc\trefs/tags/v0.5.2\n  def\trefs/tags/v0.5.10 \n\nnot a ref line\n"
+	got := selfupdate.RemoteTags(out)
+	want := []string{"v0.5.2", "v0.5.10"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("RemoteTags = %q, want %q", got, want)
+	}
 }

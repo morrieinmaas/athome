@@ -104,6 +104,17 @@ func lines(s string) []string {
 	return out
 }
 
+// nulSplit splits git's -z output, which names files byte for byte instead of quoting them.
+func nulSplit(s string) []string {
+	var out []string
+	for _, f := range strings.Split(s, "\x00") {
+		if f != "" {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
 func mirrorSources(home string) []string {
 	var out []string
 	for _, pat := range []string{".env", ".env.*"} {
@@ -152,19 +163,7 @@ func Backup(ctx context.Context, o Opts) int {
 		o.errf("vault not found at %s; run 'athome secrets restore' to clone it first\n", o.Vault)
 		return exitError
 	}
-	for _, src := range mirrorSources(o.Home) {
-		fi, err := os.Stat(src)
-		if err != nil || !fi.Mode().IsRegular() {
-			continue
-		}
-		rel, err := filepath.Rel(o.Home, src)
-		if err != nil {
-			continue
-		}
-		if err := copyFile(src, filepath.Join(o.Vault, rel), fi.Mode().Perm()); err != nil {
-			o.errf("could not mirror %s: %v\n", src, err)
-		}
-	}
+	o.mirror()
 
 	if _, err := o.git(ctx, "add", "-A"); err != nil {
 		o.errf("%v\n", err)
@@ -179,15 +178,39 @@ func Backup(ctx context.Context, o Opts) int {
 		o.outf("✓ vault already in sync (no changes)\n")
 		return exitOK
 	}
+	if code := o.plaintextGate(ctx); code != exitOK {
+		return code
+	}
+	return o.commitPush(ctx)
+}
 
-	// Safety gate: every staged file must be ciphertext in the index.
-	r, err = o.git(ctx, "diff", "--cached", "--name-only")
+// mirror copies the secret files that exist under HOME into the vault.
+func (o Opts) mirror() {
+	for _, src := range mirrorSources(o.Home) {
+		fi, err := os.Stat(src)
+		if err != nil || !fi.Mode().IsRegular() {
+			continue
+		}
+		rel, err := filepath.Rel(o.Home, src)
+		if err != nil {
+			continue
+		}
+		if err := copyFile(src, filepath.Join(o.Vault, rel), fi.Mode().Perm()); err != nil {
+			o.errf("could not mirror %s: %v\n", src, err)
+		}
+	}
+}
+
+// plaintextGate is the safety gate: every staged file must be ciphertext in
+// the index. -z keeps non-ASCII names unquoted.
+func (o Opts) plaintextGate(ctx context.Context) int {
+	r, err := o.git(ctx, "diff", "--cached", "--name-only", "-z")
 	if err != nil {
 		o.errf("%v\n", err)
 		return exitError
 	}
 	bad := false
-	for _, f := range lines(r.Stdout) {
+	for _, f := range nulSplit(r.Stdout) {
 		if f == ".gitattributes" {
 			continue
 		}
@@ -201,7 +224,12 @@ func Backup(ctx context.Context, o Opts) int {
 		o.errf("ABORT: plaintext detected in staged files; refusing to commit/push. Is git-crypt unlocked & .gitattributes intact?\n")
 		return exitAbort
 	}
+	return exitOK
+}
 
+// commitPush commits the staged snapshot and pushes it. A failed commit exits 1
+// (the script carried on); a failed push only warns.
+func (o Opts) commitPush(ctx context.Context) int {
 	msg := "secrets snapshot " + time.Now().UTC().Format("2006-01-02T15:04:05Z")
 	if c, err := o.git(ctx, "-c", "user.email=secrets@local", "-c", "user.name=secrets-backup", "commit", "-qm", msg); err != nil || c.Code != 0 {
 		o.errf("commit failed\n%s", c.Stderr)
@@ -232,7 +260,7 @@ func Restore(ctx context.Context, o Opts) int {
 		return code
 	}
 
-	r, err := o.git(ctx, "ls-files")
+	r, err := o.git(ctx, "ls-files", "-z")
 	if err != nil {
 		o.errf("%v\n", err)
 		return exitError
@@ -241,7 +269,7 @@ func Restore(ctx context.Context, o Opts) int {
 		o.errf("git ls-files failed in %s\n%s", o.Vault, r.Stderr)
 		return exitError
 	}
-	files := lines(r.Stdout)
+	files := nulSplit(r.Stdout)
 
 	if sentinelEncrypted(o.Vault, files) {
 		if code := o.unlock(ctx); code != exitOK {

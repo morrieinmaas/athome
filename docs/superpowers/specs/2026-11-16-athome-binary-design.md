@@ -413,7 +413,7 @@ Decisions:
   `/opt/nanobrew/prefix/bin`, which does not exist on Linux); an underivable vault owner
   exits 1 instead of cloning `/attic`; the decoded key file is removed on every path; any
   argument to `backup`, or one other than `--dry-run` to `restore`, exits 2 (the scripts
-  ignored them). A failing `git ls-files` in `restore` exits 1 with a message (the script ignored it); a
+  ignored them). A failed `git commit` in `backup` exits 1 (the script carried on to the push). A failing `git ls-files` in `restore` exits 1 with a message (the script ignored it); a
   vault with no tracked files still copies nothing and exits 0. `backup`'s default vault stays
   `~/.local/share/attic` whatever `SECRETS_VAULT_NAME` is, as in the script. `restore --dry-run` still clones or pulls and unlocks, as the script does;
   only the copy is skipped.

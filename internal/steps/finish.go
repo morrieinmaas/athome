@@ -175,8 +175,9 @@ func secretsRestoreDone(ctx context.Context, env *Env) (bool, error) {
 	return !secretsRestorable(ctx, env), nil
 }
 
-// secretsHintDone: the follow-up line is wanted only without the script, and
-// once per run (Setup empties the log).
+// restoreSecrets runs athome secrets restore after asking (an interactive run) and
+// records the attempt in a marker unless a ~/.secrets/*/.env now exists. Declining
+// queues the follow-up hint instead.
 func restoreSecrets(ctx context.Context, env *Env) error {
 	if env.Ask != nil && !env.Ask.Confirm("restore your encrypted secrets now (athome secrets restore)?", true) { // B:1025
 		appendFollowup(env, secretsFollowup)

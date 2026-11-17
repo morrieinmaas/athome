@@ -8,8 +8,8 @@ import (
 	"io"
 	"os"
 	"runtime"
+	"slices"
 	"strings"
-	"syscall"
 
 	"github.com/morrieinmaas/athome/internal/prompt"
 	"github.com/morrieinmaas/athome/internal/run"
@@ -17,8 +17,9 @@ import (
 	"github.com/morrieinmaas/athome/internal/steps"
 )
 
-// updateExec replaces the process with the freshly installed binary; tests swap it.
-var updateExec = func(path string, argv []string) error { return syscall.Exec(path, argv, os.Environ()) }
+// updateExec replaces the process with the freshly installed binary; nil means
+// the default in steps, tests swap it.
+var updateExec func(path string, argv []string) error
 
 type updateOpts struct {
 	To  string
@@ -35,8 +36,9 @@ func updateFlags(o *updateOpts, out io.Writer) *flag.FlagSet {
 	return fs
 }
 
-func runUpdate(args []string, stdout, stderr io.Writer) int {
-	var o updateOpts
+// parseUpdate reads the flags and normalises --to. ok is false when runUpdate
+// should return code at once (help, or a usage error).
+func parseUpdate(args []string, stdout, stderr io.Writer) (o updateOpts, target string, toGiven bool, code int, ok bool) {
 	fs := updateFlags(&o, io.Discard)
 	err := fs.Parse(args)
 	if errors.Is(err, flag.ErrHelp) {
@@ -49,23 +51,29 @@ func runUpdate(args []string, stdout, stderr io.Writer) int {
 			}
 			fmt.Fprintf(stdout, "  %s%s\t%s\n", dash, f.Name, f.Usage)
 		})
-		return exitOK
+		return o, "", false, exitOK, false
 	}
 	if err == nil && fs.NArg() > 0 {
 		err = fmt.Errorf("unexpected argument %q", fs.Arg(0))
 	}
-	toGiven := false
 	fs.Visit(func(f *flag.Flag) { toGiven = toGiven || f.Name == "to" })
-	target := ""
 	if err == nil && toGiven {
-		var ok bool
-		if target, ok = selfupdate.Normalize(o.To); !ok {
+		var valid bool
+		if target, valid = selfupdate.Normalize(o.To); !valid {
 			err = fmt.Errorf("--to %q is not a version (want vX.Y.Z or X.Y.Z)", o.To)
 		}
 	}
 	if err != nil {
 		fmt.Fprintf(stderr, "athome update: %v\n", err)
-		return exitUsage
+		return o, "", toGiven, exitUsage, false
+	}
+	return o, target, toGiven, exitOK, true
+}
+
+func runUpdate(args []string, stdout, stderr io.Writer) int {
+	o, target, toGiven, code, ok := parseUpdate(args, stdout, stderr)
+	if !ok {
+		return code
 	}
 
 	home, err := os.UserHomeDir()
@@ -145,10 +153,8 @@ func resolveUpdateTarget(ctx context.Context, r run.Runner, repo, want string) (
 	if res.Code != 0 {
 		return "", fmt.Errorf("git ls-remote origin failed (offline?): %s", strings.TrimSpace(res.Stderr))
 	}
-	for _, line := range strings.Split(res.Stdout, "\n") {
-		if _, ref, ok := strings.Cut(strings.TrimSpace(line), "\t"); ok && ref == "refs/tags/"+want {
-			return want, nil
-		}
+	if slices.Contains(selfupdate.RemoteTags(res.Stdout), want) {
+		return want, nil
 	}
 	return "", fmt.Errorf("origin has no tag %s", want)
 }

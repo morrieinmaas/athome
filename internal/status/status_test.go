@@ -41,3 +41,51 @@ func TestAthomeDevBuildAndNoTags(t *testing.T) {
 		t.Errorf("no tags = %+v", c)
 	}
 }
+
+func miseComponent(t *testing.T, stdout string) (status.Component, run.Cmd, string) {
+	t.Helper()
+	repo, home := t.TempDir(), t.TempDir()
+	f := runtest.NewFake()
+	f.Have("mise")
+	f.On("mise", "ls", "--missing", "--json").Return(run.Result{Stdout: stdout})
+	rep := status.Collect(context.Background(), f, "dev", "abc", home, repo)
+	for _, c := range f.Calls() {
+		if c.Name == "mise" {
+			return rep.Components[2], c, home
+		}
+	}
+	t.Fatal("mise was not run")
+	return status.Component{}, run.Cmd{}, ""
+}
+
+func TestMiseRunsInHome(t *testing.T) {
+	_, cmd, home := miseComponent(t, "{}")
+	if cmd.Dir != home {
+		t.Errorf("mise ran in %q, want %q", cmd.Dir, home)
+	}
+}
+
+func TestMiseCounts(t *testing.T) {
+	if c, _, _ := miseComponent(t, "{}"); c.Status != status.Current {
+		t.Errorf("empty = %+v", c)
+	}
+	if c, _, _ := miseComponent(t, `{"node": [{}]}`); c.Status != status.NotCurrent {
+		t.Errorf("missing = %+v", c)
+	}
+	if c, _, _ := miseComponent(t, "not json"); c.Status != status.Unknown {
+		t.Errorf("bad json = %+v", c)
+	}
+}
+
+func TestMissingCount(t *testing.T) {
+	for in, want := range map[string]int{"": 0, " \n": 0, "{}": 0, "[]": 0, `{"a":1,"b":2}`: 2, `[1]`: 1} {
+		if n, err := status.MissingCount(in); err != nil || n != want {
+			t.Errorf("MissingCount(%q) = %d, %v; want %d", in, n, err, want)
+		}
+	}
+	for _, in := range []string{"nope", "null", "3", `"x"`} {
+		if _, err := status.MissingCount(in); err == nil {
+			t.Errorf("MissingCount(%q) must fail", in)
+		}
+	}
+}

@@ -56,7 +56,7 @@ func TestSecretsRestoreDryRun(t *testing.T) {
 	vault := filepath.Join(home, ".local", "share", "attic")
 	os.MkdirAll(filepath.Join(vault, ".git"), 0o755)
 	os.WriteFile(filepath.Join(vault, "a"), []byte("x"), 0o600)
-	fake.On("git", "ls-files").Return(run.Result{Stdout: "a\n"})
+	fake.On("git", "ls-files", "-z").Return(run.Result{Stdout: "a\x00"})
 	code, out, _ := runMain("secrets", "restore", "--dry-run")
 	if code != 0 || !strings.Contains(out, "  would restore  "+filepath.Join(home, "a")) {
 		t.Errorf("code %d out %q", code, out)

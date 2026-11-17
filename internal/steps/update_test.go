@@ -357,3 +357,50 @@ func TestUpdateApplyAndMise(t *testing.T) {
 		}
 	})
 }
+
+func TestUpdateSelfReexecMismatchFails(t *testing.T) {
+	for _, ver := range []string{"0.5.1", "dev"} {
+		t.Run(ver, func(t *testing.T) {
+			t.Setenv("ATHOME_UPDATE_REEXEC", "1")
+			fx := newFixture(t)
+			fx.writeOld()
+			srv, hits := releaseServer(t, "v0.5.2", "new", "")
+			execd := false
+			o := steps.UpdateOpts{Version: ver, Target: "v0.5.2", ToGiven: true, Yes: true, Base: srv.URL, Exec: func(string, []string) error { execd = true; return nil }}
+			_, err := fx.runUpdate(o, selfStep()...)
+			if err == nil || !strings.Contains(err.Error(), ver) || !strings.Contains(err.Error(), "v0.5.2") {
+				t.Fatalf("want an error naming %s and v0.5.2, got %v", ver, err)
+			}
+			if execd || len(*hits) != 0 {
+				t.Errorf("must not download or exec again: exec %v hits %v", execd, *hits)
+			}
+		})
+	}
+}
+
+func TestUpdateSelfReexecAtTargetSkips(t *testing.T) {
+	t.Setenv("ATHOME_UPDATE_REEXEC", "1")
+	fx := newFixture(t)
+	srv, hits := releaseServer(t, "v0.5.2", "new", "")
+	o := steps.UpdateOpts{Version: "0.5.2", Target: "v0.5.2", ToGiven: true, Yes: true, Base: srv.URL}
+	rep, err := fx.runUpdate(o, selfStep()...)
+	if err != nil || len(rep.Skipped) != 1 || len(*hits) != 0 {
+		t.Fatalf("report %+v err %v hits %v", rep, err, *hits)
+	}
+}
+
+func TestReexecEnvironMarksTheNewProcess(t *testing.T) {
+	env := steps.ReexecEnviron([]string{"A=1"})
+	if !reflect.DeepEqual(env, []string{"A=1", "ATHOME_UPDATE_REEXEC=1"}) {
+		t.Errorf("env %v", env)
+	}
+}
+
+func TestUpdateMiseBadJSONIsAnError(t *testing.T) {
+	fx := newFixture(t)
+	fx.Fake.On("mise", "ls", "--missing", "--json").Return(run.Result{Stdout: "garbage"})
+	_, err := fx.runUpdate(steps.UpdateOpts{Version: "0.5.2", Target: "v0.5.2"}, steps.Update()[3])
+	if err == nil || !strings.Contains(err.Error(), "mise ls --missing --json") {
+		t.Fatalf("err %v", err)
+	}
+}

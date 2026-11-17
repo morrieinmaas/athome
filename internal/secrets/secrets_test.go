@@ -64,7 +64,7 @@ func (f *fx) calls(name string, args ...string) []run.Cmd {
 func TestBackup(t *testing.T) {
 	staged := func(f *fx, names string, magic map[string]string) {
 		f.fake.On("git", "diff", "--cached", "--quiet").Return(run.Result{Code: 1})
-		f.fake.On("git", "diff", "--cached", "--name-only").Return(run.Result{Stdout: names})
+		f.fake.On("git", "diff", "--cached", "--name-only", "-z").Return(run.Result{Stdout: nul(names)})
 		for n, m := range magic {
 			f.fake.On("git", "cat-file", "-p", ":"+n).Return(run.Result{Stdout: m})
 		}
@@ -185,14 +185,14 @@ func TestBackup(t *testing.T) {
 
 func (f *fx) vaultWith(files ...string) {
 	f.withVault()
-	f.fake.On("git", "ls-files").Return(run.Result{Stdout: strings.Join(files, "\n") + "\n"})
+	f.fake.On("git", "ls-files", "-z").Return(run.Result{Stdout: strings.Join(files, "\x00") + "\x00"})
 }
 
 func TestRestore(t *testing.T) {
 	key := base64.StdEncoding.EncodeToString([]byte("KEYBYTES"))
 	t.Run("clones when the vault is missing", func(t *testing.T) {
 		f := newFx(t)
-		f.fake.On("git", "ls-files").Return(run.Result{})
+		f.fake.On("git", "ls-files", "-z").Return(run.Result{})
 		secrets.Restore(context.Background(), f.opts)
 		c := f.calls("gh", "repo", "clone", "alice/attic", f.vault, "--", "-q")
 		if len(c) != 1 {
@@ -446,7 +446,7 @@ func TestBackupVaultDefaultIgnoresVaultName(t *testing.T) {
 func TestRestoreLsFilesFailureExits1(t *testing.T) {
 	f := newFx(t)
 	f.withVault()
-	f.fake.On("git", "ls-files").Return(run.Result{Code: 128, Stderr: "fatal: not a git repository"})
+	f.fake.On("git", "ls-files", "-z").Return(run.Result{Code: 128, Stderr: "fatal: not a git repository"})
 	if code := secrets.Restore(context.Background(), f.opts); code != 1 {
 		t.Errorf("code = %d", code)
 	}
@@ -458,7 +458,7 @@ func TestRestoreLsFilesFailureExits1(t *testing.T) {
 func TestRestoreVaultWithNoTrackedFiles(t *testing.T) {
 	f := newFx(t)
 	f.withVault()
-	f.fake.On("git", "ls-files").Return(run.Result{})
+	f.fake.On("git", "ls-files", "-z").Return(run.Result{})
 	if code := secrets.Restore(context.Background(), f.opts); code != 0 {
 		t.Errorf("code = %d", code)
 	}
@@ -477,9 +477,76 @@ func TestRestoreRepoEnvWinsOverOwnerInClone(t *testing.T) {
 	t.Setenv("ATHOME_GITHUB_HANDLE", "carol")
 	f := newFx(t)
 	o := secrets.FromEnv(f.home, f.fake, &f.out, &f.errb)
-	f.fake.On("git", "ls-files").Return(run.Result{})
+	f.fake.On("git", "ls-files", "-z").Return(run.Result{})
 	secrets.Restore(context.Background(), o)
 	if len(f.calls("gh", "repo", "clone", "org/custom", o.Vault)) != 1 || len(f.calls("gh", "repo", "clone", "carol/attic")) != 0 {
 		t.Errorf("calls %v", f.fake.Calls())
 	}
+}
+
+// nul turns a newline-separated name list into git's -z output.
+func nul(names string) string {
+	return strings.ReplaceAll(names, "\n", "\x00")
+}
+
+func TestBackupGatesNonASCIINamesUnquoted(t *testing.T) {
+	f := newFx(t)
+	f.withVault()
+	name := ".secrets/prøj/.env"
+	f.fake.On("git", "diff", "--cached", "--quiet").Return(run.Result{Code: 1})
+	f.fake.On("git", "diff", "--cached", "--name-only", "-z").Return(run.Result{Stdout: ".gitattributes\x00" + name + "\x00"})
+	f.fake.On("git", "cat-file", "-p", ":"+name).Return(run.Result{Stdout: "PLAIN=1"})
+	if code := secrets.Backup(context.Background(), f.opts); code != 2 {
+		t.Errorf("code = %d", code)
+	}
+	if !strings.Contains(f.out.String(), "!! NOT ENCRYPTED in index: "+name) {
+		t.Errorf("out %q", f.out.String())
+	}
+	if len(f.calls("git", "cat-file", "-p", ":"+name)) != 1 {
+		t.Errorf("the file was not checked under its real name: %v", f.fake.Calls())
+	}
+}
+
+func TestRestoreCopiesNonASCIINames(t *testing.T) {
+	f := newFx(t)
+	name := ".secrets/prøj/日本.env"
+	f.vaultWith(".gitattributes", name)
+	f.write(filepath.Join(f.vault, name), "A=1")
+	if code := secrets.Restore(context.Background(), f.opts); code != 0 {
+		t.Errorf("code = %d, out %q", code, f.out.String()+f.errb.String())
+	}
+	if len(f.calls("git", "ls-files", "-z")) != 1 {
+		t.Errorf("want git ls-files -z: %v", f.fake.Calls())
+	}
+	if fi, err := os.Stat(f.home_(name)); err != nil || fi.Mode().Perm() != 0o600 {
+		t.Errorf("%s: %v %v", name, fi, err)
+	}
+}
+
+func TestBackupFailedCommitExits1(t *testing.T) {
+	f := newFx(t)
+	f.withVault()
+	f.fake.On("git", "diff", "--cached", "--quiet").Return(run.Result{Code: 1})
+	f.fake.On("git", "diff", "--cached", "--name-only", "-z").Return(run.Result{Stdout: "a\x00"})
+	f.fake.On("git", "cat-file", "-p", ":a").Return(run.Result{Stdout: header})
+	f.opts.Run = failCommit{f.fake}
+	if code := secrets.Backup(context.Background(), f.opts); code != 1 {
+		t.Errorf("code = %d", code)
+	}
+	if len(f.calls("git", "push")) != 0 {
+		t.Errorf("must not push after a failed commit")
+	}
+	if !strings.Contains(f.errb.String(), "commit failed") {
+		t.Errorf("stderr %q", f.errb.String())
+	}
+}
+
+type failCommit struct{ run.Runner }
+
+func (r failCommit) Run(ctx context.Context, c run.Cmd) (run.Result, error) {
+	res, err := r.Runner.Run(ctx, c)
+	if slices.Contains(c.Args, "commit") {
+		res.Code, res.Stderr = 1, "nothing to commit"
+	}
+	return res, err
 }

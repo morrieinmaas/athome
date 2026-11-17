@@ -120,8 +120,8 @@ type options struct {
 	help    bool
 }
 
-func Main(ctx context.Context, args []string, env Env) int {
-	var o options
+// parseArgs reads the flags; ok is false when Main should return code at once.
+func parseArgs(args []string, env Env) (o options, code int, ok bool) {
 	for _, a := range args {
 		switch a {
 		case "--state":
@@ -138,16 +138,37 @@ func Main(ctx context.Context, args []string, env Env) int {
 			o.yes = true
 		case "-h", "--help":
 			fmt.Fprint(env.Stdout, helpText)
-			return exitOK
+			return o, exitOK, false
 		default:
 			fmt.Fprintf(env.Stderr, "athome teardown: unknown argument: %s (try --help)\n", a)
-			return exitUsage
+			return o, exitUsage, false
 		}
 	}
 	if o.tier == "" {
 		fmt.Fprint(env.Stdout, helpText)
 		fmt.Fprintf(env.Stderr, "\nathome teardown: pick a tier: --state | --dotfiles | --all\n")
-		return exitUsage
+		return o, exitUsage, false
+	}
+	return o, exitOK, true
+}
+
+// confirm asks for the tier name and reports whether it was typed.
+func confirm(env Env, c colors, tier string) bool {
+	fmt.Fprintf(env.Stdout, "\n%sThis will PERMANENTLY remove the above for tier \"%s\".%s\n", c.red, tier, c.rst)
+	fmt.Fprintf(env.Stdout, "Type %s%s%s to proceed (anything else aborts): ", c.red, tier, c.rst)
+	line, _ := bufio.NewReader(env.Stdin).ReadString('\n')
+	if strings.TrimSpace(line) != tier {
+		fmt.Fprintln(env.Stdout)
+		fmt.Fprintln(env.Stderr, "athome teardown: aborted, nothing was changed")
+		return false
+	}
+	return true
+}
+
+func Main(ctx context.Context, args []string, env Env) int {
+	o, code, ok := parseArgs(args, env)
+	if !ok {
+		return code
 	}
 
 	c := newColors(env.Color)
@@ -163,15 +184,8 @@ func Main(ctx context.Context, args []string, env Env) int {
 		fmt.Fprintf(env.Stdout, "\n%sDry run only, nothing changed.%s Re-run with --execute to apply.\n", c.dim, c.rst)
 		return exitOK
 	}
-	if !o.yes {
-		fmt.Fprintf(env.Stdout, "\n%sThis will PERMANENTLY remove the above for tier \"%s\".%s\n", c.red, o.tier, c.rst)
-		fmt.Fprintf(env.Stdout, "Type %s%s%s to proceed (anything else aborts): ", c.red, o.tier, c.rst)
-		line, _ := bufio.NewReader(env.Stdin).ReadString('\n')
-		if strings.TrimSpace(line) != o.tier {
-			fmt.Fprintln(env.Stdout)
-			fmt.Fprintln(env.Stderr, "athome teardown: aborted, nothing was changed")
-			return exitUsage
-		}
+	if !o.yes && !confirm(env, c, o.tier) {
+		return exitUsage
 	}
 	if err := p.execute(ctx, env, c); err != nil {
 		fmt.Fprintf(env.Stderr, "athome teardown: %v\n", err)
@@ -190,32 +204,33 @@ func newColors(on bool) colors {
 	return colors{"\033[31m", "\033[32m", "\033[33m", "\033[2m", "\033[0m"}
 }
 
+// printItem writes one plan line: a section title, a note, or an action after prefix.
+func printItem(w io.Writer, c colors, it item, prefix string) {
+	switch {
+	case it.section != "":
+		fmt.Fprintf(w, "\n%s== %s ==%s\n", c.ylw, it.section, c.rst)
+	case it.note != "":
+		fmt.Fprintf(w, "  %s%s%s\n", c.dim, it.note, c.rst)
+	default:
+		fmt.Fprintf(w, "  %s %s\n", prefix, it.show)
+	}
+}
+
 // print shows the plan, each action as "would:".
 func (p *plan) print(w io.Writer, c colors) {
 	for _, it := range p.items {
-		switch {
-		case it.section != "":
-			fmt.Fprintf(w, "\n%s== %s ==%s\n", c.ylw, it.section, c.rst)
-		case it.note != "":
-			fmt.Fprintf(w, "  %s%s%s\n", c.dim, it.note, c.rst)
-		default:
-			fmt.Fprintf(w, "  %swould:%s %s\n", c.dim, c.rst, it.show)
-		}
+		printItem(w, c, it, c.dim+"would:"+c.rst)
 	}
 }
 
 func (p *plan) execute(ctx context.Context, env Env, c colors) error {
 	for _, it := range p.items {
-		switch {
-		case it.section != "":
-			fmt.Fprintf(env.Stdout, "\n%s== %s ==%s\n", c.ylw, it.section, c.rst)
-		case it.note != "":
-			fmt.Fprintf(env.Stdout, "  %s%s%s\n", c.dim, it.note, c.rst)
-		default:
-			fmt.Fprintf(env.Stdout, "  %s+%s %s\n", c.grn, c.rst, it.show)
-			if err := it.do(ctx); err != nil {
-				return fmt.Errorf("%s failed: %w", it.show, err)
-			}
+		printItem(env.Stdout, c, it, c.grn+"+"+c.rst)
+		if it.do == nil {
+			continue
+		}
+		if err := it.do(ctx); err != nil {
+			return fmt.Errorf("%s failed: %w", it.show, err)
 		}
 	}
 	return nil
@@ -339,7 +354,7 @@ func (p *plan) nanobrew(ctx context.Context) {
 		res, _ := p.env.Run.Run(ctx, run.Cmd{Name: "nb", Args: []string{"list"}})
 		for _, line := range strings.Split(res.Stdout, "\n") {
 			if f := strings.Fields(line); len(f) > 0 && strings.Contains(line, "(cask)") {
-				p.cmd(false, run.Cmd{Name: "nb", Args: []string{"uninstall", f[0]}})
+				p.cmd(false, run.Cmd{Name: "nb", Args: []string{"uninstall", f[0]}, Interactive: true})
 			}
 		}
 	}

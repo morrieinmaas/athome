@@ -230,7 +230,7 @@ func TestSecretsRestoreSkip(t *testing.T) {
 		fx := newFixture(t)
 		fx.Fake.Have("rbw")
 		seedVault(fx)
-		fx.Fake.On("git", "ls-files").Return(run.Result{Code: 1})
+		fx.Fake.On("git", "ls-files", "-z").Return(run.Result{Code: 1})
 		if _, err := fx.Exec(steps.Finish()); err != nil {
 			t.Fatalf("restore trouble is a message, not an error: %v", err)
 		}
@@ -247,6 +247,19 @@ func TestSecretsRestoreSkip(t *testing.T) {
 		fx.MustExec(steps.Finish())
 		if !strings.Contains(fx.Log.String(), "athome secrets restore had issues") {
 			t.Errorf("want the issues line, log %q", fx.Log.String())
+		}
+	})
+	t.Run("no vault with a handle: the vault is cloned through gh", func(t *testing.T) {
+		fx := newFixture(t)
+		fx.Fake.Have("rbw", "gh")
+		for _, k := range []string{"SECRETS_VAULT", "SECRETS_VAULT_NAME", "SECRETS_VAULT_REPO"} {
+			t.Setenv(k, "")
+		}
+		t.Setenv("ATHOME_GITHUB_HANDLE", "alice")
+		fx.MustExec(steps.Finish())
+		vault := fx.Path(".local", "share", "attic")
+		if !fx.called("gh", "repo", "clone", "alice/attic", vault, "--", "-q") {
+			t.Errorf("want gh repo clone alice/attic %s -- -q:\n%s", vault, fx.dump())
 		}
 	})
 	t.Run("rbw locked: no follow-up line", func(t *testing.T) {

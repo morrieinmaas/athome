@@ -444,3 +444,24 @@ func TestManagedFixtureAndClaudeLinks(t *testing.T) {
 		}
 	}
 }
+
+func TestCaskUninstallRunsOnTheTerminal(t *testing.T) {
+	r := newRig(t)
+	r.fake.Have("nb")
+	r.fake.On("nb", "list").Return(run.Result{Stdout: "firefox 1.0 (cask)\n"})
+	if code := r.run("darwin", "", "--all", "--execute", "--yes"); code != 0 {
+		t.Fatalf("exit = %d: %s", code, r.err.String())
+	}
+	found := false
+	for _, c := range r.fake.Calls() {
+		if c.Name == "nb" && len(c.Args) == 2 && c.Args[0] == "uninstall" {
+			found = true
+			if !c.Interactive {
+				t.Errorf("nb uninstall output is hidden: %+v", c)
+			}
+		}
+	}
+	if !found {
+		t.Error("nb uninstall did not run")
+	}
+}

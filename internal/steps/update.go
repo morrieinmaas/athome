@@ -2,7 +2,6 @@ package steps
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -12,6 +11,7 @@ import (
 
 	"github.com/morrieinmaas/athome/internal/run"
 	"github.com/morrieinmaas/athome/internal/selfupdate"
+	"github.com/morrieinmaas/athome/internal/status"
 )
 
 // ErrUpdateCancelled is returned by the self step when the user declines; the
@@ -69,7 +69,11 @@ func updateRun(ctx context.Context, env *Env, c run.Cmd) error {
 
 func selfCheck(ctx context.Context, env *Env) (bool, error) {
 	o := updateOpts(ctx)
+	reexec := os.Getenv(updateReexecEnv) == "1"
 	if _, ok := selfupdate.Parse(o.Version); !ok {
+		if reexec {
+			return false, fmt.Errorf("the installed athome reports %s, not %s; not retrying", o.Version, o.Target)
+		}
 		if o.ToGiven {
 			return false, nil
 		}
@@ -77,6 +81,9 @@ func selfCheck(ctx context.Context, env *Env) (bool, error) {
 		return true, nil
 	}
 	c := selfupdate.Compare(o.Version, o.Target)
+	if reexec && c != 0 {
+		return false, fmt.Errorf("the installed athome reports %s, not %s; not retrying", o.Version, o.Target)
+	}
 	return c == 0 || (c > 0 && !o.ToGiven), nil
 }
 
@@ -175,19 +182,9 @@ func miseCheck(ctx context.Context, env *Env) (bool, error) {
 	if res.Code != 0 {
 		return false, fmt.Errorf("mise ls --missing --json exited %d: %s", res.Code, strings.TrimSpace(res.Stderr))
 	}
-	out := strings.TrimSpace(res.Stdout)
-	if out == "" {
-		return true, nil
+	n, err := status.MissingCount(res.Stdout)
+	if err != nil {
+		return false, err
 	}
-	var v any
-	if err := json.Unmarshal([]byte(out), &v); err != nil {
-		return false, fmt.Errorf("mise ls --missing --json: %w", err)
-	}
-	switch m := v.(type) {
-	case map[string]any:
-		return len(m) == 0, nil
-	case []any:
-		return len(m) == 0, nil
-	}
-	return false, nil
+	return n == 0, nil
 }

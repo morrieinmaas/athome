@@ -5,6 +5,7 @@ package status
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -51,7 +52,7 @@ func Collect(ctx context.Context, r run.Runner, version, commit, home, repo stri
 		Components: []Component{
 			athomeStatus(ctx, r, version, repo),
 			dotfilesStatus(ctx, r),
-			miseStatus(ctx, r),
+			miseStatus(ctx, r, home),
 			grofeStatus(ctx, r, home, pins["grofe"]),
 			canopyStatus(ctx, r, home, pins["canopy"]),
 		},
@@ -108,13 +109,7 @@ func athomeStatus(ctx context.Context, r run.Runner, version, repo string) Compo
 		c.Status, c.Detail = Unknown, "origin is unreachable"
 		return c
 	}
-	var tags []string
-	for _, line := range strings.Split(res.Stdout, "\n") {
-		if _, ref, ok := strings.Cut(strings.TrimSpace(line), "\t"); ok {
-			tags = append(tags, strings.TrimPrefix(ref, "refs/tags/"))
-		}
-	}
-	best := selfupdate.Highest(tags)
+	best := selfupdate.Highest(selfupdate.RemoteTags(res.Stdout))
 	if best == "" {
 		c.Status, c.Detail = Unknown, "no release tags on origin"
 		return c
@@ -150,30 +145,21 @@ func dotfilesStatus(ctx context.Context, r run.Runner) Component {
 	return c
 }
 
-func miseStatus(ctx context.Context, r run.Runner) Component {
+func miseStatus(ctx context.Context, r run.Runner, home string) Component {
 	c := Component{Name: "mise"}
 	if _, err := r.LookPath("mise"); err != nil {
 		c.Status, c.Detail = NotInstalled, "mise is missing"
 		return c
 	}
-	s, ok := out(ctx, r, "mise", "ls", "--missing", "--json")
-	if !ok {
+	res, err := r.Run(ctx, run.Cmd{Name: "mise", Args: []string{"ls", "--missing", "--json"}, Dir: home})
+	if err != nil || res.Code != 0 {
 		c.Status, c.Detail = Unknown, "mise ls failed"
 		return c
 	}
-	n := 0
-	if s != "" {
-		var v any
-		if err := json.Unmarshal([]byte(s), &v); err != nil {
-			c.Status, c.Detail = Unknown, "mise printed unreadable output"
-			return c
-		}
-		switch t := v.(type) {
-		case map[string]any:
-			n = len(t)
-		case []any:
-			n = len(t)
-		}
+	n, err := MissingCount(res.Stdout)
+	if err != nil {
+		c.Status, c.Detail = Unknown, "mise printed unreadable output"
+		return c
 	}
 	if n == 0 {
 		c.Status = Current
@@ -181,6 +167,26 @@ func miseStatus(ctx context.Context, r run.Runner) Component {
 	}
 	c.Status, c.Detail = NotCurrent, fmt.Sprintf("%d tool(s) missing", n)
 	return c
+}
+
+// MissingCount counts the tools in the output of `mise ls --missing --json`: empty
+// output is none, and anything but a JSON object or array is an error.
+func MissingCount(stdout string) (int, error) {
+	stdout = strings.TrimSpace(stdout)
+	if stdout == "" {
+		return 0, nil
+	}
+	var v any
+	if err := json.Unmarshal([]byte(stdout), &v); err != nil {
+		return 0, fmt.Errorf("mise ls --missing --json: %w", err)
+	}
+	switch t := v.(type) {
+	case map[string]any:
+		return len(t), nil
+	case []any:
+		return len(t), nil
+	}
+	return 0, errors.New("mise ls --missing --json: expected a JSON object or array")
 }
 
 func grofeStatus(ctx context.Context, r run.Runner, home, pin string) Component {

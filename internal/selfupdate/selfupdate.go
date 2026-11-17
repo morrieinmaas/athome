@@ -171,3 +171,14 @@ func Install(ctx context.Context, base, tag, goos, goarch, dest string) error {
 	done = true
 	return nil
 }
+
+// RemoteTags lists the tag names in `git ls-remote --tags --refs` output.
+func RemoteTags(stdout string) []string {
+	var tags []string
+	for _, line := range strings.Split(stdout, "\n") {
+		if _, ref, ok := strings.Cut(strings.TrimSpace(line), "\t"); ok {
+			tags = append(tags, strings.TrimPrefix(ref, "refs/tags/"))
+		}
+	}
+	return tags
+}

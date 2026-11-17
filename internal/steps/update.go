@@ -139,6 +139,9 @@ func selfApply(ctx context.Context, env *Env) error {
 		exec = execBinary
 	}
 	if env.Ask != nil && env.Ask.Around != nil { // the new binary must not inherit the progress view's terminal state
+		// ponytail: on the progress path a successful exec replaces the process before the buffered
+		// run log is printed (the new binary starts its own view); upgrade path: flush env.Log to
+		// stdout inside Around before exec.
 		var err error
 		env.Ask.Around(func() { err = exec(dest, argv) })
 		return err

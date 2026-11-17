@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -15,6 +16,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/exp/teatest"
 
+	"github.com/morrieinmaas/athome/internal/prompt"
 	"github.com/morrieinmaas/athome/internal/steps"
 )
 
@@ -363,5 +365,32 @@ func TestProgressViewFitsTerminalHeight(t *testing.T) {
 	}
 	if v := m.View(); !strings.Contains(v, "step-31") {
 		t.Errorf("the last step is not visible when all are done:\n%s", v)
+	}
+}
+
+// A declined update confirm ends the view at once, without a key press.
+func TestProgressDeclinedUpdateQuitsWithoutKey(t *testing.T) {
+	pr, pw := io.Pipe()
+	defer pw.Close()
+	var out bytes.Buffer
+	env := &steps.Env{Ask: prompt.New(strings.NewReader("n\n"), &out)}
+	list := []steps.Step{fake("self", false, func(_ context.Context, env *steps.Env) error {
+		if env.Ask.Confirm("update?", true) {
+			return nil
+		}
+		return steps.ErrUpdateCancelled
+	})}
+	done := make(chan error, 1)
+	go func() {
+		_, err := RunProgress(context.Background(), pr, io.Discard, env, list, nil)
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if !errors.Is(err, steps.ErrUpdateCancelled) {
+			t.Errorf("err = %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the view waited for a key after a declined update")
 	}
 }

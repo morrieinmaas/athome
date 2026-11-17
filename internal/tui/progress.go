@@ -88,7 +88,7 @@ func (m *progressModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil && (errors.Is(msg.err, context.Canceled) || (m.runCtx != nil && m.runCtx.Err() != nil)) {
 			m.canceled = true // Ctrl-C while the terminal was released: a cancel, not a failure to acknowledge
 		}
-		if msg.err == nil || m.canceled {
+		if msg.err == nil || m.canceled || errors.Is(msg.err, steps.ErrUpdateCancelled) { // a declined update is no failure: no held row
 			return m, tea.Quit
 		}
 	case tea.WindowSizeMsg:

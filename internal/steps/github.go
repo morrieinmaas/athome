@@ -279,7 +279,8 @@ func ghAdd(ctx context.Context, env *Env, pub, title string, signing bool) bool 
 }
 
 // ghManualMarker records that the upload fell back to manual (the scope
-// refresh was refused or failed), so a rerun does not ask again.
+// refresh was refused or failed). It only quiets non-interactive runs; an
+// interactive rerun still asks.
 func ghManualMarker(env *Env) string {
 	return filepath.Join(env.Home, ".local", "state", "athome", "github-manual-upload")
 }

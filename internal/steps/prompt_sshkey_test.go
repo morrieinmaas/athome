@@ -3,6 +3,7 @@ package steps_test
 import (
 	"bytes"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -152,6 +153,37 @@ func TestPromptSymlink(t *testing.T) {
 		fx.MustExec(steps.Prepare())
 		if out.Len() != 0 {
 			t.Errorf("asked about an existing link: %q", out)
+		}
+	})
+}
+
+func TestPrepareLinkConflictAsksFirst(t *testing.T) {
+	conflict := func(t *testing.T) *fixture {
+		fx := newFixture(t)
+		writeFile(t, filepath.Join(chezmoiLink(fx), "precious.txt"), "keep me", 0o644)
+		return fx
+	}
+	t.Run("n continues", func(t *testing.T) {
+		fx := conflict(t)
+		sk2Ask(fx, "n\n")
+		if _, err := fx.Exec(steps.Prepare()); err != nil {
+			t.Fatalf("declining the symlink must continue: %v", err)
+		}
+		if got := readFile(t, filepath.Join(chezmoiLink(fx), "precious.txt")); got != "keep me" {
+			t.Errorf("the real directory was modified: %q", got)
+		}
+	})
+	t.Run("y errors", func(t *testing.T) {
+		fx := conflict(t)
+		sk2Ask(fx, "y\n")
+		if _, err := fx.Exec(steps.Prepare()); err == nil {
+			t.Fatal("accepting with a real directory in the way must error")
+		}
+	})
+	t.Run("nil Ask errors", func(t *testing.T) {
+		fx := conflict(t)
+		if _, err := fx.Exec(steps.Prepare()); err == nil {
+			t.Fatal("a conflict without a prompt must error")
 		}
 	})
 }

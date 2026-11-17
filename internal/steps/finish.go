@@ -152,8 +152,8 @@ func secretsStateOf(ctx context.Context, env *Env) secretsState {
 	return secretsRestorable
 }
 
-// restoreMarker records an attempted restore that left no ~/.secrets/*/.env, so
-// a rerun does not prompt for the vault again.
+// restoreMarker records an attempted restore that left no ~/.secrets/*/.env. It
+// only quiets non-interactive runs; an interactive rerun still asks.
 func restoreMarker(env *Env) string {
 	return filepath.Join(env.Home, ".local", "state", "athome", "secrets-restore-attempted")
 }

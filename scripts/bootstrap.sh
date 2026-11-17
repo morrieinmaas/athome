@@ -44,6 +44,11 @@ while [ $# -gt 0 ]; do
       install_from="$2"
       shift 2
       ;;
+    --install-from=*)
+      install_from="${1#--install-from=}"
+      [ -n "$install_from" ] || die "--install-from needs a path"
+      shift
+      ;;
     *)
       args+=("$1")
       shift

@@ -235,6 +235,24 @@ STUB
   grep -qx 'init-args:init -y' "$HOME/calls"
 }
 
+@test "installed binary reporting the version without a v is reused offline" {
+  mkdir -p "$HOME/.local/bin"
+  make_fake "$DEST" 9.9.9
+  ATHOME_RELEASE_BASE=file:///nonexistent run bash "$ROOT/scripts/bootstrap.sh" -y
+  [ "$status" -eq 0 ]
+  grep -qx 'init-args:init -y' "$HOME/calls"
+}
+
+@test "--install-from=PATH installs that file; an empty path fails" {
+  make_fake "$BATS_TEST_TMPDIR/src" vX
+  run bash "$ROOT/scripts/bootstrap.sh" --install-from="$BATS_TEST_TMPDIR/src" -y
+  [ "$status" -eq 0 ]
+  [ "$("$DEST" version)" = "athome vX (abc)" ]
+  run bash "$ROOT/scripts/bootstrap.sh" --install-from=
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"needs a path"* ]]
+}
+
 @test "installed binary at another version is replaced" {
   mkdir -p "$HOME/.local/bin"
   make_fake "$DEST" v1.0.0

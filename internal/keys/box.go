@@ -8,6 +8,9 @@ import "context"
 type Box interface {
 	Name() string
 	Scope() string
+	// An ssh-backed Box must connect with <laptop key>.old while that file exists
+	// (a box skipped after the laptop key swap still accepts only the old key),
+	// then fall back to the laptop key.
 	// Authorize appends pub to the box's authorized_keys.
 	Authorize(ctx context.Context, pub string) error
 	// Login proves the private key at keyPath logs in to the box.

@@ -219,7 +219,9 @@ A machine that shares the key (restored with `--import-ssh-bw`) loses GitHub acc
 key is rotated; restore the new key there with `--import-ssh-bw` again.
 The new key waits in Bitwarden as `<item>.rotate` until it works everywhere it must (GitHub
 for the laptop key, every box in the scope for a break-glass key), so the item under the real
-name always holds a key that logs in. A locked rbw stops the run before anything changes.
+name holds a key that logs in wherever the rotation has not finished yet. A box already reset
+during an unfinished break-glass rotation accepts only the new key, which is in the `.rotate`
+item until the rotation is done. A locked rbw stops the run before anything changes.
 
 `gh` needs the key scopes: `gh auth refresh -h github.com -s
 admin:public_key,admin:ssh_signing_key`. `athome status` reminds you once the key is more
@@ -253,7 +255,9 @@ it was unlocked. Also:
 8. Re-key the vault with `athome secrets rekey` (below), then delete the old repo.
 
 If the laptop key was revoked before you restored it, reach each box with its scope's
-break-glass key (`rbw get --field notes athome/<context>/<scope>/break-glass`) and run the
+break-glass key (`rbw get --field notes athome/<context>/<scope>/break-glass`), or from
+`athome/<context>/<scope>/break-glass.rotate` when that item exists (a break-glass rotation was
+unfinished), and run the
 rotation from there.
 
 ### Re-keying the vault

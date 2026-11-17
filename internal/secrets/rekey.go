@@ -122,8 +122,8 @@ func (o RekeyOpts) publish(ctx context.Context, t rekeyTarget, rk string, newKey
 
 	if err := o.gh(ctx, "repo", "create", t.slug, "--private", "--source", rk, "--remote", "origin", "--push"); err != nil {
 		o.errf("%v\nif %s was created (a failed push can create it), delete it with: gh repo delete %s\n"+
-			"then undo with: gh repo rename %s --repo %s/%s --yes\n%s",
-			err, t.slug, t.slug, t.repo, t.owner, t.oldName, t.keyNote)
+			"then undo with: gh repo rename %s --repo %s/%s --yes\nand: rbw remove %s\n%s",
+			err, t.slug, t.slug, t.repo, t.owner, t.oldName, t.oldItem, t.keyNote)
 		return exitError
 	}
 	if err := keys.Store(ctx, o.Run, "git-crypt/"+o.Name+"-key", base64.StdEncoding.EncodeToString(newKey), ""); err != nil {

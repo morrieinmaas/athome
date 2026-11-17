@@ -48,8 +48,7 @@ func runLaptop(ctx context.Context, o Options, j *job, boxes []Box, jobs []*job,
 		return err
 	}
 	if len(skippedOf(j)) == 0 {
-		os.Remove(j.Key + ".old")
-		os.Remove(j.Key + ".old.pub")
+		removeOldKey(j)
 		o.say("✓ laptop key rotated")
 	}
 	return nil
@@ -224,4 +223,12 @@ func commentOf(pub, host string) string {
 		return strings.Join(f[2:], " ")
 	}
 	return "athome@" + host
+}
+
+// removeOldKey deletes the revoked laptop key once nothing needs it.
+func removeOldKey(j *job) {
+	if j.Kind == kindLaptop && j.Key != "" {
+		os.Remove(j.Key + ".old")
+		os.Remove(j.Key + ".old.pub")
+	}
 }

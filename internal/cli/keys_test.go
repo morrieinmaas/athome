@@ -2,6 +2,8 @@ package cli_test
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -57,4 +59,27 @@ func TestUsageListsKeys(t *testing.T) {
 
 func keysLaptopKey(home string) string {
 	return keys.LaptopKey(home, steps.KeyHostname())
+}
+
+func TestKeysPendingAndAll(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("TMPDIR", t.TempDir())
+	f := runtest.NewFake()
+	t.Cleanup(cli.SetRunner(f))
+	state := keys.StatePath(home)
+	os.MkdirAll(filepath.Dir(state), 0o755)
+	os.WriteFile(state, []byte(`{"jobs":[{"kind":"laptop","targets":{"github":"added"}}]}`), 0o600)
+	var out, errw bytes.Buffer
+	if code := cli.Main([]string{"keys", "rotate", "--laptop"}, &out, &errw); code != 1 || !strings.Contains(errw.String(), "a rotation is unfinished") {
+		t.Errorf("pending: %d %q", code, errw.String())
+	}
+	os.Remove(state)
+	out.Reset()
+	errw.Reset()
+	// --all with no laptop key fails on the laptop job; --boxes --break-glass shows both notes.
+	if code := cli.Main([]string{"keys", "rotate", "--boxes", "--break-glass"}, &out, &errw); code != 0 ||
+		!strings.Contains(out.String(), "no machines in the inventory") || !strings.Contains(out.String(), "no scopes in the inventory") {
+		t.Errorf("notes: %d %q %q", code, out.String(), errw.String())
+	}
 }

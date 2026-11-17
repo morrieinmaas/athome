@@ -140,6 +140,7 @@ func runJobs(ctx context.Context, o Options, st *state, boxes []Box) error {
 	var left []*job
 	for _, j := range st.Jobs {
 		if jobDone(j) {
+			removeOldKey(j) // a crash after the last save can leave it
 			continue
 		}
 		save := func() error { return st.save(o.Home) }

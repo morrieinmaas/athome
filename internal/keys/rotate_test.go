@@ -707,3 +707,36 @@ func TestManagedSetKeepsAddedBreakGlass(t *testing.T) {
 		t.Errorf("managedSet = %v, %v", got, err)
 	}
 }
+
+func TestManagedSetKeepsOldBreakGlassUntilChecked(t *testing.T) {
+	o, f, _ := rotateHome(t)
+	old, err := NewBreakGlass(context.Background(), f, "work/acme")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := &fakeBox{name: "b", scope: "work/acme"}
+	for _, phase := range []string{phaseAdded, phaseChecked} {
+		jobs := []*job{{Kind: kindBreakGlass, Scope: "work/acme", NewPub: "ssh-ed25519 NEWBG x", Targets: map[string]string{"box:b": phase}}}
+		got, err := managedSet(context.Background(), o, "ssh-ed25519 LAPTOP x", b, jobs)
+		if err != nil || len(got) != 3 || pubBlob(got[1]) != pubBlob(old) || got[2] != "ssh-ed25519 NEWBG x" {
+			t.Errorf("%s: managedSet = %v, %v", phase, got, err)
+		}
+	}
+	jobs := []*job{{Kind: kindBreakGlass, Scope: "work/acme", NewPub: "ssh-ed25519 NEWBG x", Targets: map[string]string{"box:b": phaseRemoved}}}
+	if got, _ := managedSet(context.Background(), o, "ssh-ed25519 LAPTOP x", b, jobs); len(got) != 2 {
+		t.Errorf("removed: managedSet = %v", got)
+	}
+}
+
+func TestResumeCleansOldKeyOfDoneJob(t *testing.T) {
+	o, _, key := rotateHome(t)
+	withInventory(t)
+	os.WriteFile(key+".old", []byte("revoked"), 0o600)
+	writeState(t, o.Home, `{"jobs":[{"kind":"laptop","item":"ssh/h_ed25519","key":"`+key+`","stored":true,"installed":true,"promoted":true,"targets":{"github":"removed"}}]}`)
+	if err := Resume(context.Background(), o); err != nil {
+		t.Fatal(err)
+	}
+	if exists(key + ".old") {
+		t.Error("revoked key left on disk")
+	}
+}

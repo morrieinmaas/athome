@@ -265,7 +265,9 @@ Decisions:
   when every target is `removed`; done jobs are dropped, and `last_rotated` is set when a
   laptop job finishes (it dates the laptop key for the reminder). While a break-glass job is
   pending, a laptop reset of a box that already has the new break-glass key keeps that key. Likewise a
-  break-glass reset keeps both laptop keys on a box where the laptop job has not finished. A new
+  break-glass reset keeps both laptop keys on a box where the laptop job has not finished. A
+  box where the new break-glass key is only `added` or `checked` keeps the old one beside it.
+  `Box` implementations connect with `<key>.old` while it exists. A new
   rotation while a job is pending exits 1 with
   `a rotation is unfinished (<kind>); run athome keys rotate --resume`. `--resume` with no
   pending job prints `nothing to resume` and exits 0; otherwise it runs each pending job from

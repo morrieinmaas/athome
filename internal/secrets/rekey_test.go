@@ -300,6 +300,9 @@ func TestRekeyCreateFailureNamesUndo(t *testing.T) {
 	if del := "gh repo delete alice/attic"; strings.Index(g.errb.String(), del) < 0 || strings.Index(g.errb.String(), del) > strings.Index(g.errb.String(), undo) {
 		t.Errorf("stderr %q must name %q before the rename undo", g.errb.String(), del)
 	}
+	if rm := "rbw remove git-crypt/attic-old-" + rekeyDate + "-key"; !strings.Contains(g.errb.String(), rm) {
+		t.Errorf("stderr %q lacks %q", g.errb.String(), rm)
+	}
 	if !strings.Contains(g.errb.String(), g.exportPath) {
 		t.Errorf("stderr %q lacks the exported key path", g.errb.String())
 	}

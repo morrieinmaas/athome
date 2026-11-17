@@ -257,6 +257,30 @@ func TestExecuteRemovesAndKeepsUserData(t *testing.T) {
 	}
 }
 
+func TestDotfilesExecuteRemovesPlannedKeepsUserData(t *testing.T) {
+	r := newRig(t)
+	r.fake.Have("chezmoi")
+	managed := r.touch(t, ".zshrc")
+	cfg := r.touch(t, ".config/chezmoi/chezmoi.toml")
+	marker := r.touch(t, ".local/state/athome/github-manual-upload")
+	secret := r.touch(t, ".secrets/x/.env")
+	repo := r.touch(t, "personal/r/f")
+	r.fake.On("chezmoi", "managed", "--path-style=absolute", "--include=files").Return(run.Result{Stdout: managed + "\n"})
+	if code := r.run("linux", " dotfiles \n", "--dotfiles", "--execute"); code != 0 {
+		t.Fatalf("exit = %d: %s", code, r.err.String())
+	}
+	for _, p := range []string{managed, cfg, marker} {
+		if exists(p) {
+			t.Errorf("%s survived", p)
+		}
+	}
+	for _, p := range []string{secret, repo} {
+		if !exists(p) {
+			t.Errorf("%s was removed", p)
+		}
+	}
+}
+
 func TestYesSkipsQuestion(t *testing.T) {
 	r := newRig(t)
 	f := r.touch(t, ".local/state/athome/ssh-pub-underivable")

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/morrieinmaas/athome/internal/status"
 )
@@ -54,7 +55,8 @@ func detailText(c status.Component) string {
 	switch {
 	case c.Detail != "":
 		return c.Detail
-	case c.Installed != "" && c.Wanted != "" && c.Installed != c.Wanted:
+	case c.Status != "current" && c.Installed != "" && c.Wanted != "" &&
+		strings.TrimPrefix(c.Installed, "v") != strings.TrimPrefix(c.Wanted, "v"):
 		return c.Installed + " (wanted " + c.Wanted + ")"
 	}
 	return c.Installed

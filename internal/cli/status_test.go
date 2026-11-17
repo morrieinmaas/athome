@@ -116,9 +116,16 @@ func TestStatusAllCurrent(t *testing.T) {
 	if want := "athome 0.5.2 (" + cli.Commit + "), repo " + e.repo + " at main"; lines[0] != want {
 		t.Errorf("header %q, want %q", lines[0], want)
 	}
-	for i, name := range []string{"athome", "dotfiles", "mise", "grofe", "canopy"} {
-		if !strings.HasPrefix(lines[i+1], name) || !strings.Contains(lines[i+1], " current ") {
-			t.Errorf("row %d = %q", i, lines[i+1])
+	rows := []string{
+		"athome    current        0.5.2",
+		"dotfiles  current        ",
+		"mise      current        ",
+		"grofe     current        0.3.1",
+		"canopy    current        " + canopyPin,
+	}
+	for i, want := range rows {
+		if lines[i+1] != want {
+			t.Errorf("row %d = %q, want %q", i, lines[i+1], want)
 		}
 	}
 	r := statusJSON(t)

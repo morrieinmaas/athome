@@ -40,7 +40,7 @@ while [ $# -gt 0 ]; do
       exit 0
       ;;
     --install-from)
-      [ $# -ge 2 ] || die "--install-from needs a path"
+      [ $# -ge 2 ] && [ -n "$2" ] || die "--install-from needs a path"
       install_from="$2"
       shift 2
       ;;
@@ -109,6 +109,8 @@ if [ -x "$dest" ]; then
   esac
 fi
 
+command -v curl >/dev/null 2>&1 || die "curl not found; install curl, or $hint"
+
 if command -v sha256sum >/dev/null 2>&1; then
   sha() { sha256sum "$1" | cut -d' ' -f1; }
 elif command -v shasum >/dev/null 2>&1; then
@@ -121,9 +123,16 @@ base="${ATHOME_RELEASE_BASE:-https://github.com/morrieinmaas/athome/releases/dow
 asset="athome_${os}_${arch}"
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/athome-install.XXXXXX")"
 
-if ! curl -fsSL "$base/$tag/$asset" -o "$tmp/$asset"; then
-  # ponytail: tags v0.4.0..v0.4.3 have no athome assets. Goes when
-  # bootstrap-legacy.sh is deleted (migration step 4).
+# Only a genuinely missing asset (HTTP 404, or a missing file over file://)
+# falls back; any other failure (network, 5xx) stops with curl's error.
+url="$base/$tag/$asset"
+rc=0
+code="$(curl -fsSL -w '%{http_code}' "$url" -o "$tmp/$asset" 2>"$tmp/curl.err")" || rc=$?
+if [ "$rc" -ne 0 ]; then
+  missing=false
+  [ "$code" = 404 ] && missing=true
+  case "$base" in file://*) [ "$rc" -eq 37 ] && missing=true ;; esac
+  $missing || die "cannot download $url: $(cat "$tmp/curl.err")"
   echo "bootstrap: no athome release for $tag; falling back to scripts/bootstrap-legacy.sh for this release" >&2
   cleanup
   trap - EXIT

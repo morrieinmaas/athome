@@ -59,6 +59,31 @@ FAKE
   [ -z "$(ls -d "$TMPDIR"/athome-install.* 2>/dev/null)" ]
 }
 
+@test "an unreachable release base dies naming the URL, without falling back" {
+  mkdir -p "$BATS_TEST_TMPDIR/lclone/scripts"
+  cp "$ROOT/scripts/bootstrap.sh" "$BATS_TEST_TMPDIR/lclone/scripts/"
+  printf '#!/bin/sh\necho "legacy-args:$*" >> "$HOME/calls"\n' >"$BATS_TEST_TMPDIR/lclone/scripts/bootstrap-legacy.sh"
+  chmod 0755 "$BATS_TEST_TMPDIR/lclone/scripts/bootstrap-legacy.sh"
+  ATHOME_RELEASE_BASE=http://127.0.0.1:9 run bash "$BATS_TEST_TMPDIR/lclone/scripts/bootstrap.sh" -y
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"cannot download http://127.0.0.1:9/v9.9.9/$ASSET"* ]]
+  [[ "$output" != *"falling back"* ]]
+  [ ! -e "$HOME/calls" ]
+  [ ! -e "$DEST" ]
+  [ -z "$(ls -d "$TMPDIR"/athome-install.* 2>/dev/null)" ]
+}
+
+@test "no curl exits 1 naming curl" {
+  mkdir "$BATS_TEST_TMPDIR/nobin"
+  for t in bash env cut awk mktemp mkdir rm cp mv chmod git dirname uname cat shasum; do
+    p="$(command -v $t)" && ln -s "$p" "$BATS_TEST_TMPDIR/nobin/$t"
+  done
+  PATH="$BATS_TEST_TMPDIR/nobin" run "$BATS_TEST_TMPDIR/nobin/bash" "$ROOT/scripts/bootstrap.sh"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"curl"* ]]
+  [ ! -e "$DEST" ]
+}
+
 @test "checksums.txt without the asset line exits 1" {
   echo "deadbeef  other" >"$REL/v9.9.9/checksums.txt"
   run bash "$ROOT/scripts/bootstrap.sh"
@@ -113,6 +138,10 @@ FAKE
   [ ! -e "$DEST" ]
   run bash "$ROOT/scripts/bootstrap.sh" --install-from
   [ "$status" -eq 1 ]
+  run bash "$ROOT/scripts/bootstrap.sh" --install-from ""
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"--install-from needs a path"* ]]
+  [ ! -e "$DEST" ]
 }
 
 @test "installed binary at the wanted version is reused offline" {

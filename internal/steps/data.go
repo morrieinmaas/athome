@@ -90,7 +90,7 @@ func dataPrompt(env *Env, entries []dataEntry) bool {
 		}
 	}
 	d := env.Cfg.Data
-	if d["bitwardenUrl"] == "" && d["useBitwarden"] != "false" && storedBitwardenURL(env) == "" { // B:855-861
+	if bitwardenURLUnasked(env) { // B:855-861
 		env.Ask.Say("Bitwarden server (for rbw secrets):\n")
 		env.Ask.Say("  empty  = US cloud (bitwarden.com)\n")
 		env.Ask.Say("  EU     = https://vault.bitwarden.eu\n")
@@ -101,6 +101,12 @@ func dataPrompt(env *Env, entries []dataEntry) bool {
 		}
 	}
 	return changed
+}
+
+// bitwardenURLUnasked: no URL in the config or chezmoi.toml, and Bitwarden is
+// not switched off, so an interactive run asks for it.
+func bitwardenURLUnasked(env *Env) bool {
+	return env.Cfg.Data["bitwardenUrl"] == "" && env.Cfg.Data["useBitwarden"] != "false" && storedBitwardenURL(env) == ""
 }
 
 func storedBitwardenURL(env *Env) string {
@@ -114,6 +120,9 @@ func dataDone(env *Env, entries []dataEntry) bool {
 		if env.Ask != nil && e.key == "githubHandle" && e.val == "" {
 			return false // asked on every interactive run until answered
 		}
+	}
+	if env.Ask != nil && bitwardenURLUnasked(env) {
+		return false // likewise the Bitwarden URL
 	}
 	var doc struct {
 		Data map[string]any `toml:"data"`
@@ -195,8 +204,8 @@ func dataEntries(ctx context.Context, env *Env) ([]dataEntry, error) {
 		if k == "meshProvider" && v == "" {
 			v = "meshnet"
 		}
-		if k == "bitwardenUrl" && v == "" && env.Ask != nil {
-			v = storedBitwardenURL(env) // an answer given on an earlier run is not asked again
+		if k == "bitwardenUrl" && v == "" {
+			v = storedBitwardenURL(env) // an earlier answer is kept, never blanked
 		}
 		entries = append(entries, dataEntry{key: k, val: v})
 	}

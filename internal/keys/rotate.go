@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -55,6 +54,9 @@ func Rotate(ctx context.Context, o Options, k Kinds) error {
 	}
 	if len(st.Jobs) > 0 {
 		return fmt.Errorf("a rotation is unfinished (%s); run athome keys rotate --resume", st.Jobs[0].Kind)
+	}
+	if err := requireUnlocked(ctx, o); err != nil {
+		return err
 	}
 	boxes, err := Inventory(o.Home)
 	if err != nil {
@@ -107,6 +109,9 @@ func Resume(ctx context.Context, o Options) error {
 		o.say("nothing to resume")
 		return nil
 	}
+	if err := requireUnlocked(ctx, o); err != nil {
+		return err
+	}
 	boxes, err := Inventory(o.Home)
 	if err != nil {
 		return err
@@ -124,32 +129,15 @@ func scopesOf(boxes []Box) []string {
 	return out
 }
 
-func newLaptopJob(ctx context.Context, o Options) (*job, error) {
-	key := LaptopKey(o.Home, o.Host)
-	if _, err := os.Stat(key); err != nil {
-		return nil, fmt.Errorf("no laptop key at %s; athome init creates one", key)
-	}
-	pub, err := os.ReadFile(key + ".pub")
-	if err != nil {
-		res, rerr := o.Run.Run(ctx, run.Cmd{Name: "ssh-keygen", Args: []string{"-y", "-f", key}})
-		if rerr != nil || res.Code != 0 {
-			return nil, fmt.Errorf("no %s.pub and ssh-keygen -y could not derive it", key)
-		}
-		pub = []byte(res.Stdout)
-	}
-	return &job{Kind: kindLaptop, Item: ItemFor(key), Key: key, OldPub: strings.TrimSpace(string(pub)), Targets: map[string]string{"github": ""}}, nil
-}
-
 // runJobs runs every job in order, saving after each step. Done jobs are
 // dropped; a job with skipped boxes stays for --resume.
 func runJobs(ctx context.Context, o Options, st *state, boxes []Box) error {
-	// Every job reads or writes Bitwarden; a locked rbw must stop the run, not skip boxes.
-	if res, err := o.Run.Run(ctx, run.Cmd{Name: "rbw", Args: []string{"unlocked"}}); err != nil || res.Code != 0 {
-		return ErrLocked
-	}
 	var skipped []string
 	var left []*job
 	for _, j := range st.Jobs {
+		if jobDone(j) {
+			continue
+		}
 		save := func() error { return st.save(o.Home) }
 		var err error
 		switch j.Kind {
@@ -161,6 +149,8 @@ func runJobs(ctx context.Context, o Options, st *state, boxes []Box) error {
 			err = fmt.Errorf("unknown job kind %q in %s", j.Kind, StatePath(o.Home))
 		}
 		if err != nil {
+			st.dropDone()
+			st.save(o.Home)
 			return err
 		}
 		if s := skippedOf(j); len(s) > 0 {
@@ -244,206 +234,6 @@ func boxStep(o Options, j *job, boxes []Box, from []string, to string, fn func(B
 // the item under the real name keeps the key that still works.
 func stagingItem(item string) string { return item + ".rotate" }
 
-// runLaptop rotates the laptop key: generate, store, add everywhere, check
-// everywhere, and only then swap the files and remove the old key.
-func runLaptop(ctx context.Context, o Options, j *job, boxes []Box, save func() error) error {
-	newKey, err := laptopNewKey(ctx, o, j, save)
-	if err != nil {
-		return err
-	}
-	bs := boxesIn(o, j, boxes)
-	if err := laptopAdd(ctx, o, j, bs, newKey, save); err != nil {
-		return err
-	}
-	if err := laptopCheck(ctx, o, j, bs, newKey, save); err != nil {
-		return err
-	}
-	if err := laptopInstall(ctx, o, j, save); err != nil {
-		return err
-	}
-	if err := laptopRemoveOld(ctx, o, j, bs, save); err != nil {
-		return err
-	}
-	if len(skippedOf(j)) == 0 {
-		os.Remove(j.Key + ".old")
-		os.Remove(j.Key + ".old.pub")
-		o.say("✓ laptop key rotated")
-	}
-	return nil
-}
-
-// laptopNewKey generates the new key once and stores it under the staging
-// item. It returns where the new private key is now.
-func laptopNewKey(ctx context.Context, o Options, j *job, save func() error) (string, error) {
-	staged := j.Key + ".rotate"
-	if j.NewPub == "" {
-		o.say("==> laptop key: generating a new key")
-		os.Remove(staged)
-		os.Remove(staged + ".pub")
-		pub, err := keygen(ctx, o.Run, staged, commentOf(j.OldPub, o.Host))
-		if err != nil {
-			return "", err
-		}
-		j.NewPub = pub
-		if err := save(); err != nil {
-			return "", err
-		}
-	}
-	// A crash between the file swap and saving Installed leaves the new key in place.
-	if !j.Installed && !exists(staged) && pubBlob(readTrim(j.Key+".pub")) == pubBlob(j.NewPub) {
-		j.Installed = true
-	}
-	newKey := staged
-	if j.Installed {
-		newKey = j.Key
-	}
-	if !exists(newKey) {
-		return "", fmt.Errorf("the new key %s is missing; remove %s to start over", newKey, StatePath(o.Home))
-	}
-	if !j.Stored {
-		o.say("==> laptop key: storing it in Bitwarden as %s", stagingItem(j.Item))
-		priv, err := os.ReadFile(newKey)
-		if err != nil {
-			return "", err
-		}
-		if err := Store(ctx, o.Run, stagingItem(j.Item), SSHKeyPassword, strings.TrimRight(string(priv), "\n")); err != nil {
-			return "", err
-		}
-		j.Stored = true
-		if err := save(); err != nil {
-			return "", err
-		}
-	}
-	return newKey, nil
-}
-
-func laptopAdd(ctx context.Context, o Options, j *job, bs []Box, newKey string, save func() error) error {
-	if j.Targets["github"] == "" {
-		o.say("==> laptop key: adding it to GitHub")
-		if err := ghAdd(ctx, o.Run, newKey+".pub", o.Host); err != nil {
-			return err
-		}
-		j.Targets["github"] = phaseAdded
-		if err := save(); err != nil {
-			return err
-		}
-	}
-	boxStep(o, j, bs, []string{"", phaseSkipped}, phaseAdded, func(b Box) error { return b.Authorize(ctx, j.NewPub) })
-	return save()
-}
-
-func laptopCheck(ctx context.Context, o Options, j *job, bs []Box, newKey string, save func() error) error {
-	if j.Targets["github"] == phaseAdded {
-		o.say("==> laptop key: checking a GitHub login with the new key")
-		if err := ghLogin(ctx, o.Run, newKey); err != nil {
-			return err
-		}
-		j.Targets["github"] = phaseChecked
-		if err := save(); err != nil {
-			return err
-		}
-	}
-	boxStep(o, j, bs, []string{phaseAdded}, phaseChecked, func(b Box) error { return b.Login(ctx, newKey) })
-	return save()
-}
-
-// laptopInstall swaps the key files and moves the new key from the staging
-// item to the real one, now that GitHub accepts it.
-func laptopInstall(ctx context.Context, o Options, j *job, save func() error) error {
-	if !j.Installed {
-		o.say("==> laptop key: installing it as %s", j.Key)
-		if err := swapIn(j.Key); err != nil {
-			return err
-		}
-		j.Installed = true
-		if err := save(); err != nil {
-			return err
-		}
-		reapplySigners(ctx, o)
-	}
-	if !j.Promoted {
-		o.say("==> laptop key: storing it in Bitwarden as %s", j.Item)
-		if err := promote(ctx, o, stagingItem(j.Item), j.Item); err != nil {
-			return err
-		}
-		j.Promoted = true
-		return save()
-	}
-	return nil
-}
-
-func laptopRemoveOld(ctx context.Context, o Options, j *job, bs []Box, save func() error) error {
-	if j.Targets["github"] == phaseChecked {
-		o.say("==> laptop key: removing the old key from GitHub")
-		if err := ghRemove(ctx, o.Run, j.OldPub); err != nil {
-			return err
-		}
-		j.Targets["github"] = phaseRemoved
-		if err := save(); err != nil {
-			return err
-		}
-	}
-	boxStep(o, j, bs, []string{phaseChecked}, phaseRemoved, func(b Box) error {
-		managed, err := managedSet(ctx, o, j.NewPub, b.Scope())
-		if err != nil {
-			return err
-		}
-		return b.Reset(ctx, managed)
-	})
-	return save()
-}
-
-// runBreakGlass rotates one scope's break-glass key. The new key waits under
-// the staging item until every box in the scope has it, so a skipped box stays
-// reachable with the key under the real name.
-func runBreakGlass(ctx context.Context, o Options, j *job, boxes []Box, save func() error) error {
-	staging := stagingItem(j.Item)
-	if j.NewPub == "" {
-		o.say("==> break-glass key for %s: generating and storing %s", j.Scope, staging)
-		pub, err := genAndStore(ctx, o.Run, staging, j.Item)
-		if err != nil {
-			return err
-		}
-		j.NewPub, j.Stored = pub, true
-		if err := save(); err != nil {
-			return err
-		}
-	}
-	bs := boxesIn(o, j, boxes)
-	boxStep(o, j, bs, []string{"", phaseSkipped}, phaseAdded, func(b Box) error { return b.Authorize(ctx, j.NewPub) })
-	if err := save(); err != nil {
-		return err
-	}
-	err := withItemKey(ctx, o.Run, staging, func(path string) error {
-		boxStep(o, j, bs, []string{phaseAdded}, phaseChecked, func(b Box) error { return b.Login(ctx, path) })
-		return nil
-	})
-	if err != nil {
-		return err
-	}
-	if err := save(); err != nil {
-		return err
-	}
-	laptop, err := laptopPub(ctx, o)
-	if err != nil {
-		return err
-	}
-	boxStep(o, j, bs, []string{phaseChecked}, phaseRemoved, func(b Box) error {
-		return b.Reset(ctx, []string{laptop, j.NewPub})
-	})
-	if err := save(); err != nil {
-		return err
-	}
-	if len(skippedOf(j)) == 0 {
-		if err := promote(ctx, o, staging, j.Item); err != nil {
-			return err
-		}
-		j.Promoted = true
-		o.say("✓ break-glass key for %s rotated", j.Scope)
-	}
-	return nil
-}
-
 // promote copies the staging item over the real one and removes the staging
 // item. A failed removal is only a note: the real item is already right.
 func promote(ctx context.Context, o Options, staging, item string) error {
@@ -457,10 +247,26 @@ func promote(ctx context.Context, o Options, staging, item string) error {
 	if err != nil {
 		return err
 	}
-	if res, err := o.Run.Run(ctx, run.Cmd{Name: "rbw", Args: []string{"remove", staging}}); err != nil || res.Code != 0 {
-		o.say("  note: could not remove %s from Bitwarden; remove it by hand (rbw remove %s)", staging, staging)
-	}
+	removeItem(ctx, o, staging)
 	return nil
+}
+
+func removeItem(ctx context.Context, o Options, item string) {
+	if res, err := o.Run.Run(ctx, run.Cmd{Name: "rbw", Args: []string{"remove", item}}); err != nil || res.Code != 0 {
+		o.say("  note: could not remove %s from Bitwarden; remove it by hand (rbw remove %s)", item, item)
+	}
+}
+
+// derivedBlob is the public key blob of a private key file, "" if unreadable.
+func derivedBlob(ctx context.Context, o Options, key string) string {
+	if !exists(key) {
+		return ""
+	}
+	res, err := o.Run.Run(ctx, run.Cmd{Name: "ssh-keygen", Args: []string{"-y", "-f", key}})
+	if err != nil || res.Code != 0 {
+		return ""
+	}
+	return pubBlob(res.Stdout)
 }
 
 func exists(path string) bool {
@@ -468,62 +274,28 @@ func exists(path string) bool {
 	return err == nil
 }
 
-func readTrim(path string) string {
-	b, _ := os.ReadFile(path)
-	return strings.TrimSpace(string(b))
+// requireUnlocked stops a run before any job is saved or touched: every job
+// reads or writes Bitwarden, and a locked rbw must never look like a missing item.
+func requireUnlocked(ctx context.Context, o Options) error {
+	if res, err := o.Run.Run(ctx, run.Cmd{Name: "rbw", Args: []string{"unlocked"}}); err != nil || res.Code != 0 {
+		return ErrLocked
+	}
+	return nil
 }
 
-// managedSet is what a box's authorized_keys holds: the laptop key and its
-// scope's break-glass key, when it has one.
-func managedSet(ctx context.Context, o Options, laptop, scope string) ([]string, error) {
-	bg, err := BreakGlassPub(ctx, o.Run, scope)
-	if errors.Is(err, ErrNoItem) {
-		return []string{laptop}, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	return []string{laptop, bg}, nil
+// jobDone: every target removed and the new key under the real item name.
+func jobDone(j *job) bool {
+	return j.Promoted && len(skippedOf(j)) == 0
 }
 
-func laptopPub(ctx context.Context, o Options) (string, error) {
-	key := LaptopKey(o.Home, o.Host)
-	b, err := os.ReadFile(key + ".pub")
-	if err != nil {
-		return "", fmt.Errorf("no laptop public key at %s.pub", key)
-	}
-	return strings.TrimSpace(string(b)), nil
-}
-
-// swapIn moves key to key.old and key.rotate to key, each with its .pub.
-func swapIn(key string) error {
-	for _, mv := range [][2]string{
-		{key, key + ".old"}, {key + ".pub", key + ".old.pub"},
-		{key + ".rotate", key}, {key + ".rotate.pub", key + ".pub"},
-	} {
-		if err := os.Rename(mv[0], mv[1]); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return err
+// dropDone keeps only unfinished jobs, so a later job's failure does not make
+// --resume redo finished ones.
+func (s *state) dropDone() {
+	var left []*job
+	for _, j := range s.Jobs {
+		if !jobDone(j) {
+			left = append(left, j)
 		}
 	}
-	return os.Chmod(key, 0o600)
-}
-
-// reapplySigners re-renders allowed_signers from the new public key.
-func reapplySigners(ctx context.Context, o Options) {
-	if _, err := o.Run.LookPath("chezmoi"); err != nil {
-		o.say("  note: chezmoi not found; run chezmoi apply to refresh ~/.config/git/allowed_signers")
-		return
-	}
-	target := filepath.Join(o.Home, ".config", "git", "allowed_signers")
-	if res, err := o.Run.Run(ctx, run.Cmd{Name: "chezmoi", Args: []string{"apply", target}}); err != nil || res.Code != 0 {
-		o.say("  note: chezmoi apply %s failed; run it by hand", target)
-	}
-}
-
-// commentOf keeps the old key's comment, else names the host.
-func commentOf(pub, host string) string {
-	if f := strings.Fields(pub); len(f) >= 3 {
-		return strings.Join(f[2:], " ")
-	}
-	return "athome@" + host
+	s.Jobs = left
 }

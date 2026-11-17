@@ -414,6 +414,9 @@ func TestRotateLockedRbwStopsBeforeAnything(t *testing.T) {
 	if indexOf(cmdLines(f, o.Home), "gh") >= 0 {
 		t.Error("ran gh with rbw locked")
 	}
+	if st, _ := loadState(o.Home); len(st.Jobs) != 0 {
+		t.Errorf("a locked run left a job: %+v", st.Jobs)
+	}
 }
 
 func TestBreakGlassPubLockedIsNotMissing(t *testing.T) {
@@ -513,4 +516,104 @@ func TestRotateLocksOut(t *testing.T) {
 	if err := Rotate(context.Background(), o, Kinds{Laptop: true}); err == nil || !strings.Contains(err.Error(), "another athome keys rotate") {
 		t.Errorf("err = %v", err)
 	}
+}
+
+func writeState(t *testing.T, home, body string) {
+	t.Helper()
+	os.MkdirAll(filepath.Dir(StatePath(home)), 0o755)
+	if err := os.WriteFile(StatePath(home), []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestResumeSkipsFinishedJob(t *testing.T) {
+	o, f, _ := rotateHome(t)
+	withInventory(t)
+	// Finished and promoted; its staging item is gone, so redoing it would fail.
+	writeState(t, o.Home, `{"jobs":[{"kind":"break-glass","scope":"work/x","item":"athome/work/x/break-glass","new_pub":"ssh-ed25519 AAAA","stored":true,"promoted":true,"targets":{"box:a":"removed"}}]}`)
+	if err := Resume(context.Background(), o); err != nil {
+		t.Fatal(err)
+	}
+	if st, _ := loadState(o.Home); len(st.Jobs) != 0 {
+		t.Errorf("jobs left: %+v", st.Jobs)
+	}
+	if indexOf(cmdLines(f, o.Home), "rbw get") >= 0 {
+		t.Error("redid a finished job")
+	}
+}
+
+func TestResumeBreakGlassCrashAfterStagingRemoved(t *testing.T) {
+	o, f, _ := rotateHome(t)
+	withInventory(t)
+	pub, err := NewBreakGlass(context.Background(), f, "work/x")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeState(t, o.Home, `{"jobs":[{"kind":"break-glass","scope":"work/x","item":"athome/work/x/break-glass","new_pub":"`+pub+`","stored":true,"targets":{}}]}`)
+	// The staging item is already gone and the real item holds the new key.
+	if err := Resume(context.Background(), o); err != nil {
+		t.Fatal(err)
+	}
+	if st, _ := loadState(o.Home); len(st.Jobs) != 0 {
+		t.Errorf("job left: %+v", st.Jobs)
+	}
+	if got, _ := BreakGlassPub(context.Background(), f, "work/x"); pubBlob(got) != pubBlob(pub) {
+		t.Error("real item changed")
+	}
+}
+
+func TestResumeAfterCrashInsideSwap(t *testing.T) {
+	o, f, key := rotateHome(t)
+	f.On("gh", "api", "--paginate", "user/keys", "--jq", jqIDKey).Return(run.Result{Code: 1})
+	withInventory(t)
+	Rotate(context.Background(), o, Kinds{Laptop: true}) // swap done, stops at removal
+	// Rewind to "new private key in place, its .pub not yet moved".
+	os.Rename(key+".pub", key+".rotate.pub")
+	st, _ := loadState(o.Home)
+	st.Jobs[0].Installed = false
+	st.save(o.Home)
+	f.On("gh", "api", "--paginate", "user/keys", "--jq", jqIDKey).Return(run.Result{})
+	if err := Resume(context.Background(), o); err != nil {
+		t.Fatal(err)
+	}
+	if !exists(key+".pub") || exists(key+".rotate.pub") {
+		t.Error("swap not finished")
+	}
+	if st, _ := loadState(o.Home); len(st.Jobs) != 0 {
+		t.Errorf("job left: %+v", st.Jobs)
+	}
+}
+
+func TestRotateReplacesLeftoverStagedKey(t *testing.T) {
+	o, _, key := rotateHome(t)
+	withInventory(t)
+	os.WriteFile(key+".rotate", []byte("stale"), 0o600)
+	os.WriteFile(key+".rotate.pub", []byte("ssh-ed25519 STALE x"), 0o644)
+	if err := Rotate(context.Background(), o, Kinds{Laptop: true}); err != nil {
+		t.Fatal(err)
+	}
+	if pubBlob(readPub(t, key+".pub")) == "STALE" {
+		t.Error("installed the stale leftover")
+	}
+}
+
+func TestRotateWithoutChezmoiIsANote(t *testing.T) {
+	o, f, _ := rotateHome(t)
+	withInventory(t)
+	o.Run = &noChezmoi{fakeBW: f}
+	if err := Rotate(context.Background(), o, Kinds{Laptop: true}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(o.Out.(*bytes.Buffer).String(), "chezmoi not found") {
+		t.Error("no note about chezmoi")
+	}
+}
+
+type noChezmoi struct{ *fakeBW }
+
+func (n *noChezmoi) LookPath(name string) (string, error) {
+	if name == "chezmoi" {
+		return "", errors.New("not found")
+	}
+	return n.fakeBW.LookPath(name)
 }

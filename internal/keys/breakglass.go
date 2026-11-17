@@ -120,3 +120,98 @@ func itemReadError(ctx context.Context, r run.Runner, item string, got run.Resul
 	}
 	return fmt.Errorf("%w: %s", ErrNoItem, item)
 }
+
+// runBreakGlass rotates one scope's break-glass key. The new key waits under
+// the staging item until every box in the scope has it, so a skipped box stays
+// reachable with the key under the real name.
+func runBreakGlass(ctx context.Context, o Options, j *job, boxes []Box, save func() error) error {
+	staging := stagingItem(j.Item)
+	if j.NewPub == "" {
+		o.say("==> break-glass key for %s: generating and storing %s", j.Scope, staging)
+		pub, err := genAndStore(ctx, o.Run, staging, j.Item)
+		if err != nil {
+			return err
+		}
+		j.NewPub, j.Stored = pub, true
+		if err := save(); err != nil {
+			return err
+		}
+	}
+	bs := boxesIn(o, j, boxes)
+	boxStep(o, j, bs, []string{"", phaseSkipped}, phaseAdded, func(b Box) error { return b.Authorize(ctx, j.NewPub) })
+	if err := save(); err != nil {
+		return err
+	}
+	if anyAt(j, phaseAdded) {
+		err := withItemKey(ctx, o.Run, staging, func(path string) error {
+			boxStep(o, j, bs, []string{phaseAdded}, phaseChecked, func(b Box) error { return b.Login(ctx, path) })
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+	}
+	if err := save(); err != nil {
+		return err
+	}
+	laptop, err := laptopPub(ctx, o)
+	if err != nil {
+		return err
+	}
+	boxStep(o, j, bs, []string{phaseChecked}, phaseRemoved, func(b Box) error {
+		return b.Reset(ctx, []string{laptop, j.NewPub})
+	})
+	if err := save(); err != nil {
+		return err
+	}
+	if len(skippedOf(j)) == 0 && !j.Promoted {
+		err := promote(ctx, o, staging, j.Item)
+		// A crash after the staging item was removed: the real item already has the new key.
+		if errors.Is(err, ErrNoItem) {
+			if pub, perr := BreakGlassPub(ctx, o.Run, j.Scope); perr == nil && pubBlob(pub) == pubBlob(j.NewPub) {
+				err = nil
+			}
+		}
+		if err != nil {
+			return err
+		}
+		j.Promoted = true
+		if err := save(); err != nil {
+			return err
+		}
+		o.say("✓ break-glass key for %s rotated", j.Scope)
+	}
+	return nil
+}
+
+// managedSet is what a box's authorized_keys holds: the laptop key and its
+// scope's break-glass key, when it has one.
+func managedSet(ctx context.Context, o Options, laptop, scope string) ([]string, error) {
+	bg, err := BreakGlassPub(ctx, o.Run, scope)
+	if errors.Is(err, ErrNoItem) {
+		return []string{laptop}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return []string{laptop, bg}, nil
+}
+
+func laptopPub(ctx context.Context, o Options) (string, error) {
+	key := LaptopKey(o.Home, o.Host)
+	b, err := os.ReadFile(key + ".pub")
+	if err != nil {
+		return "", fmt.Errorf("no laptop public key at %s.pub", key)
+	}
+	return strings.TrimSpace(string(b)), nil
+}
+
+// anyAt reports whether some target of j is at phase.
+func anyAt(j *job, phase string) bool {
+	for _, p := range j.Targets {
+		if p == phase {
+			return true
+		}
+	}
+	return false
+}

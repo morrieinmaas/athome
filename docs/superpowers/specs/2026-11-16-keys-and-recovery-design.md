@@ -251,8 +251,11 @@ Decisions:
   A failure in steps 1 to 4 on GitHub or Bitwarden exits 1 with the old key still the
   laptop key and still on GitHub. The progress file says how far it got, so `--resume`
   continues and never generates a second key. A crash after the file swap but before it was
-  recorded is recognised on resume (`<key>.pub` already holds the new key). Every run checks
-  `rbw unlocked` before any job and exits 1 if it is locked; an exclusive `flock` on
+  recorded, even halfway through it, is recognised on resume (`ssh-keygen -y` of `<key>` gives the
+  new key) and the swap is finished. Finished jobs are dropped even when a later job fails, and
+  `ssh/<keyfile>` is written from the installed key file, so a crash after the staging item
+  was removed never blocks a retry. Every run checks `rbw unlocked` before any job is saved
+  and exits 1 if it is locked; an exclusive `flock` on
   `rotate.lock` beside the progress file stops two rotations running at once.
 - **Progress file** `~/.local/state/athome/rotate.json`, written (0600, via a temp file and
   rename) after every step: `{"jobs": [...], "last_rotated": "<RFC 3339>"}`. A job is

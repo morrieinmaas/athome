@@ -143,6 +143,35 @@ func TestUpdateSelfInstallsAndExecs(t *testing.T) {
 	noPartFiles(t, fx)
 }
 
+// Under the progress view the changelog is held for the confirm question and the
+// exec of the new binary runs with the terminal released, both inside Around.
+func TestUpdateSelfUnderProgressViewReleasesTerminal(t *testing.T) {
+	fx := newFixture(t)
+	fx.writeOld()
+	srv, _ := releaseServer(t, "v0.5.2", "new binary", "")
+	fx.Fake.On("git", fx.git("rev-parse", "--verify", "--quiet", "refs/tags/v0.5.0")...).Return(run.Result{Stdout: "abc\n"})
+	fx.Fake.On("git", fx.git("log", "--no-merges", "--format=  %s", "v0.5.0..v0.5.2")...).Return(run.Result{Stdout: "  fix a\n"})
+	var term strings.Builder
+	depth := 0
+	fx.Env.Ask = prompt.New(strings.NewReader("y\n"), &term)
+	fx.Env.Ask.Around = func(f func()) { depth++; f(); depth-- }
+	execDepth := -1
+	o := steps.UpdateOpts{Version: "0.5.0", Target: "v0.5.2", Base: srv.URL,
+		Exec: func(string, []string) error { execDepth = depth; return nil }}
+	if _, err := fx.runUpdate(o, selfStep()...); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(term.String(), "  fix a\n") || !strings.Contains(term.String(), "update athome from 0.5.0 to v0.5.2?") {
+		t.Errorf("the released terminal got %q, want the changelog and the question", term.String())
+	}
+	if execDepth != 1 {
+		t.Errorf("exec ran at Around depth %d, want 1", execDepth)
+	}
+	if !strings.Contains(fx.Log.String(), "  fix a") {
+		t.Errorf("the run log lost the changelog: %q", fx.Log)
+	}
+}
+
 func TestUpdateSelfNoChangelogWhenNotATag(t *testing.T) {
 	fx := newFixture(t)
 	srv, _ := releaseServer(t, "v0.5.2", "n", "")

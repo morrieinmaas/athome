@@ -196,6 +196,24 @@ func TestBWCopyOnlyFresh(t *testing.T) {
 			t.Errorf("a locked rbw must not be asked to add:\n%s", fx.dump())
 		}
 	})
+	t.Run("not when bwBackupSshKey is false, and nothing is asked", func(t *testing.T) {
+		fx := newFixture(t)
+		fx.Fake.Have("rbw")
+		fx.Env.Cfg.Data["bwBackupSshKey"] = "false"
+		fx.MustExec(steps.SSHKey())
+		if fx.called("rbw") {
+			t.Errorf("bwBackupSshKey=false must skip Bitwarden entirely:\n%s", fx.dump())
+		}
+	})
+	t.Run("bwBackupSshKey true stores like the default", func(t *testing.T) {
+		fx := newFixture(t)
+		fx.Fake.Have("rbw")
+		fx.Env.Cfg.Data["bwBackupSshKey"] = "true"
+		fx.MustExec(steps.SSHKey())
+		if len(fx.callsTo("rbw", "add", item)) != 1 {
+			t.Errorf("want one `rbw add %s`:\n%s", item, fx.dump())
+		}
+	})
 	t.Run("not when rbw is missing, and no error", func(t *testing.T) {
 		fx := newFixture(t)
 		fx.MustExec(steps.SSHKey())

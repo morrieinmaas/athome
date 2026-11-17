@@ -17,6 +17,12 @@ So a fresh machine is: `./scripts/install-mise.sh` → `mise run bootstrap` →
 
 ## Interactive vs non-interactive bootstrap
 
+On a terminal `athome init` shows a full-screen form first; pass `--plain` (or set
+`ATHOME_PLAIN=1`) for the line prompts described below. Your answers are stored in the
+`[data]` table of `~/.config/chezmoi/chezmoi.toml` (private, never in the repo). To change
+them, rerun `athome init`: the form starts from what is stored there, and the rest of the
+run skips what is already done.
+
 `mise run bootstrap` is **interactive by default** — it asks about the choices
 below. Add **`--non-interactive`** (or `-y`), or just run without a TTY (CI,
 pipes), to skip all prompts and take the defaults — which a `bootstrap.toml`

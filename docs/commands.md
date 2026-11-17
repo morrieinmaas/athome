@@ -25,9 +25,28 @@ athome init [flags]
 | `--import-ssh` | Import the SSH key from `--import-from`. |
 | `--import-ssh-bw <item>` | Bitwarden item holding the SSH key. |
 | `--non-interactive`, `-y`, `--yes` | Never ask; use defaults, the config file and `ATHOME_*` variables. |
+| `--plain` | On a terminal, ask line by line instead of showing the full-screen form. `ATHOME_PLAIN=1` does the same. |
 
-Questions are asked only on a terminal, and never for a value already given by
-a flag, an `ATHOME_*` variable or the config file. Details on the answers are
+## The form and the home screen
+
+On a terminal (stdin and stdout), without `-y`, `--yes`, `--non-interactive` or `--plain`,
+`athome init` opens a full-screen form with five pages (Machine, Identity, Keys and secrets,
+Network, Extras) and a review page: enter applies, `b` goes back to edit, `q` or Ctrl-C quits
+with exit status 130 and writes nothing. Each field starts from, in order, a flag or `ATHOME_*`
+variable (shown read-only), the config file, the answers already in `~/.config/chezmoi/chezmoi.toml`,
+then a default. After the review, one progress view lists every step; `l` shows the run log.
+A failing step stays on screen until a key is pressed, then `athome init` exits 1 with the
+same error line as the plain run.
+
+Run `athome` with no arguments on a terminal to open the home screen: version, repo,
+and the machine type, hostname and GitHub handle from `chezmoi.toml` (or "not set up"),
+with `init`, `update` and `quit`. `update` runs `athome update`. Without a terminal it prints usage.
+
+Questions are asked only on a terminal. A value from a flag or `ATHOME_*`
+variable is read-only. A value from the config file is prefilled and editable
+only in the form; line prompts (`--plain`, or a `--config` run on a terminal)
+never ask for it and use it as is. `--config` is unattended only with `-y` or
+without a terminal; on a terminal it uses line prompts, not the TUI. Details on the answers are
 in [unattended installs](install.md#unattended-installs).
 
 `athome init` finds the repo through `ATHOME_REPO` (a path that must hold

@@ -109,7 +109,7 @@ func dataPrompt(env *Env, entries []dataEntry) bool {
 // bitwardenURLUnasked: no URL in the config or chezmoi.toml, and Bitwarden is
 // not switched off, so an interactive run asks for it.
 func bitwardenURLUnasked(env *Env) bool {
-	return env.Cfg.Data["bitwardenUrl"] == "" && env.Cfg.Data["useBitwarden"] != "false" && storedBitwardenURL(env) == ""
+	return !env.Answered["bitwardenUrl"] && env.Cfg.Data["bitwardenUrl"] == "" && env.Cfg.Data["useBitwarden"] != "false" && storedBitwardenURL(env) == ""
 }
 
 func storedBitwardenURL(env *Env) string {
@@ -203,7 +203,7 @@ func dataEntries(ctx context.Context, env *Env) ([]dataEntry, error) {
 	handle, id := dataIdentity(ctx, env)
 	entries := []dataEntry{
 		{key: "machineType", val: env.Cfg.Machine},
-		{key: "hostname", val: shortHostname()}, // B:881; the key path uses dataHostname
+		{key: "hostname", val: dataShortHostname(env)}, // B:881; the key path uses dataHostname
 		{key: "githubHandle", val: handle},
 		{key: "githubId", val: id},
 	}
@@ -212,8 +212,8 @@ func dataEntries(ctx context.Context, env *Env) ([]dataEntry, error) {
 		if k == "meshProvider" && v == "" {
 			v = "meshnet"
 		}
-		if k == "bitwardenUrl" && v == "" {
-			v = storedBitwardenURL(env) // an earlier answer is kept, never blanked
+		if k == "bitwardenUrl" && v == "" && !env.Answered["bitwardenUrl"] {
+			v = storedBitwardenURL(env) // an earlier answer is kept unless the form answered it
 		}
 		entries = append(entries, dataEntry{key: k, val: v})
 	}
@@ -223,16 +223,19 @@ func dataEntries(ctx context.Context, env *Env) ([]dataEntry, error) {
 
 var idRe = regexp.MustCompile(`"id"\s*:\s*([0-9]*)`)
 
-// storedData is the [data] table already in chezmoi.toml, or nil.
-func storedData(env *Env) map[string]any {
+// StoredData decodes the [data] table of the chezmoi.toml under home; nil when it is missing or unreadable.
+func StoredData(home string) map[string]any {
 	var doc struct {
 		Data map[string]any `toml:"data"`
 	}
-	if _, err := toml.DecodeFile(chezmoiConfigPath(env), &doc); err != nil {
+	if _, err := toml.DecodeFile(filepath.Join(home, ".config", "chezmoi", "chezmoi.toml"), &doc); err != nil {
 		return nil
 	}
 	return doc.Data
 }
+
+// storedData is the [data] table already in chezmoi.toml, or nil.
+func storedData(env *Env) map[string]any { return StoredData(env.Home) }
 
 // dataIdentity ports B:830-846. Failures leave the value empty; it never errors.
 // A value that cannot be derived (offline rerun) falls back to the one already
@@ -275,6 +278,21 @@ func dataIdentity(ctx context.Context, env *Env) (handle, id string) {
 	}
 	return handle, id
 }
+
+// dataShortHostname is the [data].hostname to write: the form's answer for this
+// run, else the short hostname as build 2 wrote it every run (B:881).
+func dataShortHostname(env *Env) string {
+	if h := env.Cfg.Data["hostname"]; h != "" {
+		return h
+	}
+	return shortHostname()
+}
+
+// ShortHostname is the hostname the data step records when none is answered.
+func ShortHostname() string { return shortHostname() }
+
+// KeyPath is where the machine's ssh key lives, for callers outside the steps.
+func KeyPath(ctx context.Context, env *Env) string { return skKeyPath(ctx, env) }
 
 // dataHostname is chezmoi's hostname (B:352), falling back to the short hostname.
 func dataHostname(ctx context.Context, env *Env) string {

@@ -3,6 +3,7 @@
 Background for when you want to change something or understand why it's built
 this way. For installing, see [install.md](install.md).
 
+- [The interactive screens](#the-interactive-screens)
 - [chezmoi, mise and the package list](#chezmoi-mise-and-the-package-list)
 - [One folder per identity](#one-folder-per-identity)
 - [SSH keys and signing](#ssh-keys-and-signing)
@@ -15,6 +16,14 @@ this way. For installing, see [install.md](install.md).
 - [Releases and rolling back](#releases-and-rolling-back)
 - [Tests and CI](#tests-and-ci)
 - [More than one machine: pyinfra](#more-than-one-machine-pyinfra)
+
+## The interactive screens
+
+On a terminal, `athome init` runs one form and then one progress view over the very same
+step list the plain run uses; the screens only collect answers and show state. Questions a
+step still asks, and every command that needs the terminal (sudo, `bw-setup`, the `gh` device
+flow), run with the full-screen view released and restored afterwards, so sudo asks only when
+a step needs it.
 
 ## chezmoi, mise and the package list
 

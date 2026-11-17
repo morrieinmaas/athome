@@ -430,3 +430,17 @@ func TestStoredDataReadsTheChezmoiToml(t *testing.T) {
 		t.Errorf("StoredData = %v", got)
 	}
 }
+
+// Clearing a stored bitwardenUrl in the form is an answer: it is written as empty, not swapped back.
+func TestDataClearedBitwardenUrlOverridesStored(t *testing.T) {
+	fx := newFixture(t)
+	fx.Env.Cfg.Data = map[string]string{"githubHandle": "octo", "githubId": "1", "useBitwarden": "true", "bitwardenUrl": "https://vault.example.com"}
+	fx.MustExec(steps.Data())
+
+	fx.Env.Cfg.Data["bitwardenUrl"] = ""
+	fx.Env.Answered = map[string]bool{"bitwardenUrl": true}
+	fx.MustExec(steps.Data()) // same env: Rerun would drop Answered
+	if got := readChezmoiData(t, chezmoiTomlPath(fx))["bitwardenUrl"]; got != "" {
+		t.Errorf("bitwardenUrl = %#v, want the cleared empty answer", got)
+	}
+}

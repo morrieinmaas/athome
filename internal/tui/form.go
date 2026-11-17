@@ -108,6 +108,9 @@ func (s *formState) answers() map[string]string {
 	case "netbird":
 		out["nordvpnCountry"] = ""
 	}
+	if *s.v["useBitwarden"] == "false" { // the questions for these are hidden
+		out["bitwardenUrl"], out["restoreSecrets"] = "", "false"
+	}
 	if s.sshHasKey {
 		out["sshKeyAction"] = s.ssh
 	} else if s.ssh == "skip" {
@@ -205,13 +208,17 @@ func (s *formState) pages(ctx context.Context) []func() *huh.Form {
 				sshOpts = []string{"use", "generate", "reupload"}
 				sshTitle = "An ssh key exists"
 			}
-			return huh.NewForm(huh.NewGroup(
-				s.input("bitwardenUrl", "Bitwarden server URL", "empty = US cloud; EU = https://vault.bitwarden.eu; or your Vaultwarden URL", validBitwardenURL(s.seed.CheckURL, ctx)),
-				s.yesNo("useBitwarden", "Store the ssh key in Bitwarden?"),
-				s.choice("sshKey", sshTitle, &s.ssh, sshOpts...),
-				s.yesNo("uploadSshKeys", "Upload keys to GitHub?"),
-				s.yesNo("restoreSecrets", "Restore secrets from Bitwarden?"),
-			).Title("Keys and secrets"))
+			return huh.NewForm(
+				huh.NewGroup(
+					s.yesNo("useBitwarden", "Use Bitwarden (rbw) for secrets sync?"),
+					s.choice("sshKey", sshTitle, &s.ssh, sshOpts...),
+					s.yesNo("uploadSshKeys", "Upload keys to GitHub?"),
+				).Title("Keys and secrets"),
+				huh.NewGroup(
+					s.input("bitwardenUrl", "Bitwarden server URL", "empty = US cloud; EU = https://vault.bitwarden.eu; or your Vaultwarden URL", validBitwardenURL(s.seed.CheckURL, ctx)),
+					s.yesNo("restoreSecrets", "Restore secrets from Bitwarden?"),
+				).Title("Bitwarden").WithHideFunc(func() bool { return *s.v["useBitwarden"] == "false" }),
+			)
 		},
 		func() *huh.Form {
 			return huh.NewForm(

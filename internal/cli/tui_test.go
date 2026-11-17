@@ -487,3 +487,22 @@ func TestMergeAnswersHostnameNeedsNoProcessEnv(t *testing.T) {
 		t.Error("the default hostname must not be pinned")
 	}
 }
+
+// Ctrl-C in the progress view still runs the registered cleanups, and exits 130.
+func TestProgressCancelRunsCleanup(t *testing.T) {
+	_, _ = tuiSandbox(t)
+	runForm = func(context.Context, io.Reader, io.Writer, tui.Seed) (map[string]string, error) {
+		return map[string]string{"machineType": "personal"}, nil
+	}
+	cleaned := false
+	runProgress = func(_ context.Context, _ io.Reader, _ io.Writer, env *steps.Env, _ []steps.Step, _ func(func(func()))) (steps.Report, error) {
+		env.Cleanup = append(env.Cleanup, func() { cleaned = true })
+		return steps.Report{}, errors.Join(errors.New("run canceled"), context.Canceled)
+	}
+	if code, _, _ := run2("init"); code != 130 {
+		t.Errorf("exit %d, want 130", code)
+	}
+	if !cleaned {
+		t.Error("env.Cleanup did not run after a cancel")
+	}
+}

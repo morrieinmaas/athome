@@ -21,6 +21,9 @@ func TestSuspending(t *testing.T) {
 		{"plain", run.Cmd{Name: "x"}, false},
 		{"interactive", run.Cmd{Name: "x", Interactive: true}, true},
 		{"sudo", run.Cmd{Name: "x", NeedsSudo: true}, true},
+		{"sudo without -n", run.Cmd{Name: "sudo", Args: []string{"dnf", "install", "-y", "jq"}}, true},
+		{"bare sudo", run.Cmd{Name: "sudo"}, true},
+		{"sudo -n", run.Cmd{Name: "sudo", Args: []string{"-n", "true"}}, false},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			inAround, ranInside, calls := false, false, 0

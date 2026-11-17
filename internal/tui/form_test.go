@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +12,9 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/huh"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/exp/teatest"
 
 	"github.com/morrieinmaas/athome/internal/config"
 )
@@ -20,7 +24,7 @@ func full() map[string]string {
 		"machineType": "work", "hostname": "box", "githubHandle": "octo", "githubId": "42",
 		"personalName": "Jürgen Müller", "workEmail": "w@x.co", "workName": "山田",
 		"sidebizEmail": "s@x.co", "sidebizName": "Side Biz",
-		"bitwardenUrl": "https://vault.bitwarden.eu", "useBitwarden": "false",
+		"bitwardenUrl": "https://vault.bitwarden.eu", "useBitwarden": "true",
 		"uploadSshKeys": "false", "restoreSecrets": "false",
 		"meshProvider": "netbird", "netbirdManagementUrl": "https://nb.example", "nordvpnCountry": "",
 		"includeAgents": "false", "agentsRepo": "o/r", "extraPackages": "jq fd",
@@ -285,4 +289,125 @@ func TestFormKeyExistsFollowsAnsweredHostname(t *testing.T) {
 	if got := st.answers(); got["generateSshKey"] != "true" || got["sshKeyAction"] != "" {
 		t.Errorf("back to the old hostname: %v", got)
 	}
+}
+
+func TestFormUseBitwardenOffBlanksUrlAndRestore(t *testing.T) {
+	v := full()
+	v["useBitwarden"], v["bitwardenUrl"], v["restoreSecrets"] = "false", "https://vault.bitwarden.eu", "true"
+	got := newFormState(Seed{Values: v}).answers()
+	if got["bitwardenUrl"] != "" || got["restoreSecrets"] != "false" {
+		t.Errorf("bitwardenUrl=%q restoreSecrets=%q, want empty and false", got["bitwardenUrl"], got["restoreSecrets"])
+	}
+	v["useBitwarden"] = "true"
+	got = newFormState(Seed{Values: v}).answers()
+	if got["bitwardenUrl"] != "https://vault.bitwarden.eu" || got["restoreSecrets"] != "true" {
+		t.Errorf("with Bitwarden on both stay: %q %q", got["bitwardenUrl"], got["restoreSecrets"])
+	}
+}
+
+// keysForm is the keys page as a model that quits on submit, as huh's own runner arranges.
+func keysForm(useBitwarden string) *huh.Form {
+	st := newFormState(Seed{Values: map[string]string{"useBitwarden": useBitwarden}})
+	f := st.pages(context.Background())[2]().WithKeyMap(quitKeys)
+	f.SubmitCmd, f.CancelCmd = tea.Quit, tea.Quit
+	return f
+}
+
+// keysPage runs the keys page under teatest with useBitwarden preset and presses
+// enter through its first group (three questions).
+func keysPage(t *testing.T, useBitwarden string) *teatest.TestModel {
+	t.Helper()
+	tm := teatest.NewTestModel(t, keysForm(useBitwarden), teatest.WithInitialTermSize(80, 24))
+	for range 3 {
+		tm.Send(tea.KeyMsg{Type: tea.KeyEnter})
+	}
+	return tm
+}
+
+func TestFormKeysPageLabelAndBitwardenHiding(t *testing.T) {
+	on := keysPage(t, "true")
+	var seen string
+	teatest.WaitFor(t, on.Output(), func(b []byte) bool {
+		seen = string(b)
+		return strings.Contains(seen, "Bitwarden server URL")
+	}, teatest.WithDuration(5*time.Second), teatest.WithCheckInterval(10*time.Millisecond))
+	f := keysForm("true")
+	f.Init()
+	f.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	if v := f.View(); !strings.Contains(v, "Use Bitwarden (rbw) for secrets sync?") || strings.Contains(v, "Store the ssh key") {
+		t.Errorf("wrong label: %q", v)
+	}
+
+	off := keysPage(t, "false") // the URL and restore questions are hidden: the page ends after three enters
+	off.WaitFinished(t, teatest.WithFinalTimeout(5*time.Second))
+	out, _ := io.ReadAll(off.FinalOutput(t))
+	if strings.Contains(string(out), "Bitwarden server URL") || strings.Contains(string(out), "Restore secrets") {
+		t.Errorf("with Bitwarden off the URL and restore questions are hidden: %q", out)
+	}
+}
+
+// A page narrower than a phone still renders its fields, within the width.
+func TestFormPageAtWidth40(t *testing.T) {
+	page := func() *huh.Form {
+		f := newFormState(Seed{Values: map[string]string{}}).pages(context.Background())[0]().WithKeyMap(quitKeys)
+		f.SubmitCmd, f.CancelCmd = tea.Quit, tea.Quit
+		return f
+	}
+	tm := teatest.NewTestModel(t, page(), teatest.WithInitialTermSize(40, 24))
+	waitOutput(t, tm, "Hostname")
+	tm.Send(tea.KeyMsg{Type: tea.KeyEnter})
+	tm.Send(tea.KeyMsg{Type: tea.KeyEnter})
+	tm.WaitFinished(t, teatest.WithFinalTimeout(5*time.Second))
+
+	g := page()
+	g.Init()
+	g.Update(tea.WindowSizeMsg{Width: 40, Height: 24})
+	for _, line := range strings.Split(g.View(), "\n") {
+		if w := lipgloss.Width(line); w > 40 {
+			t.Errorf("line is %d wide: %q", w, line)
+		}
+	}
+}
+
+// A bad email keeps the identity page up; the form must not move on to later pages.
+func TestFormBadEmailDoesNotAdvance(t *testing.T) {
+	seed := lockedSeed()
+	seed.Locked["workEmail"] = false
+	seed.Values["workEmail"] = ""
+	pr, pw, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := &syncBuf{}
+	done := make(chan error, 1)
+	go func() {
+		_, err := RunForm(context.Background(), pr, out, seed)
+		done <- err
+	}()
+	waitFor := func(want string) {
+		t.Helper()
+		for deadline := time.Now().Add(10 * time.Second); !strings.Contains(out.String(), want); time.Sleep(10 * time.Millisecond) {
+			if time.Now().After(deadline) {
+				t.Fatalf("timed out waiting for %q in %q", want, out.String())
+			}
+		}
+	}
+	waitFor("Work git email")
+	pw.WriteString("bad\r")
+	waitFor("not an email address")
+	time.Sleep(300 * time.Millisecond) // a wrongly advancing form would show the later pages by now
+	if s := out.String(); strings.Contains(s, "Network") || strings.Contains(s, "enter apply") {
+		t.Errorf("the form advanced past a bad email: %q", s)
+	}
+	pw.WriteString("\x03")
+	select {
+	case err := <-done:
+		if !errors.Is(err, ErrQuit) {
+			t.Fatalf("err = %v, want ErrQuit", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("RunForm did not return after ctrl-c")
+	}
+	pr.Close()
+	pw.Close()
 }

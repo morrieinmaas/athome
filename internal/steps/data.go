@@ -212,8 +212,8 @@ func dataEntries(ctx context.Context, env *Env) ([]dataEntry, error) {
 		if k == "meshProvider" && v == "" {
 			v = "meshnet"
 		}
-		if k == "bitwardenUrl" && v == "" {
-			v = storedBitwardenURL(env) // an earlier answer is kept, never blanked
+		if k == "bitwardenUrl" && v == "" && !env.Answered["bitwardenUrl"] {
+			v = storedBitwardenURL(env) // an earlier answer is kept unless the form answered it
 		}
 		entries = append(entries, dataEntry{key: k, val: v})
 	}

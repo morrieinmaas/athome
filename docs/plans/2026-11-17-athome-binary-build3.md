@@ -30,7 +30,7 @@ around; others direct); steps honour `Cfg.Data["uploadSshKeys"]` and `Cfg.Data["
 
 ### T2 the form
 **Owns:** internal/tui/form.go, internal/tui/form_test.go, internal/tui/validate.go, internal/tui/validate_test.go, go.mod, go.sum
-**Produces:** `tui.Seed{Values map[string]string; Locked map[string]bool; KeyExists bool;
+**Produces:** `tui.Seed{Values map[string]string; Locked map[string]bool; KeyExists func(hostname string) bool;
 CheckURL, CheckHandle func(context.Context, string) error}`; `tui.RunForm(ctx, in io.Reader, out io.Writer, seed Seed) (map[string]string, error)`,
 `tui.ErrQuit`; the returned map holds every spec field key plus sshKeyAction or generateSshKey,
 useBitwarden, uploadSshKeys, restoreSecrets. `tui.ValidEmail(string) bool`.

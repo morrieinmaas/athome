@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -211,7 +212,12 @@ func (r *progressRun) result(runErr error) (steps.Report, error) {
 	r.cancel()
 	<-r.finished
 	r.env.Log, r.env.Events = r.origLog, r.origEv
+	if r.origLog != nil { // the view is gone and the terminal is back: the run log goes where a plain run prints it
+		io.WriteString(r.origLog, r.m.log.String())
+	}
 	switch {
+	case errors.Is(runErr, tea.ErrInterrupted): // an external SIGINT, like Ctrl-C in the view
+		return r.m.rep, fmt.Errorf("run canceled: %w", context.Canceled)
 	case runErr != nil:
 		return r.m.rep, runErr
 	case r.m.canceled:

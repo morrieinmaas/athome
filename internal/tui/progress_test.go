@@ -10,6 +10,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/exp/teatest"
 
 	"github.com/morrieinmaas/athome/internal/steps"
@@ -62,6 +63,9 @@ func TestProgressTickSkipCrossLogAndError(t *testing.T) {
 	tm.Type("x")
 	tm.WaitFinished(t, teatest.WithFinalTimeout(5*time.Second))
 
+	if orig.Len() != 0 {
+		t.Errorf("the run log leaked to the original writer during the view: %q", orig.String())
+	}
 	rep, err := r.result(nil)
 	if !errors.Is(err, boom) {
 		t.Fatalf("err = %v", err)
@@ -75,8 +79,8 @@ func TestProgressTickSkipCrossLogAndError(t *testing.T) {
 			t.Errorf("missing %q in %q", w, view)
 		}
 	}
-	if orig.Len() != 0 {
-		t.Errorf("the run log leaked to the original writer during the view: %q", orig.String())
+	if !strings.Contains(orig.String(), "hello run log") {
+		t.Errorf("the run log is not written to the original writer after the view: %q", orig.String())
 	}
 	if !strings.Contains(r.m.log.String(), "hello run log") {
 		t.Errorf("in-view log missing the line: %q", r.m.log.String())
@@ -198,5 +202,64 @@ func TestRunProgressSuccess(t *testing.T) {
 	}
 	if env.Log != nil || env.Events != nil {
 		t.Error("env not restored")
+	}
+}
+
+// An external SIGINT makes p.Run return tea.ErrInterrupted; that is a cancel, not a failure.
+func TestProgressInterruptedIsCancel(t *testing.T) {
+	list := []steps.Step{fake("a", false, func(context.Context, *steps.Env) error { return nil })}
+	r := newProgressRun(context.Background(), &steps.Env{}, list)
+	tm := teatest.NewTestModel(t, r.m, teatest.WithInitialTermSize(80, 24))
+	r.start(tm.GetProgram(), nil)
+	tm.WaitFinished(t, teatest.WithFinalTimeout(5*time.Second))
+	if _, err := r.result(tea.ErrInterrupted); !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want one wrapping context.Canceled", err)
+	}
+}
+
+// The log of a failed run is printed after the view is gone.
+func TestRunProgressWritesLogAfterExit(t *testing.T) {
+	list := []steps.Step{fake("a", false, func(_ context.Context, env *steps.Env) error {
+		env.Log.Write([]byte("==> manual upload instructions\n"))
+		return nil
+	})}
+	var orig bytes.Buffer
+	env := &steps.Env{Log: &orig}
+	if _, err := RunProgress(context.Background(), strings.NewReader(""), &bytes.Buffer{}, env, list, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := orig.String(); !strings.Contains(got, "==> manual upload instructions\n") {
+		t.Errorf("log after the view = %q", got)
+	}
+}
+
+// The view at 40 columns still shows every step and its hint, within the width.
+func TestProgressAtWidth40(t *testing.T) {
+	gate := make(chan struct{})
+	list := []steps.Step{
+		fake("first", false, func(context.Context, *steps.Env) error { return nil }),
+		fake("second", false, func(ctx context.Context, _ *steps.Env) error {
+			select {
+			case <-gate:
+			case <-ctx.Done():
+			}
+			return nil
+		}),
+	}
+	r := newProgressRun(context.Background(), &steps.Env{}, list)
+	tm := teatest.NewTestModel(t, r.m, teatest.WithInitialTermSize(40, 24))
+	r.start(tm.GetProgram(), nil)
+	teatest.WaitFor(t, tm.Output(), func(b []byte) bool {
+		return bytes.Contains(b, []byte("ctrl-c: cancel")) && bytes.Contains(b, []byte("first"))
+	}, teatest.WithDuration(5*time.Second), teatest.WithCheckInterval(10*time.Millisecond))
+	for _, line := range strings.Split(r.m.View(), "\n") {
+		if w := lipgloss.Width(line); w > 40 {
+			t.Errorf("line is %d wide: %q", w, line)
+		}
+	}
+	close(gate)
+	tm.WaitFinished(t, teatest.WithFinalTimeout(5*time.Second))
+	if _, err := r.result(nil); err != nil {
+		t.Fatal(err)
 	}
 }

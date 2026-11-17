@@ -60,11 +60,15 @@ repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 dest_dir="$HOME/.local/bin"
 dest="$dest_dir/athome"
 tmp=""
-cleanup() { [ -z "$tmp" ] || rm -rf "$tmp"; }
+part=""
+cleanup() {
+  [ -z "$tmp" ] || rm -rf "$tmp"
+  [ -z "$part" ] || rm -f "$part"
+}
 trap cleanup EXIT
 
 install_file() {
-  local part="$dest_dir/.athome.$$"
+  part="$dest_dir/.athome.$$"
   mkdir -p "$dest_dir" || die "cannot create $dest_dir"
   cp "$1" "$part" || { rm -f "$part"; die "cannot write $part"; }
   chmod 0755 "$part" || { rm -f "$part"; die "cannot make $part executable"; }

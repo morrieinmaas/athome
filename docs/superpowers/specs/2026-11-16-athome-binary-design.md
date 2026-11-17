@@ -273,7 +273,7 @@ today, so the binary becomes the installed path.
 Decisions:
 
 - The current script moves to `scripts/bootstrap-legacy.sh`, unchanged except its usage
-  text, for one release. The e2e `bash` runner calls it; the `binary` runner calls the
+  text and the messages that name the script itself, for one release. The e2e `bash` runner calls it; the `binary` runner calls the
   installer with `--install-from`.
 - The installer picks the release for the clone it runs from: the tag at `HEAD`, else the
   nearest tag (`git describe --tags --abbrev=0`). `ATHOME_VERSION` overrides it. With no
@@ -306,6 +306,10 @@ Decisions:
   upload keys to GitHub (y); refresh `gh` scopes (y); GitHub username (asked again while
   empty); Bitwarden server URL (empty = US cloud); use Bitwarden (y); restore secrets
   now (y). An answer of empty takes the default; EOF on stdin takes the default.
+- Ctrl-C at an open prompt prints "athome: interrupted", runs cleanup and exits 130, as
+  bash dies at read.
+- Dependencies are the standard library, BurntSushi/toml and golang.org/x/term (terminal
+  detection).
 - Deliberate differences from bash: Confirm accepts y, yes, n and no, case-insensitive,
   and asks again on anything else (bash: only `y` is yes, anything else is no); prompt
   texts use a colon where bash used a dash; the Bitwarden URL is not asked when one is
@@ -342,7 +346,8 @@ Edge cases: `--install-from` as the last argument with no path; a path with spac
 `~/.local/bin` missing; neither `sha256sum` nor `shasum` present (exit 1, names both);
 `checksums.txt` without a line for the asset; an installed `athome` that fails to run
 (replaced); a clone with no tags; a prompt answered with surrounding spaces or upper case
-(`Y`, ` n `); an invalid menu answer (asked again); stdin closed mid-run.
+(`Y`, ` n `); an invalid menu answer (asked again); stdin closed mid-run; Ctrl-C at an
+open prompt (exit 130).
 
 Test list (unit unless marked):
 

@@ -93,6 +93,12 @@ Per-machine values (names, emails, URLs, flags) live in chezmoi `[data]`.
 Values are cached in `~/.config/chezmoi/chezmoi.toml` after first run. To change
 one later, edit that file directly (it's your private cache, not tracked).
 
+## Bumping grofe or canopy
+
+One edit: change `grofe` (a release tag such as `v0.3.1`) or `canopy` (a tag or commit) in
+`home/.chezmoidata/pins.toml`. The install scripts render the pins, so the next `chezmoi apply`
+(or `athome update`) reinstalls the tool; `athome status` compares what is installed with the pin.
+
 ## Managing drift (don't lose live edits!)
 
 chezmoi's source of truth is the **repo** (`home/…`); `apply` renders source →
@@ -116,8 +122,8 @@ Always `mise run diff` before `apply` if you suspect uncaptured live edits.
 
 ## Conventions (for editing scripts)
 
-- **Scripts that run *from the repo*** (`scripts/bootstrap.sh`, `teardown.sh`)
-  share helpers from **`scripts/lib/`** (`colors.sh`, `ssh.sh`, `pm.sh`) — source
+- **Scripts that run *from the repo*** (`scripts/bootstrap.sh`)
+  share helpers from **`scripts/lib/`** (`ssh.sh`) — source
   them; don't re-inline.
 - **chezmoi `run_*` scripts are islands.** They run rendered-standalone in
   chezmoi's apply context and **cannot `source` `scripts/lib/`**. So each one

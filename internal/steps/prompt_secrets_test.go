@@ -2,6 +2,7 @@ package steps_test
 
 import (
 	"bytes"
+	"os"
 	"strings"
 	"testing"
 
@@ -13,25 +14,27 @@ func TestPromptRestore(t *testing.T) {
 		fx := newFixture(t)
 		fx.Env.Cfg.Data["useBitwarden"] = "true"
 		fx.Fake.Have("rbw")
-		p := fx.Path(".local", "bin", "secrets-restore")
-		writeFile(t, p, "#!/bin/sh\nexit 0\n", 0o755)
-		return fx, pr5Ask(fx, answers), p
+		seedVault(fx)
+		return fx, pr5Ask(fx, answers), ""
 	}
 	t.Run("n: not run, no marker, a rerun asks again", func(t *testing.T) {
-		fx, out, p := setup(t, "n\n")
+		fx, out, _ := setup(t, "n\n")
 		fx.MustExec(steps.Finish())
-		if fx.mentions(p) {
+		if restoreRan(fx) {
 			t.Errorf("restore ran:\n%s", fx.dump())
 		}
-		if !strings.Contains(out.String(), "restore your encrypted secrets now (secrets-restore)?") {
+		if !strings.Contains(out.String(), "restore your encrypted secrets now (athome secrets restore)?") {
 			t.Errorf("no prompt: %q", out)
 		}
 		if exists(fx.Path(".local", "state", "athome", "secrets-restore-attempted")) {
 			t.Errorf("a decline must not be remembered")
 		}
+		if got, _ := os.ReadFile(steps.FollowupLogPath()); !strings.Contains(string(got), "Secrets: run `athome secrets restore`") {
+			t.Errorf("a decline must leave the follow-up line, log %q", got)
+		}
 		out2 := pr5Ask(fx, "n\n")
 		fx.MustExec(steps.Finish())
-		if !strings.Contains(out2.String(), "restore your encrypted secrets now (secrets-restore)?") {
+		if !strings.Contains(out2.String(), "restore your encrypted secrets now (athome secrets restore)?") {
 			t.Errorf("not asked again: %q", out2)
 		}
 	})
@@ -39,21 +42,21 @@ func TestPromptRestore(t *testing.T) {
 		fx, out, _ := setup(t, "n\n")
 		writeFile(t, fx.Path(".local", "state", "athome", "secrets-restore-attempted"), "", 0o644)
 		fx.MustExec(steps.Finish())
-		if !strings.Contains(out.String(), "restore your encrypted secrets now (secrets-restore)?") {
+		if !strings.Contains(out.String(), "restore your encrypted secrets now (athome secrets restore)?") {
 			t.Errorf("marker must not silence an interactive rerun: %q", out)
 		}
 		fx2, _, _ := setup(t, "")
 		fx2.Env.Ask = nil
 		writeFile(t, fx2.Path(".local", "state", "athome", "secrets-restore-attempted"), "", 0o644)
 		fx2.MustExec(steps.Finish())
-		if fx2.mentions(fx2.Path(".local", "bin", "secrets-restore")) {
+		if restoreRan(fx2) {
 			t.Errorf("marker must keep a non-interactive rerun a no-op:\n%s", fx2.dump())
 		}
 	})
 	t.Run("y: runs", func(t *testing.T) {
-		fx, _, p := setup(t, "y\n")
+		fx, _, _ := setup(t, "y\n")
 		fx.MustExec(steps.Finish())
-		if !fx.mentions(p) {
+		if !restoreRan(fx) {
 			t.Errorf("restore did not run:\n%s", fx.dump())
 		}
 		fx2, _, _ := setup(t, "")

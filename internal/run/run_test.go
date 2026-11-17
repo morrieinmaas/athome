@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/morrieinmaas/athome/internal/run"
 )
@@ -91,5 +92,30 @@ func TestExecInteractiveInheritsStreams(t *testing.T) {
 	}
 	if res.Stdout != "" || res.Stderr != "" {
 		t.Errorf("an interactive command's output is not captured: %+v", res)
+	}
+}
+
+func TestExecDeadlineNotHeldByChildOfChild(t *testing.T) {
+	// The shell dies at the deadline but its background child keeps stdout open.
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	_, err := run.Exec().Run(ctx, run.Cmd{Name: "sh", Args: []string{"-c", "sleep 5 & wait"}})
+	if err == nil {
+		t.Error("a command past its deadline must error")
+	}
+	if d := time.Since(start); d > 4*time.Second {
+		t.Errorf("Run held for %v after the deadline", d)
+	}
+}
+
+func TestExecSuccessWithChildHoldingPipe(t *testing.T) {
+	start := time.Now()
+	res, err := run.Exec().Run(context.Background(), run.Cmd{Name: "sh", Args: []string{"-c", "sleep 5 & exit 0"}})
+	if err != nil || res.Code != 0 {
+		t.Fatalf("a successful command whose child holds the pipe: code %d, err %v", res.Code, err)
+	}
+	if d := time.Since(start); d > 4*time.Second {
+		t.Errorf("took %v, want about WaitDelay", d)
 	}
 }

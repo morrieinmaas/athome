@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Asserts `teardown.sh --all` wiped the athome TOOL LAYER while leaving USER DATA
+# Asserts `athome teardown --all` wiped the athome TOOL LAYER while leaving USER DATA
 # untouched. Runs in the e2e scenario right after teardown. The user-data checks
 # are the SAFETY GUARD: a teardown that ever deleted ~/.secrets (env files) or a
 # project/context dir would be destructive — these must catch that regression.
@@ -15,6 +15,7 @@ refute() { local d="$1"; shift; if "$@" >/dev/null 2>&1; then printf '  \033[31m
 echo "== teardown assertions (after teardown --all --execute) =="
 
 # ── Tool layer + managed dotfiles must be GONE ──
+refute "athome binary removed"           test -e "$HOME/.local/bin/athome"
 refute "managed .zshrc removed"             test -f "$HOME/.zshrc"
 refute "managed .gitconfig removed"         test -f "$HOME/.gitconfig"
 refute "generated chezmoi config removed"   test -d "$HOME/.config/chezmoi"

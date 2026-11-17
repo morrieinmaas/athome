@@ -181,79 +181,85 @@ func TestBitwardenNonInteractive(t *testing.T) {
 	})
 }
 
-func TestSecretsRestoreSkip(t *testing.T) {
-	restore := func(fx *fixture) string {
-		p := fx.Path(".local", "bin", "secrets-restore")
-		writeFile(t, p, "#!/bin/sh\nexit 0\n", 0o755)
-		return p
+// seedVault gives the fixture a vault clone with nothing tracked, so an
+// in-process restore shows up as exactly one `git pull` and writes nothing.
+func seedVault(fx *fixture) {
+	fx.T.Helper()
+	for _, k := range []string{"SECRETS_VAULT", "SECRETS_VAULT_NAME", "SECRETS_VAULT_REPO", "ATHOME_GITHUB_HANDLE"} {
+		fx.T.Setenv(k, "")
 	}
+	mustMkdir(fx.T, fx.Path(".local", "share", "attic", ".git"))
+}
+
+func restoreRan(fx *fixture) bool { return fx.called("git", "pull") }
+
+func TestSecretsRestoreSkip(t *testing.T) {
 	t.Run("an existing ~/.secrets/*/.env skips", func(t *testing.T) {
 		fx := newFixture(t)
 		fx.Fake.Have("rbw")
-		p := restore(fx)
+		seedVault(fx)
 		writeFile(t, fx.Path(".secrets", "proj", ".env"), "A=1\n", 0o600)
 		fx.MustExec(steps.Finish())
-		if fx.mentions(p) || fx.mentions("secrets-restore") {
+		if restoreRan(fx) {
 			t.Errorf("secrets already present, restore must not run:\n%s", fx.dump())
 		}
 	})
-	t.Run("unlocked and empty: restore runs", func(t *testing.T) {
+	t.Run("unlocked and empty: restore runs in process", func(t *testing.T) {
 		fx := newFixture(t)
 		fx.Fake.Have("rbw")
-		p := restore(fx)
+		seedVault(fx)
 		fx.MustExec(steps.Finish())
-		if !fx.mentions(p) {
-			t.Errorf("rbw unlocked and no .env: want a call to %s:\n%s", p, fx.dump())
+		if !restoreRan(fx) {
+			t.Errorf("rbw unlocked and no .env: want an in-process restore:\n%s", fx.dump())
+		}
+		if fx.mentions("secrets-restore") {
+			t.Errorf("the script must not be run:\n%s", fx.dump())
 		}
 	})
 	t.Run("rbw locked: restore never runs", func(t *testing.T) {
 		fx := newFixture(t)
 		fx.Fake.Have("rbw")
 		fx.Fake.On("rbw", "unlocked").Return(run.Result{Code: 1})
-		p := restore(fx)
+		seedVault(fx)
 		fx.MustExec(steps.Finish())
-		if fx.mentions(p) {
+		if restoreRan(fx) {
 			t.Errorf("rbw locked, restore can never work:\n%s", fx.dump())
-		}
-	})
-	t.Run("restore is interactive", func(t *testing.T) {
-		fx := newFixture(t)
-		fx.Fake.Have("rbw")
-		p := restore(fx)
-		fx.MustExec(steps.Finish())
-		if c := fx.callsTo(p); len(c) != 1 || !c[0].Interactive {
-			t.Errorf("secrets-restore prompts, it must be interactive: %+v", c)
 		}
 	})
 	t.Run("a failing restore is not an error", func(t *testing.T) {
 		fx := newFixture(t)
 		fx.Fake.Have("rbw")
-		p := restore(fx)
-		fx.Fake.On(p).Return(run.Result{Code: 1})
+		seedVault(fx)
+		fx.Fake.On("git", "ls-files", "-z").Return(run.Result{Code: 1})
 		if _, err := fx.Exec(steps.Finish()); err != nil {
-			t.Fatalf("secrets-restore trouble is a message, not an error: %v", err)
+			t.Fatalf("restore trouble is a message, not an error: %v", err)
 		}
 		if fx.Env.Warnings != 0 {
-			t.Errorf("Warnings = %d, a failing secrets-restore only logs (B:1026)", fx.Env.Warnings)
+			t.Errorf("Warnings = %d, a failing restore only logs (B:1026)", fx.Env.Warnings)
 		}
 	})
-	t.Run("unlocked, empty, no script: a follow-up line", func(t *testing.T) {
+	t.Run("no vault and no owner: logged, not an error", func(t *testing.T) {
 		fx := newFixture(t)
 		fx.Fake.Have("rbw")
+		for _, k := range []string{"SECRETS_VAULT", "SECRETS_VAULT_NAME", "SECRETS_VAULT_REPO", "ATHOME_GITHUB_HANDLE"} {
+			t.Setenv(k, "")
+		}
 		fx.MustExec(steps.Finish())
-		got, _ := os.ReadFile(steps.FollowupLogPath())
-		if !strings.Contains(string(got), "Secrets: run `secrets-restore`") {
-			t.Errorf("want the secrets-restore follow-up line (B:1028), log: %q", got)
+		if !strings.Contains(fx.Log.String(), "athome secrets restore had issues") {
+			t.Errorf("want the issues line, log %q", fx.Log.String())
 		}
 	})
-	t.Run("unlocked, empty, script not executable: a follow-up line", func(t *testing.T) {
+	t.Run("no vault with a handle: the vault is cloned through gh", func(t *testing.T) {
 		fx := newFixture(t)
-		fx.Fake.Have("rbw")
-		writeFile(t, fx.Path(".local", "bin", "secrets-restore"), "#!/bin/sh\n", 0o644)
+		fx.Fake.Have("rbw", "gh")
+		for _, k := range []string{"SECRETS_VAULT", "SECRETS_VAULT_NAME", "SECRETS_VAULT_REPO"} {
+			t.Setenv(k, "")
+		}
+		t.Setenv("ATHOME_GITHUB_HANDLE", "alice")
 		fx.MustExec(steps.Finish())
-		got, _ := os.ReadFile(steps.FollowupLogPath())
-		if !strings.Contains(string(got), "Secrets: run `secrets-restore`") {
-			t.Errorf("want the secrets-restore follow-up line (B:1028), log: %q", got)
+		vault := fx.Path(".local", "share", "attic")
+		if !fx.called("gh", "repo", "clone", "alice/attic", vault, "--", "-q") {
+			t.Errorf("want gh repo clone alice/attic %s -- -q:\n%s", vault, fx.dump())
 		}
 	})
 	t.Run("rbw locked: no follow-up line", func(t *testing.T) {
@@ -265,16 +271,23 @@ func TestSecretsRestoreSkip(t *testing.T) {
 			t.Errorf("a locked rbw says nothing here (B:1017), log: %q", got)
 		}
 	})
+	t.Run("there is no restore-hint step", func(t *testing.T) {
+		for _, s := range steps.Finish() {
+			if s.Name == "secrets-restore-hint" {
+				t.Errorf("secrets-restore-hint must be gone")
+			}
+		}
+	})
 }
 
-// writesEnv stands in for a restore script that succeeds: running it leaves a .env.
+// writesEnv stands in for a restore that succeeds: its pull leaves a .env.
 type writesEnv struct {
 	run.Runner
-	script, env string
+	env string
 }
 
 func (w writesEnv) Run(ctx context.Context, c run.Cmd) (run.Result, error) {
-	if c.Name == w.script {
+	if c.Name == "git" && slices.Contains(c.Args, "pull") {
 		os.MkdirAll(filepath.Dir(w.env), 0o755)
 		os.WriteFile(w.env, []byte("A=1\n"), 0o600)
 	}
@@ -282,37 +295,36 @@ func (w writesEnv) Run(ctx context.Context, c run.Cmd) (run.Result, error) {
 }
 
 func TestSecretsRestoreAttemptedMarker(t *testing.T) {
-	setup := func(t *testing.T) (*fixture, string) {
+	setup := func(t *testing.T) *fixture {
 		fx := newFixture(t)
 		fx.Fake.Have("rbw")
-		p := fx.Path(".local", "bin", "secrets-restore")
-		writeFile(t, p, "#!/bin/sh\nexit 0\n", 0o755)
-		return fx, p
+		seedVault(fx)
+		return fx
 	}
 	marker := func(fx *fixture) string {
 		return fx.Path(".local", "state", "athome", "secrets-restore-attempted")
 	}
 	t.Run("a restore that leaves no .env is not retried on rerun", func(t *testing.T) {
-		fx, p := setup(t)
+		fx := setup(t)
 		fx.MustExec(steps.Finish())
 		if !exists(marker(fx)) {
 			t.Fatalf("an attempt without .env must leave the marker")
 		}
 		rep := fx.MustRerun(steps.Finish())
-		if slices.Contains(rep.Applied, "secrets-restore") || len(fx.callsTo(p)) != 1 {
-			t.Errorf("rerun must not retry the restore: applied=%v calls=%d", rep.Applied, len(fx.callsTo(p)))
+		if slices.Contains(rep.Applied, "secrets-restore") || len(fx.callsTo("git", "pull")) != 1 {
+			t.Errorf("rerun must not retry the restore: applied=%v calls=%d", rep.Applied, len(fx.callsTo("git", "pull")))
 		}
 	})
 	t.Run("a restore that leaves .env writes no marker", func(t *testing.T) {
-		fx, p := setup(t)
-		fx.Env.Run = writesEnv{fx.Env.Run, p, fx.Path(".secrets", "proj", ".env")}
+		fx := setup(t)
+		fx.Env.Run = writesEnv{fx.Env.Run, fx.Path(".secrets", "proj", ".env")}
 		fx.MustExec(steps.Finish())
 		if exists(marker(fx)) {
 			t.Errorf("secrets were restored, no marker wanted")
 		}
 	})
 	t.Run("the marker is removed once .env files exist", func(t *testing.T) {
-		fx, _ := setup(t)
+		fx := setup(t)
 		writeFile(t, marker(fx), "", 0o644)
 		writeFile(t, fx.Path(".secrets", "proj", ".env"), "A=1\n", 0o600)
 		if err := steps.Setup(context.Background(), fx.Env); err != nil {
@@ -330,11 +342,10 @@ func TestSecretsRestoreHomeWithBracket(t *testing.T) {
 	fx.Home = filepath.Join(filepath.Dir(fx.Home), "[x] home")
 	fx.Env.Home = fx.Home
 	fx.Fake.Have("rbw")
-	p := fx.Path(".local", "bin", "secrets-restore")
-	writeFile(t, p, "#!/bin/sh\nexit 0\n", 0o755)
+	seedVault(fx)
 	writeFile(t, fx.Path(".secrets", "proj", ".env"), "A=1\n", 0o600)
 	fx.MustExec(steps.Finish())
-	if fx.mentions(p) {
+	if restoreRan(fx) {
 		t.Errorf("a .env exists under a home holding `[`, restore must not run:\n%s", fx.dump())
 	}
 }

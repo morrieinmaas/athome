@@ -21,17 +21,6 @@ export PATH="$HOME/.local/bin:$HOME/.local/share/mise/shims:/opt/nanobrew/prefix
 
 phase() { printf '\n\033[1;35m========== %s ==========\033[0m\n' "$1"; }
 
-# ATHOME_E2E_RUNNER: bash (default, scripts/bootstrap-legacy.sh) or binary
-# (scripts/bootstrap.sh, the installer, which runs athome init).
-runner="${ATHOME_E2E_RUNNER:-bash}"
-case "$runner" in
-  bash | binary) ;;
-  *)
-    echo "unknown ATHOME_E2E_RUNNER='$runner' (expected: bash | binary)" >&2
-    exit 1
-    ;;
-esac
-
 # The image puts athome in /usr/local/bin; the installer copies it into
 # ~/.local/bin, which is first on PATH, so later `athome` calls run the installed
 # copy. Pin the source now so the second pass never installs a file onto itself.
@@ -56,11 +45,7 @@ assert_same_commit() {
 }
 
 run_bootstrap() {
-  if [ "$runner" = binary ]; then
-    ./scripts/bootstrap.sh --install-from "$athome_src" --config test/e2e/bootstrap.toml --machine personal
-  else
-    ./scripts/bootstrap-legacy.sh --config test/e2e/bootstrap.toml --machine personal
-  fi
+  ./scripts/bootstrap.sh --install-from "$athome_src" --config test/e2e/bootstrap.toml --machine personal
 }
 
 # Second `athome init` must be a no-op: last stdout line "athome: applied 0, skipped N".
@@ -74,17 +59,30 @@ assert_init_idempotent() {
   fi
 }
 
-# Baseline bootstrap (binary runner: a second init right after must be a no-op,
+# After apply, nothing in the home may differ from the source: `athome status --json`
+# exits 0 and reports dotfiles as current.
+assert_status_dotfiles_current() {
+  local js
+  js="$(athome status --json)" || {
+    echo "FAIL: athome status --json exited non-zero" >&2
+    exit 1
+  }
+  if ! printf '%s' "$js" | tr -d ' \n' | grep -q '"name":"dotfiles","status":"current"'; then
+    echo "FAIL: athome status does not report dotfiles as current: $js" >&2
+    exit 1
+  fi
+}
+
+# Baseline bootstrap (a second init right after must be a no-op,
 # before apply changes the home), then converge with apply, asserting each half.
 bootstrap_and_verify() {
   run_bootstrap
   assert_same_commit
-  if [ "$runner" = binary ]; then
-    assert_init_idempotent
-  fi
+  assert_init_idempotent
   bash test/e2e/verify-baseline.sh
   chezmoi apply
   bash test/e2e/verify.sh
+  assert_status_dotfiles_current
 }
 
 phase "1/3 bootstrap -> apply -> verify"
@@ -95,7 +93,7 @@ phase "2/3 seed user-data canaries -> teardown --all -> verify-teardown"
 mkdir -p "$HOME/.secrets/canary" "$HOME/personal/canary-repo"
 printf 'SECRET=keepme\n' >"$HOME/.secrets/canary/.env"
 printf 'keepme\n' >"$HOME/personal/canary-repo/keepme"
-./scripts/teardown.sh --all --execute --yes
+athome teardown --all --execute --yes
 assert_same_commit
 bash test/e2e/verify-teardown.sh
 

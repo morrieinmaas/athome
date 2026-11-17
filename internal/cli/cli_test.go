@@ -106,6 +106,17 @@ func TestHelp(t *testing.T) {
 	}
 }
 
+func TestHelpListsEverySubcommand(t *testing.T) {
+	sandbox(t)
+	inNoRepo(t)
+	_, out, errOut := runMain("--help")
+	for _, c := range []string{"init", "update", "status", "teardown", "secrets", "version"} {
+		if !strings.Contains(out+errOut, c) {
+			t.Errorf("--help must list %s, got %q", c, out+errOut)
+		}
+	}
+}
+
 func TestInitHelpListsEveryFlag(t *testing.T) {
 	sandbox(t)
 	inNoRepo(t)

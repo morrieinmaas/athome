@@ -9,6 +9,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/morrieinmaas/athome/internal/run"
+	"github.com/morrieinmaas/athome/internal/secrets"
 )
 
 // Finish ports the tail of bootstrap-legacy.sh (B:951-1048): sourceDir pin, repo git
@@ -21,7 +22,6 @@ func Finish() []Step {
 		{Name: "secrets-dir", Check: secretsDirDone, Apply: makeSecretsDir},
 		{Name: "bitwarden-setup", Check: bitwardenDone, Apply: bitwardenSetup},
 		{Name: "secrets-restore", Check: secretsRestoreDone, Apply: restoreSecrets},
-		{Name: "secrets-restore-hint", Check: secretsHintDone, Apply: secretsHint},
 		{Name: "checkout-main", Check: notDetached, Apply: checkoutMain},
 	}
 }
@@ -122,38 +122,13 @@ func rbwUnlocked(ctx context.Context, env *Env) bool {
 	return err == nil && r.Code == 0
 }
 
-func restoreScript(env *Env) string {
-	return filepath.Join(env.Home, ".local", "bin", "secrets-restore")
+const secretsFollowup = "Secrets: run `athome secrets restore` to recover ~/.config env files from the encrypted vault. See docs/secrets.md."
+
+// secretsRestorable: rbw is unlocked and no env file has been restored yet.
+func secretsRestorable(ctx context.Context, env *Env) bool {
+	return rbwUnlocked(ctx, env) && !hasSecretsEnv(env)
 }
 
-type secretsState int
-
-const (
-	secretsNothing    secretsState = iota // rbw locked or missing, or the env files exist
-	secretsRestorable                     // the script can run
-	secretsNoScript                       // restorable, but the script is not there yet
-)
-
-const secretsFollowup = "Secrets: run `secrets-restore` to recover ~/.config env files from the encrypted vault. See docs/secrets.md."
-
-// B:1015-1030: restore only when rbw is unlocked, no ~/.secrets/*/.env exists
-// and the secrets-restore script is executable.
-func secretsStateOf(ctx context.Context, env *Env) secretsState {
-	if !rbwUnlocked(ctx, env) {
-		return secretsNothing
-	}
-	if hasSecretsEnv(env) {
-		return secretsNothing
-	}
-	fi, err := os.Stat(restoreScript(env))
-	if err != nil || fi.Mode().Perm()&0o111 == 0 {
-		return secretsNoScript
-	}
-	return secretsRestorable
-}
-
-// restoreMarker records an attempted restore that left no ~/.secrets/*/.env. It
-// only quiets non-interactive runs; an interactive rerun still asks.
 func restoreMarker(env *Env) string {
 	return filepath.Join(env.Home, ".local", "state", "athome", "secrets-restore-attempted")
 }
@@ -197,28 +172,19 @@ func secretsRestoreDone(ctx context.Context, env *Env) (bool, error) {
 	if env.Ask == nil && fileExists(restoreMarker(env)) {
 		return true, nil
 	}
-	return secretsStateOf(ctx, env) != secretsRestorable, nil
+	return !secretsRestorable(ctx, env), nil
 }
 
-// secretsHintDone: the follow-up line is wanted only without the script, and
-// once per run (Setup empties the log).
-func secretsHintDone(ctx context.Context, env *Env) (bool, error) {
-	return secretsStateOf(ctx, env) != secretsNoScript || followupHas(secretsFollowup), nil
-}
-
-func secretsHint(_ context.Context, env *Env) error {
-	appendFollowup(env, secretsFollowup)
-	return nil
-}
-
+// restoreSecrets runs athome secrets restore after asking (an interactive run) and
+// records the attempt in a marker unless a ~/.secrets/*/.env now exists. Declining
+// queues the follow-up hint instead.
 func restoreSecrets(ctx context.Context, env *Env) error {
-	if env.Ask != nil && !env.Ask.Confirm("restore your encrypted secrets now (secrets-restore)?", true) { // B:1025
+	if env.Ask != nil && !env.Ask.Confirm("restore your encrypted secrets now (athome secrets restore)?", true) { // B:1025
 		appendFollowup(env, secretsFollowup)
 		return nil
 	}
-	r, err := env.Run.Run(ctx, run.Cmd{Name: restoreScript(env), Interactive: true})
-	if err != nil || r.Code != 0 {
-		envLogf(env, "  secrets-restore had issues; run it manually later.\n")
+	if secrets.Restore(ctx, secrets.FromEnv(env.Home, env.Run, env.Log, env.Log)) != 0 {
+		envLogf(env, "  athome secrets restore had issues; run it manually later.\n")
 	}
 	if hasSecretsEnv(env) {
 		os.Remove(restoreMarker(env))

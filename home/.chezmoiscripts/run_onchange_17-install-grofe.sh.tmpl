@@ -29,17 +29,30 @@
 #   ATHOME_GROFE_BIN=<path>   a binary already built, copied as it is. Nothing
 #                             is downloaded or built (the alias-day container
 #                             test sets it to the grofe it built)
-#   cargo                     `cargo install` at the pinned ref below
+#   release                   the pinned release tarball from GROFE_RELEASE_BASE
+#                             (default https://github.com/termage/grofe/releases/download),
+#                             checked against its .sha256 file before it is installed
 #
-# run_onchange, keyed on the pinned ref: change it, and the next `chezmoi
-# apply` installs that grofe. Bumping it is two edits, this comment and ref=.
+# run_onchange, keyed on the pin: change `pins.grofe` in home/.chezmoidata/pins.toml,
+# and the next `chezmoi apply` installs that grofe.
 #
-# grofe ref: {{ "17419d4393a2100afa6b9c4aa93ca6facbad779c" }}
+# grofe pin: {{ .pins.grofe }}
 set -euo pipefail
 
-ref="17419d4393a2100afa6b9c4aa93ca6facbad779c"
-repo="https://github.com/termage/grofe.git"
+pin="{{ .pins.grofe }}"
+base="${GROFE_RELEASE_BASE:-https://github.com/termage/grofe/releases/download}"
 dest="${HOME}/.local/lib/grofe"
+
+tmp=""
+trap '[ -z "${tmp}" ] || rm -rf "${tmp}"' EXIT
+
+sha() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | cut -d' ' -f1
+  else
+    shasum -a 256 "$1" | cut -d' ' -f1
+  fi
+}
 
 mkdir -p "${dest}/bin"
 if [ -n "${ATHOME_GROFE_BIN:-}" ]; then
@@ -49,22 +62,43 @@ if [ -n "${ATHOME_GROFE_BIN:-}" ]; then
   fi
   printf 'grofe: installing %s\n' "${ATHOME_GROFE_BIN}"
   install -m 755 "${ATHOME_GROFE_BIN}" "${dest}/grofe.new"
-elif ! command -v cargo >/dev/null 2>&1; then
-  printf 'grofe: no ATHOME_GROFE_BIN and no cargo, so grofe is not installed; tmux stays tmux\n' >&2
-  exit 0
-elif ! GIT_TERMINAL_PROMPT=0 git ls-remote --exit-code "${repo}" HEAD >/dev/null 2>&1; then
-  # grofe's repository is private for now: a machine (or CI) that cannot
-  # read it keeps tmux instead of failing the whole apply.
-  printf 'grofe: cannot reach %s, so grofe is not installed; tmux stays tmux\n' "${repo}" >&2
-  exit 0
 else
-  printf 'grofe: building %s at %s\n' "${repo}" "${ref}"
-  # The git command, not cargo's own git: this machine's gitconfig rewrites
-  # https://github.com/ to SSH, which cargo's built-in client cannot
-  # authenticate ("no authentication methods succeeded").
-  CARGO_NET_GIT_FETCH_WITH_CLI=true \
-    cargo install --quiet --locked --git "${repo}" --rev "${ref}" --root "${dest}/build" grofe
-  install -m 755 "${dest}/build/bin/grofe" "${dest}/grofe.new"
+  case "$(uname -s)-$(uname -m)" in
+    Linux-x86_64) target=x86_64-unknown-linux-musl ;;
+    Linux-aarch64 | Linux-arm64) target=aarch64-unknown-linux-musl ;;
+    Darwin-x86_64) target=x86_64-apple-darwin ;;
+    Darwin-arm64 | Darwin-aarch64) target=aarch64-apple-darwin ;;
+    *)
+      printf 'grofe: no release for %s %s, so grofe is not installed; tmux stays tmux\n' "$(uname -s)" "$(uname -m)" >&2
+      exit 0
+      ;;
+  esac
+  name="grofe-${pin}-${target}"
+  url="${base}/${pin}/${name}.tar.gz"
+  if ! command -v curl >/dev/null 2>&1; then
+    printf 'grofe: curl not found, so grofe is not installed; tmux stays tmux\n' >&2
+    exit 0
+  fi
+  tmp="$(mktemp -d "${TMPDIR:-/tmp}/grofe-install.XXXXXX")"
+  # A download that fails (offline, or a repository this machine cannot read)
+  # keeps tmux instead of failing the whole apply.
+  if ! curl -fsSL "${url}" -o "${tmp}/${name}.tar.gz" 2>/dev/null; then
+    printf 'grofe: cannot download %s, so grofe is not installed; tmux stays tmux\n' "${url}" >&2
+    exit 0
+  fi
+  if ! curl -fsSL "${url}.sha256" -o "${tmp}/${name}.tar.gz.sha256" 2>/dev/null; then
+    printf 'grofe: cannot download %s.sha256, refusing to install an unchecked grofe\n' "${url}" >&2
+    exit 1
+  fi
+  want="$(awk '{ print $1; exit }' "${tmp}/${name}.tar.gz.sha256")"
+  got="$(sha "${tmp}/${name}.tar.gz")"
+  if [ -z "${want}" ] || [ "${got}" != "${want}" ]; then
+    printf 'grofe: checksum mismatch for %s: expected %s, got %s\n' "${name}.tar.gz" "${want:-nothing}" "${got}" >&2
+    exit 1
+  fi
+  printf 'grofe: installing %s (%s)\n' "${pin}" "${target}"
+  tar -xzf "${tmp}/${name}.tar.gz" -C "${tmp}"
+  install -m 755 "${tmp}/${name}/grofe" "${dest}/grofe.new"
 fi
 # Moved into place, so a running server's next exec never sees half a file.
 mv -f "${dest}/grofe.new" "${dest}/grofe"

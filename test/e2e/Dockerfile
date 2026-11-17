@@ -49,20 +49,28 @@ RUN pacman -Syu --noconfirm --needed git curl sudo base-devel openssh which rust
 # source of the packages below. Trust anchor is unchanged — `--lsign-key` pins
 # the full fingerprint, so a substituted keyring fails the build rather than
 # being trusted, and `pacman -U` then verifies the package signatures against it.
-RUN curl -fsSL --retry 3 --retry-all-errors \
-         -o /tmp/chaotic-keyring.pkg.tar.zst \
-         'https://cdn-mirror.chaotic.cx/chaotic-aur/chaotic-keyring.pkg.tar.zst' \
+RUN for pkg in chaotic-keyring chaotic-mirrorlist; do \
+         ok=; \
+         for host in cdn-mirror geo-mirror; do \
+           if curl -fsSL --retry 6 --retry-all-errors --retry-delay 10 \
+                -o "/tmp/$pkg.pkg.tar.zst" \
+                "https://$host.chaotic.cx/chaotic-aur/$pkg.pkg.tar.zst"; then \
+             ok=1; break; \
+           fi; \
+         done; \
+         [ -n "$ok" ] || exit 1; \
+       done \
     && bsdtar -xOf /tmp/chaotic-keyring.pkg.tar.zst \
          usr/share/pacman/keyrings/chaotic.gpg > /tmp/chaotic.gpg \
     && pacman-key --init \
     && pacman-key --add /tmp/chaotic.gpg \
     && pacman-key --lsign-key EF925EA60F33D0CB85C44AD13056513887B78AEB \
     && pacman -U --noconfirm \
-         'https://cdn-mirror.chaotic.cx/chaotic-aur/chaotic-keyring.pkg.tar.zst' \
-         'https://cdn-mirror.chaotic.cx/chaotic-aur/chaotic-mirrorlist.pkg.tar.zst' \
+         /tmp/chaotic-keyring.pkg.tar.zst /tmp/chaotic-mirrorlist.pkg.tar.zst \
     && printf '\n[chaotic-aur]\nInclude = /etc/pacman.d/chaotic-mirrorlist\n' >> /etc/pacman.conf \
-    && pacman -Sy --noconfirm yay \
-    && rm -f /tmp/chaotic-keyring.pkg.tar.zst /tmp/chaotic.gpg
+    && for i in 1 2 3 4 5; do pacman -Sy --noconfirm yay && break; \
+         [ "$i" = 5 ] && exit 1; sleep 5; done \
+    && rm -f /tmp/chaotic-keyring.pkg.tar.zst /tmp/chaotic-mirrorlist.pkg.tar.zst /tmp/chaotic.gpg
 
 # makepkg/yay refuse to run as root → a passwordless-sudo build user.
 RUN useradd -m -G wheel ci \

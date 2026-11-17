@@ -13,7 +13,7 @@ import (
 	"github.com/morrieinmaas/athome/internal/run"
 )
 
-// dataKeys are the string keys of chezmoi's [data], in the order bootstrap.sh
+// dataKeys are the string keys of chezmoi's [data], in the order bootstrap-legacy.sh
 // writes them (B:880-898), between hostname/githubId and includeAgents.
 var dataKeysAfterIdentity = []string{
 	"personalName", "workEmail", "workName", "sidebizEmail", "sidebizName",
@@ -57,13 +57,81 @@ func Data() []Step {
 					return err
 				}
 			}
+			if dataPrompt(env, entries) {
+				var err error
+				if entries, err = dataEntries(ctx, env); err != nil {
+					return err
+				}
+			}
+			if dataStored(env, entries) {
+				return nil // the prompts changed nothing: leave DataChanged false
+			}
 			return writeData(env, entries)
 		},
 	}}
 }
 
+// dataPrompt asks for the values bootstrap-legacy.sh prompts for (B:837, B:855-861) when
+// env.Ask is set and the value is neither preset nor already stored. Answers go
+// into env.Cfg.Data, where an env or config value would be. It reports whether
+// anything was set, so the entries must be rebuilt. Only Apply calls it: a check
+// never prompts.
+func dataPrompt(env *Env, entries []dataEntry) bool {
+	if env.Ask == nil {
+		return false
+	}
+	if env.Cfg.Data == nil {
+		env.Cfg.Data = map[string]string{}
+	}
+	changed := false
+	for _, e := range entries {
+		if e.key == "githubHandle" && e.val == "" { // B:837, EOF leaves it empty
+			if h := env.Ask.String("GitHub username: ", true); h != "" {
+				env.Cfg.Data["githubHandle"] = h
+				changed = true
+			}
+		}
+	}
+	d := env.Cfg.Data
+	if bitwardenURLUnasked(env) { // B:855-861
+		env.Ask.Say("Bitwarden server (for rbw secrets):\n")
+		env.Ask.Say("  empty  = US cloud (bitwarden.com)\n")
+		env.Ask.Say("  EU     = https://vault.bitwarden.eu\n")
+		env.Ask.Say("  self-hosted Vaultwarden = your URL (https://vault.example.com)\n")
+		if u := env.Ask.String("Bitwarden server URL [empty = US cloud]: ", false); u != "" {
+			d["bitwardenUrl"] = u
+			changed = true
+		}
+	}
+	return changed
+}
+
+// bitwardenURLUnasked: no URL in the config or chezmoi.toml, and Bitwarden is
+// not switched off, so an interactive run asks for it.
+func bitwardenURLUnasked(env *Env) bool {
+	return env.Cfg.Data["bitwardenUrl"] == "" && env.Cfg.Data["useBitwarden"] != "false" && storedBitwardenURL(env) == ""
+}
+
+func storedBitwardenURL(env *Env) string {
+	s, _ := storedData(env)["bitwardenUrl"].(string)
+	return s
+}
+
 // dataDone: chezmoi.toml already holds every seed key with the wanted value.
 func dataDone(env *Env, entries []dataEntry) bool {
+	for _, e := range entries {
+		if env.Ask != nil && e.key == "githubHandle" && e.val == "" {
+			return false // asked on every interactive run until answered
+		}
+	}
+	if env.Ask != nil && bitwardenURLUnasked(env) {
+		return false // likewise the Bitwarden URL
+	}
+	return dataStored(env, entries)
+}
+
+// dataStored: chezmoi.toml holds every seed key with the wanted value.
+func dataStored(env *Env, entries []dataEntry) bool {
 	var doc struct {
 		Data map[string]any `toml:"data"`
 	}
@@ -106,7 +174,7 @@ func writeData(env *Env, entries []dataEntry) error {
 	return nil
 }
 
-// tomlStr escapes a value for a TOML basic string. bootstrap.sh escapes only
+// tomlStr escapes a value for a TOML basic string. bootstrap-legacy.sh escapes only
 // backslash and quote (B:877); control characters are added so the file always parses.
 func tomlStr(s string) string {
 	var b strings.Builder
@@ -143,6 +211,9 @@ func dataEntries(ctx context.Context, env *Env) ([]dataEntry, error) {
 		v := d[k]
 		if k == "meshProvider" && v == "" {
 			v = "meshnet"
+		}
+		if k == "bitwardenUrl" && v == "" {
+			v = storedBitwardenURL(env) // an earlier answer is kept, never blanked
 		}
 		entries = append(entries, dataEntry{key: k, val: v})
 	}

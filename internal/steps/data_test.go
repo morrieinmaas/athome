@@ -15,17 +15,17 @@ import (
 )
 
 // testdata/chezmoi-data.golden.toml is the ~/.config/chezmoi/chezmoi.toml that
-// scripts/bootstrap.sh writes for test/e2e/bootstrap.toml (lines 875-900). It was
+// scripts/bootstrap-legacy.sh writes for test/e2e/bootstrap.toml (lines 875-900). It was
 // captured, without running the bootstrap, from the repo root with:
 //
 //	H=$(mktemp -d) && HOME=$H HOSTNAME=athome-test bash -c '
 //	c_blue(){ :; }
 //	short_hostname() { printf "%s\n" "${HOSTNAME%%.*}"; }
 //	MACHINE=personal; INCLUDE_AGENTS=true; MACHINE_FROM_FLAG=false; AGENTS_FROM_FLAG=false
-//	eval "$(/usr/bin/sed -n "182,216p" scripts/bootstrap.sh)"
+//	eval "$(/usr/bin/sed -n "182,216p" scripts/bootstrap-legacy.sh)"
 //	load_config test/e2e/bootstrap.toml
 //	gh_handle=$ATHOME_GITHUB_HANDLE; gh_id=$ATHOME_GITHUB_ID
-//	eval "$(/usr/bin/sed -n "875,900p" scripts/bootstrap.sh)"
+//	eval "$(/usr/bin/sed -n "875,900p" scripts/bootstrap-legacy.sh)"
 //	cat "$chezmoi_config"' > internal/steps/testdata/chezmoi-data.golden.toml
 //
 // Lines 182-216 are cfg_get and load_config, 875-900 the [data] block. The only

@@ -12,8 +12,8 @@ permissions:
 jobs:
   bootstrap:
     runs-on: ubuntu-latest
-    # One job per distro x runner (bash = scripts/bootstrap.sh, binary = athome
-    # init); native amd64 runners → no emulation, full package set.
+    # One job per distro x runner (bash = scripts/bootstrap-legacy.sh, binary =
+    # scripts/bootstrap.sh installing athome, which runs init); native amd64 runners → no emulation, full package set.
     # fail-fast off so an Arch failure doesn't cancel the Fedora run (and vice
     # versa) — each distro's result stands on its own.
     strategy:

@@ -30,7 +30,7 @@ func sandbox(t *testing.T) (home string) {
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 	t.Setenv("PATH", os.Getenv("PATH")) // restores PATH if a step prepends to it
 	t.Setenv("TMPDIR", t.TempDir())
-	for _, k := range []string{"GITHUB_TOKEN", "ATHOME_CI", "ATHOME_GITHUB_HANDLE"} {
+	for _, k := range []string{"GITHUB_TOKEN", "ATHOME_CI", "ATHOME_GITHUB_HANDLE", "ATHOME_REPO"} {
 		t.Setenv(k, "")
 	}
 	return home

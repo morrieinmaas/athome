@@ -263,3 +263,108 @@ Test list (unit unless marked):
 
 Out of scope for build 1: the installer switch, release builds, prompts, the TUI,
 `teardown`, `secrets`, `update`, `status`, `machine`, `keys`.
+
+## Build 2: the installer, releases and plain prompts (migration step 2)
+
+Goal: `scripts/bootstrap.sh` installs a checksummed `athome` release and runs
+`athome init`, and an interactive `athome init` asks the questions `bootstrap.sh` asks
+today, so the binary becomes the installed path.
+
+Decisions:
+
+- The current script moves to `scripts/bootstrap-legacy.sh`, unchanged except its usage
+  text and the messages that name the script itself, for one release. The e2e `bash` runner calls it; the `binary` runner calls the
+  installer with `--install-from`.
+- The installer picks the release for the clone it runs from: the tag at `HEAD`, else the
+  nearest tag (`git describe --tags --abbrev=0`). `ATHOME_VERSION` overrides it. With no
+  tag it exits 1 and names `--install-from` and `go build`. If the asset download for the
+  tag finds no release asset (HTTP 404, or a missing file under a `file://` base) and
+  `--install-from` was not given and `ATHOME_VERSION` was not set (the tag came from git), it prints a note to stderr and execs
+  `scripts/bootstrap-legacy.sh` with the same arguments. With `ATHOME_VERSION` set, a missing asset exits 1 naming the tag and URL instead. Any other download failure
+  (network, 5xx) exits 1 naming the URL and curl's error, and a missing `curl` exits 1
+  naming it. The fallback is for one
+  release only: tags v0.4.0 to v0.4.3 have no athome assets, so a fresh clone would
+  otherwise fail. It goes when `bootstrap-legacy.sh` is deleted (migration step 4).
+- `ATHOME_REPO` names the repo to apply instead of searching from the working directory; a
+  relative value is made absolute. `--install-from=PATH` is accepted as well as
+  `--install-from PATH`.
+- Base URL: `ATHOME_RELEASE_BASE`, default
+  `https://github.com/morrieinmaas/athome/releases/download`. Assets are
+  `<base>/<tag>/athome_<os>_<arch>` and `<base>/<tag>/checksums.txt`, os `darwin|linux`,
+  arch `amd64|arm64`.
+- An installed `~/.local/bin/athome` that already reports the wanted version is kept and
+  nothing is downloaded, so a rerun works offline.
+- GoReleaser builds plain binaries (no archives) with `CGO_ENABLED=0` and the same
+  `-X ...cli.Version` and `-X ...cli.Commit` ldflags as the e2e image, except releases embed the short commit ({{.ShortCommit}}) while the e2e image embeds the full SHA. A tag `v*` push
+  publishes the release; CI runs `goreleaser check` and a snapshot build on every PR.
+- Prompts are plain lines on stderr, read from stdin. They appear only when stdin is a
+  terminal and none of `--non-interactive`, `-y`, `--yes` is given. A value set by flag,
+  env or file is never asked for (bash asked the ssh-key and Bitwarden questions with the
+  env value as the default; athome takes the value).
+- The nine prompts, with bash's wording and defaults: symlink the repo to chezmoi's path
+  (y); existing key: use, generate or reupload (use); create a key when none exists (y);
+  upload keys to GitHub (y); refresh `gh` scopes (y); GitHub username (asked again while
+  empty); Bitwarden server URL (empty = US cloud); use Bitwarden (y); restore secrets
+  now (y). An answer of empty takes the default; EOF on stdin takes the default.
+- Ctrl-C at an open prompt prints "athome: interrupted", runs cleanup and exits 130, as
+  bash dies at read.
+- Dependencies are the standard library, BurntSushi/toml and golang.org/x/term (terminal
+  detection).
+- Deliberate differences from bash: Confirm accepts y, yes, n and no, case-insensitive,
+  and asks again on anything else (bash: only `y` is yes, anything else is no); prompt
+  texts use a colon where bash used a dash; the Bitwarden URL is not asked when one is
+  already stored in `chezmoi.toml`, and not when `useBitwarden` is "false" (bash asked
+  whenever the URL was empty); a stored Bitwarden URL is kept by later runs (bash
+  overwrote it with empty); interactive reruns ask the upload, Bitwarden and
+  restore questions again, as bash does (no remembered declines).
+
+Acceptance criteria:
+
+1. `bootstrap.sh` on darwin or linux, amd64 or arm64, downloads `athome_<os>_<arch>`, checks
+   its sha256 against `checksums.txt`, installs it as `~/.local/bin/athome` with mode 0755,
+   and execs `athome init` with every argument except `--install-from <path>`.
+2. A missing asset (404, or a missing file over `file://`) falls back to
+   `bootstrap-legacy.sh` with a note; a checksum mismatch, a missing checksums line, a
+   missing sha tool or curl, any other download failure or an unsupported os or arch exits
+   1, leaves
+   no `~/.local/bin/athome` behind, and names the problem.
+3. `--install-from <path>` installs that file and downloads nothing; a missing path exits 1.
+4. An installed binary at the wanted version is reused without a download.
+5. `bootstrap.sh --help` prints the installer usage; any other flag passes through to
+   `athome init`, which keeps rejecting unknown ones with exit 2.
+6. `scripts/bootstrap-legacy.sh` behaves as `bootstrap.sh` did before this build.
+7. `goreleaser check` passes and a snapshot build yields the four binaries and
+   `checksums.txt`; `athome version` on a snapshot binary prints the version and commit.
+8. Interactive `athome init` asks each of the nine questions at the point bash asks it, and
+   the answer has the same effect as the matching flag, env or file value.
+9. With a value already set by flag, env or file, or with no terminal, or with `-y`, no
+   prompt is printed and no stdin is read.
+10. The e2e jobs (arch, fedora) pass unchanged verify scripts with both runners, the binary
+    runner now going through `scripts/bootstrap.sh --install-from`.
+
+Edge cases: `--install-from` as the last argument with no path; a path with spaces;
+`~/.local/bin` missing; neither `sha256sum` nor `shasum` present (exit 1, names both);
+`checksums.txt` without a line for the asset; an installed `athome` that fails to run
+(replaced); a clone with no tags; a prompt answered with surrounding spaces or upper case
+(`Y`, ` n `); an invalid menu answer (asked again); stdin closed mid-run; Ctrl-C at an
+open prompt (exit 130).
+
+Test list (unit unless marked):
+
+- installer (bats, `test/bootstrap.bats`, release served from a `file://` base): good
+  checksum installs and execs a stub `athome` that records its args; mismatch exits 1 with
+  no binary left; missing asset runs a stub legacy script with the same args and a note; an unreachable
+  `http://127.0.0.1:9` base exits 1 without the fallback; no `curl` exits 1; unsupported `uname` (faked) exits 1;
+  `--install-from` installs that file with no download; `--install-from` with no path or an empty path exits 1;
+  version already installed downloads nothing; no tags exits 1 naming `--install-from`;
+  `ATHOME_VERSION` overrides the tag; `--help` prints usage.
+- release (CI): `goreleaser check`; `goreleaser build --snapshot` lists four binaries and
+  the checksum file.
+- prompt package: confirm with `""`, `y`, `Y`, ` n `, EOF; choose with a first letter, a
+  full word, an invalid answer then a valid one; string re-asks while empty when required.
+- each prompt site: interactive with a scripted stdin gives the same recorded commands as
+  the matching env value; a preset value prints no prompt; non-interactive reads no stdin.
+- e2e: arch and fedora, both runners.
+
+Out of scope for build 2: the TUI, `teardown`, `secrets`, `update`, `status`, self-update,
+and moving the release host to termage.

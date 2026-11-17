@@ -56,38 +56,61 @@ func prepSamePath(a, b string) bool {
 	return err1 == nil && err2 == nil && ra == rb
 }
 
-// prepLinkCheck: done when the chezmoi source path already is, or points at, the
-// repo. Anything else is an error; a real directory is never replaced.
-func prepLinkCheck(_ context.Context, env *Env) (bool, error) {
+// prepLinkState: done when the chezmoi source path already is, or points at, the
+// repo. Something else in the way comes back as conflict; a real directory is
+// never replaced.
+func prepLinkState(env *Env) (done bool, conflict error, err error) {
 	link := prepLinkPath(env)
 	fi, err := os.Lstat(link)
 	if os.IsNotExist(err) {
-		return false, nil
+		return false, nil, nil
 	}
 	if err != nil {
-		return false, err
+		return false, nil, err
 	}
 	if fi.Mode()&os.ModeSymlink != 0 {
 		target, err := os.Readlink(link)
 		if err != nil {
-			return false, err
+			return false, nil, err
 		}
 		if !filepath.IsAbs(target) { // a relative target is relative to the link's directory
 			target = filepath.Join(filepath.Dir(link), target)
 		}
 		if prepSamePath(target, env.RepoRoot) {
-			return true, nil
+			return true, nil, nil
 		}
-		return false, fmt.Errorf("%s points to %s, not the repo %s; remove it or run from that checkout", link, target, env.RepoRoot)
+		return false, fmt.Errorf("%s points to %s, not the repo %s; remove it or run from that checkout", link, target, env.RepoRoot), nil
 	}
 	if prepSamePath(link, env.RepoRoot) {
-		return true, nil
+		return true, nil, nil
 	}
-	return false, fmt.Errorf("%s is a real directory that is not this repo (%s); move it aside first", link, env.RepoRoot)
+	return false, fmt.Errorf("%s is a real directory that is not this repo (%s); move it aside first", link, env.RepoRoot), nil
+}
+
+// prepLinkCheck: with a prompt, a conflict is left for Apply to ask about
+// (bash asks before it complains); without one it is an error.
+func prepLinkCheck(_ context.Context, env *Env) (bool, error) {
+	done, conflict, err := prepLinkState(env)
+	if err != nil {
+		return false, err
+	}
+	if conflict != nil && env.Ask == nil {
+		return false, conflict
+	}
+	return done, nil
 }
 
 func prepLinkApply(_ context.Context, env *Env) error {
 	link := prepLinkPath(env)
+	if env.Ask != nil && !env.Ask.Confirm(fmt.Sprintf("==> repo at %s, chezmoi expects %s. symlink it?", env.RepoRoot, link), true) {
+		envLogln(env, "continuing with source=%s", env.RepoRoot)
+		return nil
+	}
+	if _, conflict, err := prepLinkState(env); err != nil {
+		return err
+	} else if conflict != nil {
+		return conflict
+	}
 	if err := os.MkdirAll(filepath.Dir(link), 0o755); err != nil {
 		return err
 	}

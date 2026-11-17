@@ -92,6 +92,9 @@ func SSHKey() []Step {
 			Name:  "ssh-keygen",
 			Check: skKeygenCheck,
 			Apply: func(ctx context.Context, env *Env) error {
+				if !skDecide(ctx, env) {
+					return nil
+				}
 				if err := skKeygenApply(ctx, env); err != nil {
 					return err
 				}
@@ -238,8 +241,42 @@ func skImportBWApply(ctx context.Context, env *Env) error {
 	return os.WriteFile(key+".pub", []byte(pub), 0o644)
 }
 
+// skDecide asks the two ssh key questions when the answer is not preset and
+// env.Ask is set; the answer is stored in Cfg.Data so later steps see it. It
+// reports whether Apply should generate a key. Only Apply calls it, never a check.
+func skDecide(ctx context.Context, env *Env) bool {
+	if fileExists(skKeyPath(ctx, env)) {
+		if env.Cfg.Data["sshKeyAction"] == "" && env.Ask != nil {
+			skSetData(env, "sshKeyAction", env.Ask.Choose("ssh key "+filepath.Base(skKeyPath(ctx, env))+" found:", "use", "use", "generate", "reupload"))
+		}
+		return env.Cfg.Data["sshKeyAction"] == "generate"
+	}
+	if env.Cfg.Data["generateSshKey"] == "" && env.Ask != nil {
+		answer := "true"
+		if !env.Ask.Confirm("No ssh key for "+dataHostname(ctx, env)+": create one?", true) {
+			answer = "false"
+		}
+		skSetData(env, "generateSshKey", answer)
+	}
+	if env.Cfg.Data["generateSshKey"] == "false" {
+		envLogln(env, "no ssh key generated: bring your own / use the agent")
+		return false
+	}
+	return true
+}
+
+func skSetData(env *Env, key, val string) {
+	if env.Cfg.Data == nil {
+		env.Cfg.Data = map[string]string{}
+	}
+	env.Cfg.Data[key] = val
+}
+
 func skKeygenCheck(ctx context.Context, env *Env) (bool, error) {
 	if fileExists(skKeyPath(ctx, env)) {
+		if env.Ask != nil && env.Cfg.Data["sshKeyAction"] == "" {
+			return false, nil // Apply asks
+		}
 		// ponytail: sshKeyAction=generate rotates the key on every run, as bash
 		// does, so the "second run applies nothing" criterion excludes it.
 		if env.Cfg.Data["sshKeyAction"] == "generate" {
@@ -247,6 +284,9 @@ func skKeygenCheck(ctx context.Context, env *Env) (bool, error) {
 			return false, nil
 		}
 		return true, nil
+	}
+	if env.Ask != nil && env.Cfg.Data["generateSshKey"] == "" {
+		return false, nil // Apply asks
 	}
 	if env.Cfg.Data["generateSshKey"] == "false" {
 		envLogln(env, "no ssh key generated: bring your own / use the agent")

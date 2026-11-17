@@ -37,6 +37,39 @@ func TestRepoRootFromSubdirectory(t *testing.T) {
 	}
 }
 
+// ATHOME_REPO wins over the cwd, so the installer can run from anywhere.
+func TestAthomeRepoEnvTakesPrecedence(t *testing.T) {
+	sandbox(t)
+	repo := t.TempDir()
+	if err := os.WriteFile(filepath.Join(repo, ".chezmoiroot"), []byte("home\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	inNoRepo(t)
+	t.Setenv("ATHOME_REPO", repo)
+	// Found from elsewhere, so the bad machine (exit 2) is reached, not exit 1.
+	if code, _, errOut := runMain("init", "--machine", "laptop"); code != 2 {
+		t.Errorf("exit = %d stderr %q, want 2 (repo found via ATHOME_REPO)", code, errOut)
+	}
+
+	// It also beats a repo in the working directory.
+	other := inRepo(t)
+	t.Setenv("ATHOME_REPO", t.TempDir())
+	code, _, errOut := runMain("init", "--machine", "laptop")
+	if code != 1 || !strings.Contains(errOut, "ATHOME_REPO") {
+		t.Errorf("exit = %d stderr %q, want 1 naming ATHOME_REPO (cwd repo %s must not win)", code, errOut, other)
+	}
+}
+
+func TestAthomeRepoEnvBadValue(t *testing.T) {
+	sandbox(t)
+	inRepo(t)
+	t.Setenv("ATHOME_REPO", filepath.Join(t.TempDir(), "missing"))
+	code, _, errOut := runMain("init", "--machine", "laptop")
+	if code != 1 || !strings.Contains(errOut, "ATHOME_REPO") {
+		t.Errorf("exit = %d stderr %q, want 1 naming ATHOME_REPO", code, errOut)
+	}
+}
+
 // With no .chezmoiroot above the cwd, the repo comes from the sourceDir pinned
 // in chezmoi's config; the bad machine then ends the run with 2, not 1.
 func TestRepoRootFromPinnedSourceDir(t *testing.T) {

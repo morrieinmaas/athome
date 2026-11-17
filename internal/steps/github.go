@@ -79,7 +79,9 @@ func ghCheck(ctx context.Context, env *Env, p ghPlan) (bool, error) {
 		// first run applies, so the instructions and the post-upload steps run
 		// even on an env token. A failed `gh ssh-key add` (scopes present) is
 		// not done and retries.
-		if len(ghMissingScopes(ctx, env)) > 0 && fileExists(ghManualMarker(env)) {
+		// An interactive rerun asks again, so the marker only quiets
+		// non-interactive runs (as secretsRestoreDone).
+		if len(ghMissingScopes(ctx, env)) > 0 && fileExists(ghManualMarker(env)) && env.Ask == nil {
 			ghManualUpload(env, p)
 			return true, nil
 		}
@@ -277,13 +279,21 @@ func ghAdd(ctx context.Context, env *Env, pub, title string, signing bool) bool 
 }
 
 // ghManualMarker records that the upload fell back to manual (the scope
-// refresh was refused or failed), so a rerun does not ask again.
+// refresh was refused or failed). It only quiets non-interactive runs; an
+// interactive rerun still asks.
 func ghManualMarker(env *Env) string {
 	return filepath.Join(env.Home, ".local", "state", "athome", "github-manual-upload")
 }
 
 // ghUploadAll ports B:633-747.
 func ghUploadAll(ctx context.Context, env *Env, p ghPlan) {
+	if env.Ask != nil && !ghForceUpload(ctx, env) && !env.Ask.Confirm("Upload SSH public keys to GitHub now (auth + signing)?", true) { // B:633
+		envLogf(env, "skipping ssh-key upload, run manually later:\n")
+		envLogf(env, "  gh auth refresh -h github.com -s admin:public_key,admin:ssh_signing_key\n")
+		envLogf(env, "  gh ssh-key add %s --title \"%s\"\n", p.pub, p.sshHost)
+		envLogf(env, "  gh ssh-key add %s --title \"%s-sign\" --type signing\n", p.pub, p.sshHost)
+		return
+	}
 	if ghEnsureScopes(ctx, env) {
 		if ghUploadKeys(ctx, env, p) {
 			os.Remove(ghManualMarker(env))
@@ -327,6 +337,19 @@ func ghEnsureScopes(ctx context.Context, env *Env) bool {
 	if os.Getenv("GITHUB_TOKEN") != "" {
 		envLogf(env, "    gh is authed via the GITHUB_TOKEN env var, scopes can't be refreshed on an env token, so falling back to manual upload.\n")
 		return false
+	}
+	if env.Ask != nil {
+		env.Ask.Say("    Two ways forward:\n")
+		env.Ask.Say("    [Y] Refresh via gh: opens GitHub device flow.\n")
+		env.Ask.Say("        Warning: if you originally authed with a Personal Access Token\n")
+		env.Ask.Say("        (not browser), gh will prompt for your username + a NEW PAT:\n")
+		env.Ask.Say("        that's a gh CLI behavior we can't bypass.\n")
+		env.Ask.Say("    [n] Skip. Bootstrap will print pub keys + the manual upload URL;\n")
+		env.Ask.Say("        you paste them in the GitHub web UI, no gh interaction needed.\n\n")
+		if !env.Ask.Confirm("refresh via gh?", true) { // B:660-668
+			envLogf(env, "    skipping the refresh, falling back to manual upload.\n")
+			return false
+		}
 	}
 	// Interactive: the device code and URL must reach the user.
 	refresh := dgCmd("gh", "auth", "refresh", "-h", "github.com", "-s", strings.Join(missing, ","))

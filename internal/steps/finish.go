@@ -11,14 +11,15 @@ import (
 	"github.com/morrieinmaas/athome/internal/run"
 )
 
-// Finish ports the tail of bootstrap.sh (B:951-1048): sourceDir pin, repo git
+// Finish ports the tail of bootstrap-legacy.sh (B:951-1048): sourceDir pin, repo git
 // hooks, local secrets home, secrets restore and the detached-HEAD recovery.
-// Build 1 has no prompts, so Bitwarden setup (bw-setup) never runs.
+// Bitwarden setup (bw-setup) runs only with env.Ask set, never without a terminal.
 func Finish() []Step {
 	return []Step{
 		{Name: "source-dir-pin", Check: sourceDirPinned, Apply: pinSourceDir},
 		{Name: "git-hooks", Check: hooksDone, Apply: installHooks},
 		{Name: "secrets-dir", Check: secretsDirDone, Apply: makeSecretsDir},
+		{Name: "bitwarden-setup", Check: bitwardenDone, Apply: bitwardenSetup},
 		{Name: "secrets-restore", Check: secretsRestoreDone, Apply: restoreSecrets},
 		{Name: "secrets-restore-hint", Check: secretsHintDone, Apply: secretsHint},
 		{Name: "checkout-main", Check: notDetached, Apply: checkoutMain},
@@ -151,8 +152,8 @@ func secretsStateOf(ctx context.Context, env *Env) secretsState {
 	return secretsRestorable
 }
 
-// restoreMarker records an attempted restore that left no ~/.secrets/*/.env, so
-// a rerun does not prompt for the vault again.
+// restoreMarker records an attempted restore that left no ~/.secrets/*/.env. It
+// only quiets non-interactive runs; an interactive rerun still asks.
 func restoreMarker(env *Env) string {
 	return filepath.Join(env.Home, ".local", "state", "athome", "secrets-restore-attempted")
 }
@@ -191,7 +192,9 @@ func secretsRestoreDone(ctx context.Context, env *Env) (bool, error) {
 	if hasSecretsEnv(env) {
 		return true, nil
 	}
-	if fileExists(restoreMarker(env)) {
+	// An interactive rerun asks again (B:1023-1025); the marker only quiets
+	// non-interactive runs.
+	if env.Ask == nil && fileExists(restoreMarker(env)) {
 		return true, nil
 	}
 	return secretsStateOf(ctx, env) != secretsRestorable, nil
@@ -209,6 +212,10 @@ func secretsHint(_ context.Context, env *Env) error {
 }
 
 func restoreSecrets(ctx context.Context, env *Env) error {
+	if env.Ask != nil && !env.Ask.Confirm("restore your encrypted secrets now (secrets-restore)?", true) { // B:1025
+		appendFollowup(env, secretsFollowup)
+		return nil
+	}
 	r, err := env.Run.Run(ctx, run.Cmd{Name: restoreScript(env), Interactive: true})
 	if err != nil || r.Code != 0 {
 		envLogf(env, "  secrets-restore had issues; run it manually later.\n")
@@ -217,15 +224,19 @@ func restoreSecrets(ctx context.Context, env *Env) error {
 		os.Remove(restoreMarker(env))
 		return nil
 	}
+	writeRestoreMarker(env)
+	return nil
+}
+
+func writeRestoreMarker(env *Env) {
 	marker := restoreMarker(env)
-	err = os.MkdirAll(filepath.Dir(marker), 0o755)
+	err := os.MkdirAll(filepath.Dir(marker), 0o755)
 	if err == nil {
 		err = os.WriteFile(marker, nil, 0o644)
 	}
 	if err != nil {
 		envLogf(env, "could not record the restore attempt in %s: %v\n", marker, err)
 	}
-	return nil
 }
 
 func gitRepo(env *Env, args ...string) run.Cmd {
@@ -255,6 +266,66 @@ func checkoutMain(ctx context.Context, env *Env) error {
 		envLogf(env, "created local main tracking origin/main\n")
 	default:
 		envLogf(env, "could not restore to main; check `git status` in %s\n", env.RepoRoot)
+	}
+	return nil
+}
+
+func bwSetupScript(env *Env) string { return filepath.Join(env.Home, ".local", "bin", "bw-setup") }
+
+// rbwDeviceID is the file rbw writes once onboarded (B:984-987).
+func rbwDeviceID(env *Env) string {
+	if env.OS == "darwin" {
+		return filepath.Join(env.Home, "Library", "Application Support", "rbw", "device_id")
+	}
+	base := os.Getenv("XDG_DATA_HOME")
+	if base == "" {
+		base = filepath.Join(env.Home, ".local", "share")
+	}
+	return filepath.Join(base, "rbw", "device_id")
+}
+
+func bwSetupRunnable(env *Env) bool {
+	fi, err := os.Stat(bwSetupScript(env))
+	return err == nil && fi.Mode().Perm()&0o111 != 0
+}
+
+// bitwardenDone: nothing to do without a terminal or with Bitwarden switched off.
+// An unset useBitwarden is asked on every interactive run (B:990). Once chosen,
+// it is done when rbw is unlocked or registered, or when there is no script to
+// run. It never prompts.
+func bitwardenDone(ctx context.Context, env *Env) (bool, error) {
+	if env.Ask == nil || env.Cfg.Data["useBitwarden"] == "false" {
+		return true, nil
+	}
+	if env.Cfg.Data["useBitwarden"] == "" {
+		return false, nil
+	}
+	if rbwUnlocked(ctx, env) || fileExists(rbwDeviceID(env)) {
+		return true, nil
+	}
+	return !bwSetupRunnable(env), nil
+}
+
+// bitwardenSetup ports B:990-1008, the interactive path.
+func bitwardenSetup(ctx context.Context, env *Env) error {
+	if env.Cfg.Data["useBitwarden"] == "" && !env.Ask.Confirm("Use Bitwarden (rbw) for secrets sync?", true) { // B:990
+		envLogf(env, "local-only secrets, Bitwarden skipped. Populate ~/.secrets/<repo>/.env by hand,\n")
+		envLogf(env, "  or run `bw-setup` later to sync from Bitwarden.\n")
+		return nil
+	}
+	switch {
+	case rbwUnlocked(ctx, env):
+		envLogf(env, "Bitwarden already unlocked, rbw get/list ready.\n")
+	case fileExists(rbwDeviceID(env)):
+		envLogf(env, "Bitwarden already set up here (device registered), locked; `rbw unlock` when needed.\n")
+	case bwSetupRunnable(env):
+		if r, err := env.Run.Run(ctx, run.Cmd{Name: bwSetupScript(env), Interactive: true}); err != nil || r.Code != 0 {
+			env.Warnings++
+			envLogf(env, "  Bitwarden login didn't complete, see above. ~/.secrets is ready for local use meanwhile.\n")
+			appendFollowup(env, "Bitwarden: `bw-setup` did NOT finish (often missing pinentry / API key). Re-run `bw-setup` once fixed. docs/secrets.md.")
+		}
+	default:
+		envLogf(env, "local-only secrets for now, run `bw-setup` in a terminal to sync Bitwarden later.\n")
 	}
 	return nil
 }

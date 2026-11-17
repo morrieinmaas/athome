@@ -13,7 +13,7 @@
 # (set by test/e2e/run.sh); it flows through both bootstrap passes automatically.
 set -euo pipefail
 
-cd "$(dirname "$0")/../.."   # repo root (so ./scripts/* and test/e2e/* resolve)
+cd "$(dirname "$0")/../.." # repo root (so ./scripts/* and test/e2e/* resolve)
 
 # chezmoi + mise install into ~/.local/bin; mise shims live under ~/.local/share.
 # Non-existent entries (e.g. shims before mise is installed) are simply ignored.
@@ -21,18 +21,45 @@ export PATH="$HOME/.local/bin:$HOME/.local/share/mise/shims:/opt/nanobrew/prefix
 
 phase() { printf '\n\033[1;35m========== %s ==========\033[0m\n' "$1"; }
 
-# ATHOME_E2E_RUNNER: bash (default, scripts/bootstrap.sh) or binary (athome init).
+# ATHOME_E2E_RUNNER: bash (default, scripts/bootstrap-legacy.sh) or binary
+# (scripts/bootstrap.sh, the installer, which runs athome init).
 runner="${ATHOME_E2E_RUNNER:-bash}"
 case "$runner" in
-  bash|binary) ;;
-  *) echo "unknown ATHOME_E2E_RUNNER='$runner' (expected: bash | binary)" >&2; exit 1 ;;
+  bash | binary) ;;
+  *)
+    echo "unknown ATHOME_E2E_RUNNER='$runner' (expected: bash | binary)" >&2
+    exit 1
+    ;;
 esac
+
+# The image puts athome in /usr/local/bin; the installer copies it into
+# ~/.local/bin, which is first on PATH, so later `athome` calls run the installed
+# copy. Pin the source now so the second pass never installs a file onto itself.
+athome_src="$(command -v athome || true)"
+
+# actions/checkout leaves a pull_request build on a detached merge commit, and
+# bootstrap's last step moves a detached repo to main, so phase 3 would run
+# main's scripts instead of the commit under test. Name the commit with a local
+# branch so the whole scenario stays on it.
+if [ "$(git rev-parse --abbrev-ref HEAD)" = HEAD ]; then
+  git checkout -q -B e2e-under-test
+fi
+under_test="$(git rev-parse HEAD)"
+
+assert_same_commit() {
+  local now
+  now="$(git rev-parse HEAD)"
+  if [ "$now" != "$under_test" ]; then
+    echo "FAIL: the repo moved from $under_test to $now during the scenario" >&2
+    exit 1
+  fi
+}
 
 run_bootstrap() {
   if [ "$runner" = binary ]; then
-    athome init --config test/e2e/bootstrap.toml --machine personal
+    ./scripts/bootstrap.sh --install-from "$athome_src" --config test/e2e/bootstrap.toml --machine personal
   else
-    ./scripts/bootstrap.sh --config test/e2e/bootstrap.toml --machine personal
+    ./scripts/bootstrap-legacy.sh --config test/e2e/bootstrap.toml --machine personal
   fi
 }
 
@@ -51,6 +78,7 @@ assert_init_idempotent() {
 # before apply changes the home), then converge with apply, asserting each half.
 bootstrap_and_verify() {
   run_bootstrap
+  assert_same_commit
   if [ "$runner" = binary ]; then
     assert_init_idempotent
   fi
@@ -65,9 +93,10 @@ bootstrap_and_verify
 phase "2/3 seed user-data canaries -> teardown --all -> verify-teardown"
 # Canaries the teardown MUST NOT touch — the safety contract under test.
 mkdir -p "$HOME/.secrets/canary" "$HOME/personal/canary-repo"
-printf 'SECRET=keepme\n' > "$HOME/.secrets/canary/.env"
-printf 'keepme\n'        > "$HOME/personal/canary-repo/keepme"
+printf 'SECRET=keepme\n' >"$HOME/.secrets/canary/.env"
+printf 'keepme\n' >"$HOME/personal/canary-repo/keepme"
 ./scripts/teardown.sh --all --execute --yes
+assert_same_commit
 bash test/e2e/verify-teardown.sh
 
 phase "3/3 re-bootstrap -> re-apply -> re-verify (round-trip)"

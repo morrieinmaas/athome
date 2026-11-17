@@ -16,8 +16,10 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"github.com/morrieinmaas/athome/internal/config"
+	"github.com/morrieinmaas/athome/internal/prompt"
 	"github.com/morrieinmaas/athome/internal/run"
 	"github.com/morrieinmaas/athome/internal/steps"
+	"golang.org/x/term"
 )
 
 var Version = "dev"
@@ -27,6 +29,15 @@ var Version = "dev"
 var newRunner = run.Exec
 
 var Commit = "none"
+
+// isTerminal reports whether f is a terminal.
+func isTerminal(f *os.File) bool { return term.IsTerminal(int(f.Fd())) }
+
+// stdinIsTTY reports whether stdin is a terminal. Tests replace it.
+var stdinIsTTY = func() bool { return isTerminal(os.Stdin) }
+
+// isInteractive decides whether init may prompt.
+func isInteractive(nonInter, tty bool) bool { return tty && !nonInter }
 
 const (
 	exitOK    = 0
@@ -193,7 +204,12 @@ func newInitEnv(o initOpts, stdout, stderr io.Writer) (*steps.Env, int) {
 		return nil, exitError
 	}
 	r := newRunner()
+	var ask *prompt.Asker
+	if isInteractive(o.NonInter || o.Yes, stdinIsTTY()) {
+		ask = prompt.New(os.Stdin, stderr)
+	}
 	return &steps.Env{
+		Ask:      ask,
 		Cfg:      cfg,
 		Run:      r,
 		Home:     home,
@@ -208,19 +224,47 @@ func newInitEnv(o initOpts, stdout, stderr io.Writer) (*steps.Env, int) {
 // runInitEnv runs every step against env, then prints the finish report.
 func runInitEnv(env *steps.Env, stdout, stderr io.Writer) int {
 	defer env.RunCleanup()
-	ctx, stop := signal.NotifyContext(context.Background(), stopSignals...)
+	ctx, stop := notifyContext(context.Background(), stopSignals...)
 	defer stop()
+	bindCancel(ctx, env, stderr)
 	if err := steps.Setup(ctx, env); err != nil {
 		fmt.Fprintf(stderr, "athome init: %v\n", err)
 		return exitError
 	}
-	rep, err := execute(ctx, env, steps.All())
+	rep, err := execute(ctx, env, stepList())
 	if err != nil {
 		fmt.Fprintf(stderr, "athome init: %v\n", err)
 		return exitError
 	}
 	printFinish(stdout, rep, env.Warnings, steps.FollowupLogPath())
 	return exitOK
+}
+
+// notifyContext and stepList are seams for tests.
+var (
+	notifyContext = signal.NotifyContext
+	stepList      = steps.All
+)
+
+// exit ends the process; tests replace it.
+var exit = os.Exit
+
+// exitInterrupted is the status bash gives a run ended by Ctrl-C (128 + SIGINT).
+const exitInterrupted = 130
+
+// bindCancel makes a signal at an open prompt abort the run like bash, instead of
+// taking the prompt's default: it cleans up and exits 130.
+func bindCancel(ctx context.Context, env *steps.Env, stderr io.Writer) {
+	if env.Ask == nil {
+		return
+	}
+	env.Ask.Done = ctx.Done()
+	env.Ask.OnCancel = func() {
+		// ponytail: SIGTERM at a prompt also exits 130 (bash would exit 143); exit 128+signo if it ever matters.
+		fmt.Fprint(stderr, "\nathome: interrupted\n")
+		env.RunCleanup()
+		exit(exitInterrupted)
+	}
 }
 
 // buildOptions turns the parsed flags into the config and step options.
@@ -325,10 +369,20 @@ func printSummary(w io.Writer, rep steps.Report) {
 	fmt.Fprintf(w, "athome: applied %d, skipped %d\n", len(rep.Applied), len(rep.Skipped))
 }
 
-// findRepoRoot looks for .chezmoiroot at or above the working directory, then
-// falls back to the parent of the sourceDir pinned in chezmoi's config, then to
+// findRepoRoot uses $ATHOME_REPO when set (it must hold .chezmoiroot), else looks
+// for .chezmoiroot at or above the working directory, then falls back to the parent of the sourceDir pinned in chezmoi's config, then to
 // chezmoi's own clone at ~/.local/share/chezmoi.
 func findRepoRoot(home string) (string, error) {
+	if repo := os.Getenv("ATHOME_REPO"); repo != "" {
+		repo, err := filepath.Abs(repo)
+		if err != nil {
+			return "", err
+		}
+		if _, err := os.Stat(filepath.Join(repo, ".chezmoiroot")); err != nil {
+			return "", fmt.Errorf("ATHOME_REPO=%s is not an athome repo: no .chezmoiroot there", repo)
+		}
+		return repo, nil
+	}
 	dir, err := os.Getwd()
 	if err != nil {
 		return "", err

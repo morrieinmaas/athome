@@ -93,6 +93,12 @@ tier_state() {
   # "chezmoi: could not open a new TTY".
   run chezmoi state reset --force
   run rm -rf "$HOME/.cache/chezmoi"
+  # athome's manual-upload marker; left behind, a rebootstrap would skip the GitHub key step.
+  run rm -f "$HOME/.local/state/athome/github-manual-upload"
+  # and the ssh-pub marker; left behind, a rebootstrap would not retry deriving the .pub.
+  run rm -f "$HOME/.local/state/athome/ssh-pub-underivable"
+  # and the secrets-restore marker; left behind, a rebootstrap would not offer the restore again.
+  run rm -f "$HOME/.local/state/athome/secrets-restore-attempted"
 }
 
 tier_dotfiles() {

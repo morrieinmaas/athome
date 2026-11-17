@@ -10,6 +10,19 @@
 # run_onchange_02 branch to dnf when `dnf` is present and `pacman` is not, so the
 # whole Arch/yay path is skipped here automatically. The Fedora package list
 # (packages.yaml `fedora.dnf` + `fedora.copr`) is self-contained.
+# Build the athome binary (Go) in a throwaway stage; only the binary is copied
+# into the final image. COMMIT is optional (CI passes the git sha).
+FROM golang:1.27 AS athome-build
+ARG COMMIT=none
+ARG TARGETARCH
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build \
+    -ldflags "-X github.com/morrieinmaas/athome/internal/cli.Version=e2e -X github.com/morrieinmaas/athome/internal/cli.Commit=${COMMIT}" \
+    -o /out/athome ./cmd/athome
+
 FROM fedora:latest
 
 # Base tools the bootstrap assumes present before `chezmoi apply` runs:
@@ -50,6 +63,8 @@ RUN dnf -y install dnf5-plugins 2>/dev/null || true
 RUN useradd -m ci \
     && echo 'ci ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/ci \
     && chmod 0440 /etc/sudoers.d/ci
+
+COPY --from=athome-build /out/athome /usr/local/bin/athome
 
 USER ci
 WORKDIR /home/ci/athome

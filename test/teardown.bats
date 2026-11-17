@@ -37,6 +37,24 @@ setup() {
   [[ "$output" != *$'\n  + '* ]]
 }
 
+@test "--state plans to remove athome's github manual-upload marker" {
+  run "$TEARDOWN" --state
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"rm -f $HOME/.local/state/athome/github-manual-upload"* ]]
+}
+
+@test "--state plans to remove athome's ssh-pub-underivable marker" {
+  run "$TEARDOWN" --state
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"rm -f $HOME/.local/state/athome/ssh-pub-underivable"* ]]
+}
+
+@test "--state plans to remove athome's secrets-restore-attempted marker" {
+  run "$TEARDOWN" --state
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"rm -f $HOME/.local/state/athome/secrets-restore-attempted"* ]]
+}
+
 @test "--all dry-run shows the cumulative plan (state + dotfiles + tools)" {
   run "$TEARDOWN" --all
   [ "$status" -eq 0 ]

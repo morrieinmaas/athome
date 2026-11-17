@@ -12,7 +12,8 @@ permissions:
 jobs:
   bootstrap:
     runs-on: ubuntu-latest
-    # One job per distro; native amd64 runners → no emulation, full package set.
+    # One job per distro x runner (bash = scripts/bootstrap.sh, binary = athome
+    # init); native amd64 runners → no emulation, full package set.
     # fail-fast off so an Arch failure doesn't cancel the Fedora run (and vice
     # versa) — each distro's result stands on its own.
     strategy:
@@ -21,9 +22,17 @@ jobs:
         include:
           - distro: arch
             dockerfile: test/e2e/Dockerfile
+            runner: bash
+          - distro: arch
+            dockerfile: test/e2e/Dockerfile
+            runner: binary
           - distro: fedora
             dockerfile: test/e2e/Dockerfile.fedora
-    name: bootstrap-${{ matrix.distro }}
+            runner: bash
+          - distro: fedora
+            dockerfile: test/e2e/Dockerfile.fedora
+            runner: binary
+    name: bootstrap-${{ matrix.distro }}-${{ matrix.runner }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -41,7 +50,7 @@ jobs:
           sudo docker image prune -af 2>/dev/null || true
           echo "after:"; df -h / | tail -1
       - name: Build e2e image (${{ matrix.distro }})
-        run: docker build -f ${{ matrix.dockerfile }} -t athome-e2e-${{ matrix.distro }}:latest .
+        run: docker build --build-arg COMMIT=${{ github.sha }} -f ${{ matrix.dockerfile }} -t athome-e2e-${{ matrix.distro }}:latest .
       # GITHUB_TOKEN is auto-provided by Actions — feeds mise's GitHub backend so
       # the bootstrap never needs `gh auth login`. No Bitwarden, dummy answers.
       - name: Run bootstrap end-to-end (+ assertions)
@@ -49,4 +58,5 @@ jobs:
           docker run --rm \
             -e GITHUB_TOKEN='${{ secrets.GITHUB_TOKEN }}' \
             -e MISE_GITHUB_TOKEN='${{ secrets.GITHUB_TOKEN }}' \
+            -e ATHOME_E2E_RUNNER=${{ matrix.runner }} \
             athome-e2e-${{ matrix.distro }}:latest

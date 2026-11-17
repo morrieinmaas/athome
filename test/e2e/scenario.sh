@@ -21,9 +21,39 @@ export PATH="$HOME/.local/bin:$HOME/.local/share/mise/shims:/opt/nanobrew/prefix
 
 phase() { printf '\n\033[1;35m========== %s ==========\033[0m\n' "$1"; }
 
-# Baseline bootstrap, then converge with apply, asserting each half.
+# ATHOME_E2E_RUNNER: bash (default, scripts/bootstrap.sh) or binary (athome init).
+runner="${ATHOME_E2E_RUNNER:-bash}"
+case "$runner" in
+  bash|binary) ;;
+  *) echo "unknown ATHOME_E2E_RUNNER='$runner' (expected: bash | binary)" >&2; exit 1 ;;
+esac
+
+run_bootstrap() {
+  if [ "$runner" = binary ]; then
+    athome init --config test/e2e/bootstrap.toml --machine personal
+  else
+    ./scripts/bootstrap.sh --config test/e2e/bootstrap.toml --machine personal
+  fi
+}
+
+# Second `athome init` must be a no-op: last stdout line "athome: applied 0, skipped N".
+assert_init_idempotent() {
+  local last
+  last="$(athome init --config test/e2e/bootstrap.toml --machine personal | tail -n 1)"
+  printf '%s\n' "$last"
+  if ! [[ "$last" =~ ^athome:\ applied\ 0,\ skipped\ [0-9]+$ ]]; then
+    echo "FAIL: second athome init was not a no-op: '$last'" >&2
+    exit 1
+  fi
+}
+
+# Baseline bootstrap (binary runner: a second init right after must be a no-op,
+# before apply changes the home), then converge with apply, asserting each half.
 bootstrap_and_verify() {
-  ./scripts/bootstrap.sh --config test/e2e/bootstrap.toml --machine personal
+  run_bootstrap
+  if [ "$runner" = binary ]; then
+    assert_init_idempotent
+  fi
   bash test/e2e/verify-baseline.sh
   chezmoi apply
   bash test/e2e/verify.sh

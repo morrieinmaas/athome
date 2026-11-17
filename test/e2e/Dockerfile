@@ -4,6 +4,19 @@
 # from test/e2e/bootstrap.toml, and ATHOME_CI=1 so the systemd/GUI/hardware
 # scripts (niri, netbird, podman, …) skip cleanly. mise gets GITHUB_TOKEN from
 # the build/run env to avoid the anon GitHub rate limit.
+# Build the athome binary (Go) in a throwaway stage; only the binary is copied
+# into the final image. COMMIT is optional (CI passes the git sha).
+FROM golang:1.27 AS athome-build
+ARG COMMIT=none
+ARG TARGETARCH
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build \
+    -ldflags "-X github.com/morrieinmaas/athome/internal/cli.Version=e2e -X github.com/morrieinmaas/athome/internal/cli.Commit=${COMMIT}" \
+    -o /out/athome ./cmd/athome
+
 FROM archlinux:latest
 
 # Disable pacman's seccomp/landlock sandbox: its syscall filter fails under qemu
@@ -55,6 +68,8 @@ RUN curl -fsSL --retry 3 --retry-all-errors \
 RUN useradd -m -G wheel ci \
     && echo 'ci ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/ci \
     && chmod 0440 /etc/sudoers.d/ci
+
+COPY --from=athome-build /out/athome /usr/local/bin/athome
 
 USER ci
 WORKDIR /home/ci/athome

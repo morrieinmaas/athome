@@ -85,6 +85,8 @@ __pycache__/
 dist/
 build/
 target/
+# The athome binary from `go build ./cmd/athome` in the repo root.
+/athome
 
 # Claude Code per-machine state. settings.local.json holds machine-local
 # permissions and paths; the shared .claude/settings.json (if one is ever

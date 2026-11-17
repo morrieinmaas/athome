@@ -183,7 +183,7 @@ func runInitTUI(env *steps.Env, o initOpts, stdout, stderr io.Writer) int {
 	return exitOK
 }
 
-// runHomeScreen is `athome` on a terminal: the home screen, then init when chosen.
+// runHomeScreen is `athome` on a terminal: the home screen, then init or update when chosen.
 func runHomeScreen(stdout, stderr io.Writer) int {
 	info := tui.HomeInfo{Version: Version, Commit: Commit}
 	if home, err := os.UserHomeDir(); err == nil {
@@ -197,8 +197,11 @@ func runHomeScreen(stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "athome: %v\n", err)
 		return exitError
 	}
-	if choice == "init" {
+	switch choice {
+	case "init":
 		return runInit(nil, stdout, stderr)
+	case "update":
+		return runUpdate(nil, stdout, stderr)
 	}
 	return exitOK
 }

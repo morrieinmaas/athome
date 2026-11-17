@@ -13,8 +13,8 @@ import (
 	"github.com/morrieinmaas/athome/internal/run"
 )
 
-// dataKeys are the string keys of chezmoi's [data], in the order bootstrap-legacy.sh
-// writes them (B:880-898), between hostname/githubId and includeAgents.
+// dataKeys are the string keys of chezmoi's [data], in the order the bash bootstrap
+// wrote them (B:880-898), between hostname/githubId and includeAgents.
 var dataKeysAfterIdentity = []string{
 	"personalName", "workEmail", "workName", "sidebizEmail", "sidebizName",
 	"netbirdManagementUrl", "nordvpnCountry", "meshProvider", "bitwardenUrl",
@@ -71,7 +71,7 @@ func Data() []Step {
 	}}
 }
 
-// dataPrompt asks for the values bootstrap-legacy.sh prompts for (B:837, B:855-861) when
+// dataPrompt asks for the values the bash bootstrap prompts for (B:837, B:855-861) when
 // env.Ask is set and the value is neither preset nor already stored. Answers go
 // into env.Cfg.Data, where an env or config value would be. It reports whether
 // anything was set, so the entries must be rebuilt. Only Apply calls it: a check
@@ -174,7 +174,7 @@ func writeData(env *Env, entries []dataEntry) error {
 	return nil
 }
 
-// tomlStr escapes a value for a TOML basic string. bootstrap-legacy.sh escapes only
+// tomlStr escapes a value for a TOML basic string. The bash bootstrap escaped only
 // backslash and quote (B:877); control characters are added so the file always parses.
 func tomlStr(s string) string {
 	var b strings.Builder
@@ -303,6 +303,10 @@ func dataHostname(ctx context.Context, env *Env) string {
 	}
 	return shortHostname()
 }
+
+// KeyHostname is the hostname init names the per-machine ssh key from. chezmoi's
+// .chezmoi.hostname is the short os.Hostname(), so no external command is needed.
+func KeyHostname() string { return shortHostname() }
 
 var (
 	osHostname  = os.Hostname // gethostname(2), what bash's $HOSTNAME builtin is

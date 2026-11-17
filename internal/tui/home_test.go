@@ -47,6 +47,7 @@ func TestHomeNotSetUpQuit(t *testing.T) {
 	teatest.WaitFor(t, tm.Output(), func(b []byte) bool { return strings.Contains(string(b), "not set up") },
 		teatest.WithDuration(5*time.Second))
 	tm.Type("j")
+	tm.Type("j")
 	tm.Send(tea.KeyMsg{Type: tea.KeyEnter})
 	if got := tm.FinalModel(t, teatest.WithFinalTimeout(5*time.Second)).(*homeModel).choice; got != "quit" {
 		t.Errorf("choice = %q, want quit", got)
@@ -68,5 +69,12 @@ func TestRunHomeReturnsTheChoice(t *testing.T) {
 	got, err := RunHome(strings.NewReader("\r"), &out, HomeInfo{Version: "v1"})
 	if err != nil || got != "init" {
 		t.Fatalf("got %q, %v", got, err)
+	}
+}
+
+func TestHomeMenuOffersUpdate(t *testing.T) {
+	m := runHomeModel(t, HomeInfo{}, tea.KeyMsg{Type: tea.KeyDown}, tea.KeyMsg{Type: tea.KeyEnter})
+	if m.choice != "update" {
+		t.Errorf("choice = %q, want update", m.choice)
 	}
 }

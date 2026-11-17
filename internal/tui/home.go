@@ -15,7 +15,7 @@ type HomeInfo struct {
 	SetUp                                                bool
 }
 
-var homeChoices = []string{"init", "quit"}
+var homeChoices = []string{"init", "update", "quit"}
 
 type homeModel struct {
 	info   HomeInfo

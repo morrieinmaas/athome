@@ -59,3 +59,15 @@ func TestHomeNotSetUpAndNoRepo(t *testing.T) {
 		t.Errorf("info = %+v, want not set up and empty repo", info)
 	}
 }
+
+func TestHomeUpdateRunsAthomeUpdate(t *testing.T) {
+	_, shown := tuiSandbox(t)
+	runHome = func(io.Reader, io.Writer, tui.HomeInfo) (string, error) { return "update", nil }
+	code, _, stderr := run2()
+	if len(*shown) > 0 {
+		t.Errorf("update must not open the init form: %v", *shown)
+	}
+	if code != 1 || !strings.Contains(stderr, "athome update:") {
+		t.Errorf("exit %d stderr %q, want the athome update path (no release tag in the sandbox repo)", code, stderr)
+	}
+}

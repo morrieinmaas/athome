@@ -157,7 +157,7 @@ func rpmInstalled(ctx context.Context, env *Env, pkg string) bool {
 	return err == nil && res.Code == 0
 }
 
-// pmInstallCmd mirrors scripts/lib/pm.sh.
+// pmInstallCmd returns the install command for the OS package manager.
 func pmInstallCmd(env *Env, pkgs ...string) run.Cmd {
 	switch {
 	case env.OS == "darwin":

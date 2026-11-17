@@ -46,45 +46,37 @@ FAKE
   [ -z "$(ls -A "$HOME/.local/bin")" ]
 }
 
-@test "missing asset falls back to bootstrap-legacy.sh with a note and the same args" {
+# A clone whose HEAD is tagged v0.0.1, with a copy of the installer.
+tagged_clone_v001() {
   mkdir -p "$BATS_TEST_TMPDIR/lclone/scripts"
   cp "$ROOT/scripts/bootstrap.sh" "$BATS_TEST_TMPDIR/lclone/scripts/"
-  printf '#!/bin/sh\necho "legacy-args:$*" >> "$HOME/calls"\n' >"$BATS_TEST_TMPDIR/lclone/scripts/bootstrap-legacy.sh"
-  chmod 0755 "$BATS_TEST_TMPDIR/lclone/scripts/bootstrap-legacy.sh"
   git -C "$BATS_TEST_TMPDIR/lclone" init -q
-  git -C "$BATS_TEST_TMPDIR/lclone" -c user.name=t -c user.email=t@t commit -q --allow-empty -m x
-  git -C "$BATS_TEST_TMPDIR/lclone" tag v0.0.1
+  git -C "$BATS_TEST_TMPDIR/lclone" -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q --allow-empty -m x
+  git -C "$BATS_TEST_TMPDIR/lclone" -c tag.gpgsign=false tag v0.0.1
   unset ATHOME_VERSION
+}
+
+@test "a missing asset for a git tag exits 1 naming the tag and URL" {
+  tagged_clone_v001
   run bash "$BATS_TEST_TMPDIR/lclone/scripts/bootstrap.sh" --machine work -y
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"no athome release for v0.0.1; falling back to scripts/bootstrap-legacy.sh for this release"* ]]
-  grep -qx 'legacy-args:--machine work -y' "$HOME/calls"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"no athome release asset for v0.0.1 at file://$REL/v0.0.1/$ASSET"* || "$output" == *"no athome release asset for v0.0.1 at $REL/v0.0.1/$ASSET"* ]]
+  [[ "$output" != *"legacy"* && "$output" != *"falling back"* ]]
   [ ! -e "$DEST" ]
   [ -z "$(ls -d "$TMPDIR"/athome-install.* 2>/dev/null)" ]
 }
 
-@test "an explicit ATHOME_VERSION with a missing asset exits 1 without the legacy script" {
-  mkdir -p "$BATS_TEST_TMPDIR/lclone/scripts"
-  cp "$ROOT/scripts/bootstrap.sh" "$BATS_TEST_TMPDIR/lclone/scripts/"
-  printf '#!/bin/sh\necho "legacy-args:$*" >> "$HOME/calls"\n' >"$BATS_TEST_TMPDIR/lclone/scripts/bootstrap-legacy.sh"
-  chmod 0755 "$BATS_TEST_TMPDIR/lclone/scripts/bootstrap-legacy.sh"
-  ATHOME_VERSION=v0.0.1 run bash "$BATS_TEST_TMPDIR/lclone/scripts/bootstrap.sh" -y
+@test "an explicit ATHOME_VERSION with a missing asset exits 1 naming the tag and URL" {
+  ATHOME_VERSION=v0.0.1 run bash "$ROOT/scripts/bootstrap.sh" -y
   [ "$status" -eq 1 ]
   [[ "$output" == *"v0.0.1"* && "$output" == *"$REL/v0.0.1/$ASSET"* ]]
-  [ ! -e "$HOME/calls" ]
   [ ! -e "$DEST" ]
 }
 
-@test "an unreachable release base dies naming the URL, without falling back" {
-  mkdir -p "$BATS_TEST_TMPDIR/lclone/scripts"
-  cp "$ROOT/scripts/bootstrap.sh" "$BATS_TEST_TMPDIR/lclone/scripts/"
-  printf '#!/bin/sh\necho "legacy-args:$*" >> "$HOME/calls"\n' >"$BATS_TEST_TMPDIR/lclone/scripts/bootstrap-legacy.sh"
-  chmod 0755 "$BATS_TEST_TMPDIR/lclone/scripts/bootstrap-legacy.sh"
-  ATHOME_RELEASE_BASE=http://127.0.0.1:9 run bash "$BATS_TEST_TMPDIR/lclone/scripts/bootstrap.sh" -y
+@test "an unreachable release base dies naming the URL" {
+  ATHOME_RELEASE_BASE=http://127.0.0.1:9 run bash "$ROOT/scripts/bootstrap.sh" -y
   [ "$status" -eq 1 ]
   [[ "$output" == *"cannot download http://127.0.0.1:9/v9.9.9/$ASSET"* ]]
-  [[ "$output" != *"falling back"* ]]
-  [ ! -e "$HOME/calls" ]
   [ ! -e "$DEST" ]
   [ -z "$(ls -d "$TMPDIR"/athome-install.* 2>/dev/null)" ]
 }
@@ -121,36 +113,21 @@ CURL
   export PATH="$BATS_TEST_TMPDIR/curlbin:$PATH"
 }
 
-legacy_clone() {
-  mkdir -p "$BATS_TEST_TMPDIR/lclone/scripts"
-  cp "$ROOT/scripts/bootstrap.sh" "$BATS_TEST_TMPDIR/lclone/scripts/"
-  printf '#!/bin/sh\necho "legacy-args:$*" >> "$HOME/calls"\n' >"$BATS_TEST_TMPDIR/lclone/scripts/bootstrap-legacy.sh"
-  chmod 0755 "$BATS_TEST_TMPDIR/lclone/scripts/bootstrap-legacy.sh"
-}
-
-@test "an HTTP 404 for the asset falls back to bootstrap-legacy.sh" {
+@test "an HTTP 404 for the asset exits 1 naming the tag and URL" {
   fake_curl
-  legacy_clone
-  git -C "$BATS_TEST_TMPDIR/lclone" init -q
-  git -C "$BATS_TEST_TMPDIR/lclone" -c user.name=t -c user.email=t@t commit -q --allow-empty -m x
-  git -C "$BATS_TEST_TMPDIR/lclone" tag v0.0.1
-  unset ATHOME_VERSION
+  tagged_clone_v001
   FAKE_ASSET_CODE=404 ATHOME_RELEASE_BASE=https://releases.invalid run bash "$BATS_TEST_TMPDIR/lclone/scripts/bootstrap.sh" -y
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"falling back to scripts/bootstrap-legacy.sh"* ]]
-  grep -qx 'legacy-args:-y' "$HOME/calls"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"no athome release asset for v0.0.1 at https://releases.invalid/v0.0.1/$ASSET"* ]]
   [ ! -e "$DEST" ]
 }
 
-@test "an HTTP 500 for the asset exits 1 with curl's message and does not fall back" {
+@test "an HTTP 500 for the asset exits 1 with curl's message" {
   fake_curl
-  legacy_clone
-  FAKE_ASSET_CODE=500 ATHOME_RELEASE_BASE=https://releases.invalid run bash "$BATS_TEST_TMPDIR/lclone/scripts/bootstrap.sh" -y
+  FAKE_ASSET_CODE=500 ATHOME_RELEASE_BASE=https://releases.invalid run bash "$ROOT/scripts/bootstrap.sh" -y
   [ "$status" -eq 1 ]
   [[ "$output" == *"cannot download https://releases.invalid/v9.9.9/$ASSET"* ]]
   [[ "$output" == *"returned error: 500"* ]]
-  [[ "$output" != *"falling back"* ]]
-  [ ! -e "$HOME/calls" ]
   [ ! -e "$DEST" ]
   [ -z "$(ls -d "$TMPDIR"/athome-install.* 2>/dev/null)" ]
 }

@@ -27,3 +27,6 @@ func SetSudoInterval(d time.Duration) (restore func()) {
 	sudoInterval = d
 	return func() { sudoInterval = old }
 }
+
+// ReexecEnviron is the environment execBinary hands the new binary.
+var ReexecEnviron = reexecEnviron

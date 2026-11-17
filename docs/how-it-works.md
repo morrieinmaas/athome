@@ -158,12 +158,20 @@ and opencode's skills folder point at that one set. Every `chezmoi apply`
 brings the links in line with the lock; pulling the repo
 (`git -C ~/.claude pull`) is up to you. `--no-agents` skips all of it.
 
+## Updating
+
+`athome update` runs four steps in a fixed order: `self` (replace the binary from a release,
+then continue in the new one, so the rest runs with matching code), `source` (move the repo to
+the release), `apply` (`chezmoi apply`) and `mise` (`mise install`). athome's own version is
+the release tag; grofe and canopy are pinned in `home/.chezmoidata/pins.toml`, and
+`run_onchange_17` and `run_onchange_18` render those pins, so a bump reruns them on the next
+apply. grofe installs from its release tarball after a sha256 check.
+
 ## Repo layout
 
 ```text
 athome/
 ├── scripts/bootstrap.sh       the installer
-├── scripts/teardown.sh        undo it (dry run by default)
 ├── mise.toml                  repo tasks: mise run apply / diff / test …
 ├── docs/                      you are here
 ├── examples/                  bootstrap answers, starter .envrc files
@@ -172,6 +180,7 @@ athome/
 └── home/                      everything chezmoi puts in your home folder
     ├── .chezmoi.toml.tmpl     install-time questions
     ├── .chezmoidata/packages.yaml
+    ├── .chezmoidata/pins.toml     the grofe and canopy versions
     ├── .chezmoiexternal.toml.tmpl   things cloned from elsewhere (zinit, tmux plugins…)
     ├── .chezmoiscripts/       numbered setup scripts
     ├── dot_zshrc.tmpl, dot_zsh/     the shell
@@ -215,7 +224,7 @@ chezmoi apply
 | gitleaks | every commit | on push, PR and weekly |
 
 The end-to-end test installs athome in a clean container with dummy answers,
-checks the result, tears it down with `teardown.sh --all`, checks that user
+checks the result, tears it down with `athome teardown --all`, checks that user
 data survived, and installs again.
 
 ## More than one machine: pyinfra

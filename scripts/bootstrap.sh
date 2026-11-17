@@ -112,8 +112,6 @@ case "$(uname -m)" in
 esac
 
 tag="${ATHOME_VERSION:-}"
-explicit=false
-[ -z "$tag" ] || explicit=true
 if [ -z "$tag" ]; then
   tag="$(git -C "$repo_dir" describe --tags --exact-match HEAD 2>/dev/null \
     || git -C "$repo_dir" describe --tags --abbrev=0 2>/dev/null || true)"
@@ -144,8 +142,8 @@ base="${ATHOME_RELEASE_BASE:-https://github.com/morrieinmaas/athome/releases/dow
 asset="athome_${os}_${arch}"
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/athome-install.XXXXXX")"
 
-# Only a genuinely missing asset (HTTP 404, or a missing file over file://)
-# falls back (unless ATHOME_VERSION named the tag); any other failure (network, 5xx) stops with curl's error.
+# A missing asset (HTTP 404, or a missing file over file://) names the tag and URL;
+# any other failure (network, 5xx) stops with curl's error.
 url="$base/$tag/$asset"
 rc=0
 code="$(curl -fsSL -w '%{http_code}' "$url" -o "$tmp/$asset" 2>"$tmp/curl.err")" || rc=$?
@@ -154,11 +152,7 @@ if [ "$rc" -ne 0 ]; then
   [ "$code" = 404 ] && missing=true
   case "$base" in file://*) [ "$rc" -eq 37 ] && missing=true ;; esac
   $missing || die "cannot download $url: $(cat "$tmp/curl.err")"
-  $explicit && die "no athome release asset for ATHOME_VERSION=$tag at $url"
-  echo "bootstrap: no athome release for $tag; falling back to scripts/bootstrap-legacy.sh for this release" >&2
-  cleanup
-  trap - EXIT
-  exec "$repo_dir/scripts/bootstrap-legacy.sh" ${args[@]+"${args[@]}"}
+  die "no athome release asset for $tag at $url; $hint"
 fi
 curl -fsSL "$base/$tag/checksums.txt" -o "$tmp/checksums.txt" 2>"$tmp/curl.err" \
   || die "cannot download $base/$tag/checksums.txt: $(cat "$tmp/curl.err"); $hint"

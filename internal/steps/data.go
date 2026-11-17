@@ -204,9 +204,14 @@ func dataEntries(ctx context.Context, env *Env) ([]dataEntry, error) {
 	entries := []dataEntry{
 		{key: "machineType", val: env.Cfg.Machine},
 		{key: "hostname", val: dataShortHostname(env)}, // B:881; the key path uses dataHostname
-		{key: "githubHandle", val: handle},
-		{key: "githubId", val: id},
 	}
+	if hostnameFromForm(env) { // absent reads as false, which keeps a build 2 file's shape
+		entries = append(entries, dataEntry{key: "hostnameFromForm", bool: true, isB: true})
+	}
+	entries = append(entries,
+		dataEntry{key: "githubHandle", val: handle},
+		dataEntry{key: "githubId", val: id},
+	)
 	for _, k := range dataKeysAfterIdentity {
 		v := d[k]
 		if k == "meshProvider" && v == "" {
@@ -279,22 +284,36 @@ func dataIdentity(ctx context.Context, env *Env) (handle, id string) {
 	return handle, id
 }
 
-// dataShortHostname is the hostname the user answered, else the one already
-// stored in chezmoi.toml, else the short hostname.
+// dataShortHostname is the [data].hostname to write: the one set in Cfg.Data
+// (the form always sets it), else the stored one when the form chose it
+// (hostnameFromForm), else the short hostname as build 2 wrote it every run.
 func dataShortHostname(env *Env) string {
 	if h := env.Cfg.Data["hostname"]; h != "" {
 		return h
 	}
-	if h := storedHostname(env); h != "" {
+	if h := storedFormHostname(env); h != "" {
 		return h
 	}
 	return shortHostname()
 }
 
-// storedHostname is the [data].hostname an earlier run (or the TUI) recorded.
-func storedHostname(env *Env) string {
-	h, _ := storedData(env)["hostname"].(string)
+// storedFormHostname is the stored [data].hostname, only when the form chose it.
+func storedFormHostname(env *Env) string {
+	stored := storedData(env)
+	if on, _ := stored["hostnameFromForm"].(bool); !on {
+		return ""
+	}
+	h, _ := stored["hostname"].(string)
 	return h
+}
+
+// hostnameFromForm is whether the hostname written now came from the form: a
+// form answer other than the short hostname, or one the form chose earlier.
+func hostnameFromForm(env *Env) bool {
+	if h := env.Cfg.Data["hostname"]; h != "" {
+		return env.Answered["hostname"] && h != shortHostname()
+	}
+	return storedFormHostname(env) != ""
 }
 
 // ShortHostname is the hostname the data step records when none is answered.
@@ -303,14 +322,14 @@ func ShortHostname() string { return shortHostname() }
 // KeyPath is where the machine's ssh key lives, for callers outside the steps.
 func KeyPath(ctx context.Context, env *Env) string { return skKeyPath(ctx, env) }
 
-// dataHostname is an answered or stored hostname, else chezmoi's hostname (B:352), falling back to the short hostname.
+// dataHostname is an answered or form-chosen hostname, else chezmoi's hostname (B:352), falling back to the short hostname.
 func dataHostname(ctx context.Context, env *Env) string {
-	if h := env.Cfg.Data["hostname"]; h != "" {
+	// A form answer of the short hostname means "this machine's name": the key
+	// then follows chezmoi's hostname, as the form's own key check does.
+	if h := env.Cfg.Data["hostname"]; h != "" && !(h == shortHostname() && env.Answered["hostname"]) {
 		return h
 	}
-	// The data step stores the short hostname when nothing was answered; that
-	// says nothing about the key, which then follows chezmoi's hostname.
-	if h := storedHostname(env); h != "" && h != shortHostname() {
+	if h := storedFormHostname(env); h != "" {
 		return h
 	}
 	if r, err := env.Run.Run(ctx, dgCmd("chezmoi", "execute-template", "{{ .chezmoi.hostname }}")); err == nil && r.Code == 0 {

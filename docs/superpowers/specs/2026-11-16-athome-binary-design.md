@@ -390,6 +390,10 @@ Decisions:
 - Prefill order per field: flag or `ATHOME_*` env, config file, stored `chezmoi.toml`
   `[data]`, then the step's own default (githubHandle from `gh api user`, hostname as the
   data step derives it). A field set by flag or env is shown read-only.
+- Hostname: a non-interactive run writes `shortHostname()` every run, as build 2 did (B:881).
+  A hostname the form answers always lands in `env.Cfg.Data`, and the data step then writes
+  `hostnameFromForm = true` beside it (absent otherwise, and when the form answers the short
+  hostname), so a later `-y` run keeps a form-chosen hostname but not a build 2 one.
 - Answers go into `env.Cfg.Data` under the keys the steps already read
   (`sshKeyAction`, `generateSshKey`, `useBitwarden`), plus two new ones the steps honour:
   `uploadSshKeys` and `restoreSecrets` (`"true"|"false"`). So no step asks a question

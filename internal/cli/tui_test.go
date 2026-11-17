@@ -75,7 +75,11 @@ func TestUseTUISelection(t *testing.T) {
 		{"terminal", initOpts{}, nil, true, true, true},
 		{"plain flag", initOpts{Plain: true}, nil, true, true, false},
 		{"ATHOME_PLAIN", initOpts{}, map[string]string{"ATHOME_PLAIN": "1"}, true, true, false},
+		{"ATHOME_PLAIN=true", initOpts{}, map[string]string{"ATHOME_PLAIN": "true"}, true, true, false},
 		{"ATHOME_PLAIN=0", initOpts{}, map[string]string{"ATHOME_PLAIN": "0"}, true, true, true},
+		{"ATHOME_PLAIN=false", initOpts{}, map[string]string{"ATHOME_PLAIN": "false"}, true, true, true},
+		{"ATHOME_PLAIN=no", initOpts{}, map[string]string{"ATHOME_PLAIN": "no"}, true, true, true},
+		{"ATHOME_PLAIN empty", initOpts{}, map[string]string{"ATHOME_PLAIN": ""}, true, true, true},
 		{"-y", initOpts{Yes: true}, nil, true, true, false},
 		{"non-interactive", initOpts{NonInter: true}, nil, true, true, false},
 		{"stdin pipe", initOpts{}, nil, false, true, false},
@@ -393,10 +397,16 @@ func TestMergeAnswersHostnameNeedsNoProcessEnv(t *testing.T) {
 	if os.Getenv("HOSTNAME") != "testbox" {
 		t.Errorf("HOSTNAME was changed to %q", os.Getenv("HOSTNAME"))
 	}
+	// The short hostname is answered too: it must reach the data step to reset a stored one.
 	env = &steps.Env{}
 	mergeAnswers(env, map[string]string{"hostname": "testbox"})
-	if _, ok := env.Cfg.Data["hostname"]; ok {
-		t.Error("the default hostname must not be pinned")
+	if got := env.Cfg.Data["hostname"]; got != "testbox" {
+		t.Errorf("Data[hostname] = %q, want testbox", got)
+	}
+	env = &steps.Env{}
+	mergeAnswers(env, map[string]string{"hostname": ""})
+	if got := env.Cfg.Data["hostname"]; got != "testbox" {
+		t.Errorf("an empty hostname answer: Data[hostname] = %q, want the short hostname", got)
 	}
 }
 

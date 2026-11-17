@@ -32,7 +32,7 @@ func useTUI(o initOpts, environ map[string]string) bool {
 	if o.Plain || o.Config != "" { // a --config run keeps its line prompts, never the form
 		return false
 	}
-	if environ["ATHOME_PLAIN"] != "" && environ["ATHOME_PLAIN"] != "0" {
+	if plain := strings.ToLower(environ["ATHOME_PLAIN"]); plain == "1" || plain == "true" {
 		return false
 	}
 	return isInteractive(o.NonInter || o.Yes, stdinIsTTY()) && stdoutIsTTY()
@@ -114,9 +114,10 @@ func mergeAnswers(env *steps.Env, ans map[string]string) {
 		case "includeAgents":
 			env.Cfg.IncludeAgents = v != "false"
 		case "hostname":
-			if v != "" && v != steps.ShortHostname() {
-				env.Cfg.Data["hostname"] = v // the data step and the key path honour an explicit hostname
+			if v == "" {
+				v = steps.ShortHostname() // the form's empty hostname means this machine's name
 			}
+			env.Cfg.Data["hostname"] = v // the data step records it and flags it as the form's choice
 		default:
 			env.Cfg.Data[k] = v
 		}

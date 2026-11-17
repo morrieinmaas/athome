@@ -207,71 +207,81 @@ func (s *formState) yesNo(k, title string) huh.Field {
 		huh.NewOption("yes", "true"), huh.NewOption("no", "false")).Value(s.v[k])
 }
 
-// pages builds the five editable pages, each when it is reached, so the keys
-// page sees the hostname answered on the first. The review page is separate.
+// pages lists the five editable pages, each built when it is reached, so the
+// keys page sees the hostname answered on the first. The review page is separate.
 func (s *formState) pages(ctx context.Context) []func() *huh.Form {
-	meshIs := func(m string) func() bool { return func() bool { return *s.v["meshProvider"] != m } }
 	return []func() *huh.Form{
-		func() *huh.Form {
-			return huh.NewForm(huh.NewGroup(
-				s.choice("machineType", "Machine type", s.v["machineType"], "personal", "work"),
-				s.input("hostname", "Hostname", "empty = this machine's name", validHostname),
-			).Title("Machine"))
-		},
-		func() *huh.Form {
-			return huh.NewForm(huh.NewGroup(
-				s.input("githubHandle", "GitHub username", "e.g. octocat", validHandle(s.seed.CheckHandle, ctx, s.isSubmitting)),
-				s.input("personalName", "Personal git name", "empty = your GitHub username", nil),
-				s.input("workEmail", "Work git email", "empty = personal everywhere", validOptionalEmail),
-				s.input("workName", "Work git name", "empty = personal name", nil),
-				s.input("sidebizEmail", "Side-business git email", "empty = personal everywhere", validOptionalEmail),
-				s.input("sidebizName", "Side-business git name", "empty = personal name", nil),
-			).Title("Identity"))
-		},
-		func() *huh.Form {
-			s.syncSSH()
-			sshOpts := []string{"generate", "skip"}
-			sshTitle := "No ssh key yet: create one?"
-			if s.sshHasKey {
-				sshOpts = []string{"use", "generate", "reupload"}
-				sshTitle = "An ssh key exists"
-			}
-			return huh.NewForm(
-				huh.NewGroup(
-					s.yesNo("useBitwarden", "Use Bitwarden (rbw) for secrets sync?"),
-					s.choice("sshKey", sshTitle, &s.ssh, sshOpts...),
-				).Title("Keys and secrets"),
-				huh.NewGroup(
-					s.yesNo("uploadSshKeys", "Upload keys to GitHub?"),
-				).Title("Keys and secrets").WithHideFunc(func() bool { return s.sshHasKey && s.ssh == "reupload" }),
-				huh.NewGroup(
-					s.input("bitwardenUrl", "Bitwarden server URL", "empty = US cloud; EU = https://vault.bitwarden.eu; or your Vaultwarden URL", validBitwardenURL(s.seed.CheckURL, ctx, s.isSubmitting)),
-					s.yesNo("restoreSecrets", "Restore secrets from Bitwarden?"),
-				).Title("Bitwarden").WithHideFunc(func() bool { return *s.v["useBitwarden"] == "false" }),
-				huh.NewGroup(
-					s.yesNo("bwBackupSshKey", "Store the ssh key in Bitwarden?"),
-				).WithHideFunc(func() bool { return *s.v["useBitwarden"] == "false" || !s.generatesKey() }),
-			)
-		},
-		func() *huh.Form {
-			return huh.NewForm(
-				huh.NewGroup(s.choice("meshProvider", "Mesh VPN", s.v["meshProvider"], "meshnet", "netbird", "none")).Title("Network"),
-				huh.NewGroup(s.input("nordvpnCountry", "NordVPN country", "empty = NordVPN picks", nil)).WithHideFunc(meshIs("meshnet")),
-				huh.NewGroup(s.input("netbirdManagementUrl", "NetBird management URL", "empty = NetBird Cloud", nil)).WithHideFunc(meshIs("netbird")),
-			)
-		},
-		func() *huh.Form {
-			return huh.NewForm(huh.NewGroup(
-				s.yesNo("includeAgents", "Set up agent skills?"),
-				s.input("agentsRepo", "Agents repo (owner/repo)", "empty = none", nil),
-				s.input("extraPackages", "Extra packages", "space-separated", nil),
-				s.input("slackDefaultWorkspace", "Slack workspace slug", "empty = none", nil),
-				s.input("slackTeamId", "Slack team id", "e.g. T0XXXXXXX", nil),
-				s.input("matterhornHost", "Matterhorn host", "no https://, empty = none", nil),
-				s.input("matterhornUser", "Matterhorn login", "empty = none", nil),
-			).Title("Extras"))
-		},
+		s.machinePage,
+		func() *huh.Form { return s.identityPage(ctx) },
+		func() *huh.Form { return s.keysPage(ctx) },
+		s.networkPage,
+		s.extrasPage,
 	}
+}
+
+func (s *formState) machinePage() *huh.Form {
+	return huh.NewForm(huh.NewGroup(
+		s.choice("machineType", "Machine type", s.v["machineType"], "personal", "work"),
+		s.input("hostname", "Hostname", "empty = this machine's name", validHostname),
+	).Title("Machine"))
+}
+
+func (s *formState) identityPage(ctx context.Context) *huh.Form {
+	return huh.NewForm(huh.NewGroup(
+		s.input("githubHandle", "GitHub username", "e.g. octocat", validHandle(s.seed.CheckHandle, ctx, s.isSubmitting)),
+		s.input("personalName", "Personal git name", "empty = your GitHub username", nil),
+		s.input("workEmail", "Work git email", "empty = personal everywhere", validOptionalEmail),
+		s.input("workName", "Work git name", "empty = personal name", nil),
+		s.input("sidebizEmail", "Side-business git email", "empty = personal everywhere", validOptionalEmail),
+		s.input("sidebizName", "Side-business git name", "empty = personal name", nil),
+	).Title("Identity"))
+}
+
+func (s *formState) keysPage(ctx context.Context) *huh.Form {
+	s.syncSSH()
+	sshOpts := []string{"generate", "skip"}
+	sshTitle := "No ssh key yet: create one?"
+	if s.sshHasKey {
+		sshOpts = []string{"use", "generate", "reupload"}
+		sshTitle = "An ssh key exists"
+	}
+	return huh.NewForm(
+		huh.NewGroup(
+			s.yesNo("useBitwarden", "Use Bitwarden (rbw) for secrets sync?"),
+			s.choice("sshKey", sshTitle, &s.ssh, sshOpts...),
+		).Title("Keys and secrets"),
+		huh.NewGroup(
+			s.yesNo("uploadSshKeys", "Upload keys to GitHub?"),
+		).Title("Keys and secrets").WithHideFunc(func() bool { return s.sshHasKey && s.ssh == "reupload" }),
+		huh.NewGroup(
+			s.input("bitwardenUrl", "Bitwarden server URL", "empty = US cloud; EU = https://vault.bitwarden.eu; or your Vaultwarden URL", validBitwardenURL(s.seed.CheckURL, ctx, s.isSubmitting)),
+			s.yesNo("restoreSecrets", "Restore secrets from Bitwarden?"),
+		).Title("Bitwarden").WithHideFunc(func() bool { return *s.v["useBitwarden"] == "false" }),
+		huh.NewGroup(
+			s.yesNo("bwBackupSshKey", "Store the ssh key in Bitwarden?"),
+		).WithHideFunc(func() bool { return *s.v["useBitwarden"] == "false" || !s.generatesKey() }),
+	)
+}
+
+func (s *formState) networkPage() *huh.Form {
+	meshIs := func(m string) func() bool { return func() bool { return *s.v["meshProvider"] != m } }
+	return huh.NewForm(
+		huh.NewGroup(s.choice("meshProvider", "Mesh VPN", s.v["meshProvider"], "meshnet", "netbird", "none")).Title("Network"),
+		huh.NewGroup(s.input("nordvpnCountry", "NordVPN country", "empty = NordVPN picks", nil)).WithHideFunc(meshIs("meshnet")),
+		huh.NewGroup(s.input("netbirdManagementUrl", "NetBird management URL", "empty = NetBird Cloud", nil)).WithHideFunc(meshIs("netbird")),
+	)
+}
+
+func (s *formState) extrasPage() *huh.Form {
+	return huh.NewForm(huh.NewGroup(
+		s.yesNo("includeAgents", "Set up agent skills?"),
+		s.input("agentsRepo", "Agents repo (owner/repo)", "empty = none", nil),
+		s.input("extraPackages", "Extra packages", "space-separated", nil),
+		s.input("slackDefaultWorkspace", "Slack workspace slug", "empty = none", nil),
+		s.input("slackTeamId", "Slack team id", "e.g. T0XXXXXXX", nil),
+		s.input("matterhornHost", "Matterhorn host", "no https://, empty = none", nil),
+		s.input("matterhornUser", "Matterhorn login", "empty = none", nil),
+	).Title("Extras"))
 }
 
 // Only ctrl+c quits: esc clears a select filter and must not end the form.

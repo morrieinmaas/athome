@@ -1,6 +1,7 @@
 package steps_test
 
 import (
+	"os"
 	"strings"
 	"testing"
 
@@ -65,6 +66,10 @@ func TestPresetRestoreSecrets(t *testing.T) {
 		}
 		if exists(fx.Path(".local", "state", "athome", "secrets-restore-attempted")) {
 			t.Errorf("a decline must not be remembered")
+		}
+		got, _ := os.ReadFile(steps.FollowupLogPath())
+		if !strings.Contains(string(got), "Secrets: run `secrets-restore` to recover") {
+			t.Errorf("no secrets follow-up line, log: %q", got)
 		}
 	})
 	t.Run("true: runs without asking", func(t *testing.T) {

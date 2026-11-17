@@ -49,12 +49,17 @@ RUN pacman -Syu --noconfirm --needed git curl sudo base-devel openssh which rust
 # source of the packages below. Trust anchor is unchanged — `--lsign-key` pins
 # the full fingerprint, so a substituted keyring fails the build rather than
 # being trusted, and `pacman -U` then verifies the package signatures against it.
-RUN curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 \
-         -o /tmp/chaotic-keyring.pkg.tar.zst \
-         'https://cdn-mirror.chaotic.cx/chaotic-aur/chaotic-keyring.pkg.tar.zst' \
-    && curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 \
-         -o /tmp/chaotic-mirrorlist.pkg.tar.zst \
-         'https://cdn-mirror.chaotic.cx/chaotic-aur/chaotic-mirrorlist.pkg.tar.zst' \
+RUN for pkg in chaotic-keyring chaotic-mirrorlist; do \
+         ok=; \
+         for host in cdn-mirror geo-mirror; do \
+           if curl -fsSL --retry 6 --retry-all-errors --retry-delay 10 \
+                -o "/tmp/$pkg.pkg.tar.zst" \
+                "https://$host.chaotic.cx/chaotic-aur/$pkg.pkg.tar.zst"; then \
+             ok=1; break; \
+           fi; \
+         done; \
+         [ -n "$ok" ] || exit 1; \
+       done \
     && bsdtar -xOf /tmp/chaotic-keyring.pkg.tar.zst \
          usr/share/pacman/keyrings/chaotic.gpg > /tmp/chaotic.gpg \
     && pacman-key --init \

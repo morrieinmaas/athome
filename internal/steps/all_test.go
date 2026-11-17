@@ -2,6 +2,7 @@ package steps_test
 
 import (
 	"context"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -9,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/morrieinmaas/athome/internal/prompt"
 	"github.com/morrieinmaas/athome/internal/run"
 	"github.com/morrieinmaas/athome/internal/steps"
 )
@@ -79,8 +81,8 @@ func TestAllTwiceAppliesNothing(t *testing.T) {
 	for _, d := range []string{"personal", "sidebiz"} {
 		writeFile(t, fx.Path(d, ".envrc"), "x", 0o644)
 	}
-	// Secrets already restored; without them an unlocked rbw and no restore
-	// script re-writes the follow-up note on every run.
+	// Secrets already restored; without them an unlocked rbw
+	// and no secrets would restore on every run.
 	writeFile(t, fx.Path(".secrets", "personal", ".env"), "x", 0o600)
 	if _, err := fx.Exec(steps.All()); err != nil {
 		t.Fatalf("first run: %v\n%s", err, fx.Log)
@@ -102,7 +104,7 @@ func TestChecksArePure(t *testing.T) {
 	t.Setenv("PATH", "/usr/bin")
 	t.Cleanup(steps.SetNanobrewBin(fx.Path("absent-nb")))
 	fx.Env.OS = "darwin"
-	fx.Fake.Have("rbw", "gh") // rbw unlocked, no secrets-restore script
+	fx.Fake.Have("rbw", "gh") // rbw unlocked, no secrets restored
 	fx.Env.Cfg = e2eConfig(t, fx.Home)
 	fx.Env.Cfg.Data["sshKeyAction"] = "reupload"
 	fx.PutKey("PRIVATE\n", "ssh-ed25519 AAAA testhost\n")
@@ -200,7 +202,8 @@ func TestAppendFollowupLogsWhenLogUnwritable(t *testing.T) {
 	fx := newFixture(t)
 	mustMkdir(t, steps.FollowupLogPath())
 	for _, s := range steps.All() {
-		if s.Name == "secrets-restore-hint" {
+		if s.Name == "secrets-restore" {
+			fx.Env.Ask = prompt.New(strings.NewReader("n\n"), io.Discard)
 			if err := s.Apply(context.Background(), fx.Env); err != nil {
 				t.Fatal(err)
 			}

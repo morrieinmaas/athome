@@ -15,7 +15,7 @@ exception, for high-sensitivity secrets that must never touch disk (or on shared
 | Works offline / no unlock to use? | **yes** | no — needs rbw unlocked every session |
 | Use for | everyday dev — fast, simple, offline | high-sensitivity / shared / ephemeral machines |
 
-The rbw setup below applies to **both**. **Model B** (the mise pattern + `secrets-backup`/`secrets-restore`)
+The rbw setup below applies to **both**. **Model B** (the mise pattern + `athome secrets backup`/`restore`)
 is the final section and the one to use by default. **Model A** is "Daily use" + direnv, for the exceptions.
 
 > **Why Bitwarden/rbw over pass:** cross-device incl. mobile "just works" (native
@@ -144,27 +144,36 @@ mise injects the vars into the shell at `cd`; `just` / docker / `npm` / subshell
   `<placeholder>` values make it error and inject nothing. Clean the `.env` first.
 
 ### Backup = an encrypted git vault (git-crypt); Bitwarden holds only the key
-`secrets-backup` mirrors `~/.secrets/*/.env*`, `~/.aws/*`, scw/stripe, and MCP configs into a
+`athome secrets backup` mirrors `~/.secrets/*/.env*`, `~/.aws/*`, scw/stripe, and MCP configs into a
 **private GitHub repo** (working tree `~/.local/share/attic`), encrypts every file with
 **git-crypt** on commit, and pushes. **GitHub only ever sees ciphertext.** The git-crypt key
 lives as a *single* Bitwarden item (`git-crypt/attic-key`). Result: **versioned** (every change
 is a commit + timestamp), **encrypted**, **off-site** — and Bitwarden shrinks to one secret.
 
-### Scripts (deployed to `~/.local/bin`)
+### Commands
 ```bash
-mise-secret-init [repo-dir] [name]   # onboard a repo: move .env → ~/.secrets, write mise.toml, …, back up
-secrets-backup                       # mirror secrets → git-crypt vault → commit (encrypts) → push
-secrets-restore [--dry-run]          # clone vault → unlock with the BW key → copy decrypted files into place
+mise-secret-init [repo-dir] [name]     # onboard a repo: move .env → ~/.secrets, write mise.toml, …, back up
+athome secrets backup                  # mirror secrets → git-crypt vault → commit (encrypts) → push
+athome secrets restore [--dry-run]     # clone vault → unlock with the BW key → copy decrypted files into place
 ```
-- git-crypt is **deterministic** → unchanged files produce no diff, so `secrets-backup` is a clean
+`secrets-backup` and `secrets-restore` stay on PATH for one release as one-line wrappers that
+`exec athome secrets backup|restore "$@"`; use the `athome` form. Both read `SECRETS_VAULT`
+(default `~/.local/share/attic`) and `SECRETS_VAULT_NAME` (default `attic`); `restore` also
+reads `SECRETS_VAULT_REPO` or `ATHOME_GITHUB_HANDLE` (else the logged-in `gh` user) to find the
+vault repo. `git-crypt`, `rbw` and `gh` are found on PATH. Exit codes: `backup` 1 without a vault,
+2 when a staged file is plaintext (nothing is committed); `restore` 1 when rbw is locked on an
+encrypted vault or any file failed to copy. Any other argument exits 2.
+`athome init` restores in process (it offers `athome secrets restore` when rbw is unlocked and no
+`~/.secrets/*/.env` exists yet).
+- git-crypt is **deterministic** → unchanged files produce no diff, so `athome secrets backup` is a clean
   **no-op when nothing changed** (safe to run on a timer/watcher).
 - A **safety gate** aborts the commit/push if any staged file isn't encrypted (no accidental plaintext leak).
 - **Rotate** by deleting/recreating the repo (git-crypt has no in-place symmetric-key rotation).
 
 ### Lost-laptop recovery (the whole point)
-1. install athome (gets `git-crypt`, mise, rbw via nanobrew) — bootstrap **step 7.6** offers `secrets-restore`
+1. install athome (gets `git-crypt`, mise, rbw via nanobrew) — `athome init` offers `athome secrets restore`
 2. `gh auth login` (clone access) → `bw-setup` / `rbw unlock` — the *only* secret you carry is your master password
-3. `secrets-restore` → clones the vault, decrypts with the BW key, repopulates `~/.secrets/*/.env`, `~/.aws/*`
+3. `athome secrets restore` → clones the vault, decrypts with the BW key, repopulates `~/.secrets/*/.env`, `~/.aws/*`
 4. clone dev repos → committed `mise.toml` + restored `~/.secrets/<name>/.env` → `mise trust` → working
 
 > Deep-dive + the backup/restore mechanism rationale also lives in the agent skill

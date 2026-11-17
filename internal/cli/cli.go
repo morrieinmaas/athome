@@ -16,6 +16,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"github.com/morrieinmaas/athome/internal/config"
+	"github.com/morrieinmaas/athome/internal/prompt"
 	"github.com/morrieinmaas/athome/internal/run"
 	"github.com/morrieinmaas/athome/internal/steps"
 )
@@ -25,6 +26,15 @@ var Version = "dev"
 // newRunner builds the Runner every step reaches external tools through. Tests
 // replace it, so no test can start a real process.
 var newRunner = run.Exec
+
+// stdinIsTTY reports whether stdin is a terminal. Tests replace it.
+var stdinIsTTY = func() bool {
+	fi, err := os.Stdin.Stat()
+	return err == nil && fi.Mode()&os.ModeCharDevice != 0
+}
+
+// isInteractive decides whether init may prompt.
+func isInteractive(nonInter, tty bool) bool { return tty && !nonInter }
 
 var Commit = "none"
 
@@ -193,7 +203,12 @@ func newInitEnv(o initOpts, stdout, stderr io.Writer) (*steps.Env, int) {
 		return nil, exitError
 	}
 	r := newRunner()
+	var ask *prompt.Asker
+	if isInteractive(o.NonInter || o.Yes, stdinIsTTY()) {
+		ask = prompt.New(os.Stdin, stderr)
+	}
 	return &steps.Env{
+		Ask:      ask,
 		Cfg:      cfg,
 		Run:      r,
 		Home:     home,

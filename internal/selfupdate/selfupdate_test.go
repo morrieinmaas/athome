@@ -160,3 +160,14 @@ func TestInstallFileBaseAndUnwritable(t *testing.T) {
 		t.Fatalf("binary changed: %q", b)
 	}
 }
+
+func TestInstallTagWithoutAssetsNamesAssetURL(t *testing.T) {
+	srv := httptest.NewServer(http.NotFoundHandler())
+	t.Cleanup(srv.Close)
+	d := dest(t)
+	err := selfupdate.Install(context.Background(), srv.URL, "v0.5.2", "linux", "amd64", d)
+	if err == nil || !strings.Contains(err.Error(), "/v0.5.2/athome_linux_amd64") {
+		t.Fatalf("error does not name the asset URL: %v", err)
+	}
+	noPart(t, d)
+}

@@ -36,10 +36,10 @@ func runSecrets(args []string, stdout, stderr io.Writer) int {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	o := secrets.FromEnv(home, newRunner(), stdout, stderr)
 	if !restore {
-		return secrets.Backup(ctx, o)
+		return secrets.Backup(ctx, secrets.BackupFromEnv(home, newRunner(), stdout, stderr))
 	}
+	o := secrets.FromEnv(home, newRunner(), stdout, stderr)
 	o.DryRun = dry
 	return secrets.Restore(ctx, o)
 }

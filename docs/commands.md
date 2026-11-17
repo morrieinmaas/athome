@@ -41,7 +41,8 @@ athome update [--to <version>] [--yes|-y]
 ```
 
 Brings this machine up to a release. It first runs `git fetch --tags` on the repo and picks
-the target: `--to` (`vX.Y.Z` or `X.Y.Z`), else the highest local `vX.Y.Z` tag. Then four steps:
+the target: `--to` (`vX.Y.Z` or `X.Y.Z`, which must be a tag `git ls-remote` lists on
+`origin`), else the highest local `vX.Y.Z` tag. Then four steps:
 
 1. `self`: downloads `athome_<os>_<arch>` and `checksums.txt` from the release (the installer's
    `ATHOME_RELEASE_BASE`), checks the sha256, prints the commit subjects between the two
@@ -89,6 +90,41 @@ elsewhere on PATH is left alone.
 
 Exit codes: 0 done (or dry run); 1 an action failed (the output names it; the actions before
 it ran); 2 no tier, an unknown argument, or the confirmation not given.
+
+## athome secrets
+
+Backs the local secret files up to an encrypted git vault, and restores them on a new
+machine. It replaces the `secrets-backup` and `secrets-restore` scripts; those names stay
+one release as wrappers that pass their arguments and exit code through.
+
+```bash
+athome secrets backup
+athome secrets restore [--dry-run]
+```
+
+`backup` mirrors `~/.secrets/<repo>/.env*` (not `.example`, `.sample`, `.template` or
+`.dist`, and not a directory starting with a dot), `~/.aws/config`, `~/.aws/credentials`,
+`~/.config/scw/config.yaml`, `~/.config/stripe/config.toml` and
+`~/.codeium/windsurf/mcp_config.json` into the vault, commits, and pushes. It refuses to
+commit unless every staged file is ciphertext. A failed push leaves the commit for the
+next run.
+
+`restore` clones the vault (or pulls it), unlocks it with the git-crypt key from
+Bitwarden (`rbw`) when it is still encrypted, copies the files into `$HOME` at mode 600
+and makes `~/.secrets` and its directories owner-only. With `--dry-run` it still clones or
+pulls and unlocks, and only skips the copy.
+
+| Variable | Default | What it sets |
+| --- | --- | --- |
+| `SECRETS_VAULT` | `~/.local/share/attic` for `backup`, `~/.local/share/<name>` for `restore` | The vault checkout. |
+| `SECRETS_VAULT_NAME` | `attic` | The repo name and the Bitwarden item `git-crypt/<name>-key` (`restore`). |
+| `SECRETS_VAULT_REPO` | `<owner>/<name>` | The GitHub repo to clone. |
+| `ATHOME_GITHUB_HANDLE` | the `gh` user | The owner when `SECRETS_VAULT_REPO` is not set. |
+
+Exit codes: 0 done (also for a vault with nothing tracked, or a push that failed after the
+commit); 1 no vault (`backup`), a vault that cannot be cloned, listed or unlocked, or a
+file that could not be copied; 2 plaintext found in the staged files (`backup`), or a
+usage error.
 
 ## athome version
 

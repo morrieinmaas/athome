@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 type Cmd struct {
@@ -46,6 +47,9 @@ func (execRunner) LookPath(name string) (string, error) { return exec.LookPath(n
 func (execRunner) Run(ctx context.Context, c Cmd) (Result, error) {
 	cmd := exec.CommandContext(ctx, c.Name, c.Args...)
 	cmd.Dir = c.Dir
+	// A child of the command can hold the output pipes open past the deadline;
+	// WaitDelay makes Run return anyway.
+	cmd.WaitDelay = 2 * time.Second
 	if len(c.Env) > 0 {
 		cmd.Env = append(os.Environ(), c.Env...)
 	}

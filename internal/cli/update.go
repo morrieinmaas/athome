@@ -137,8 +137,16 @@ func resolveUpdateTarget(ctx context.Context, r run.Runner, repo, want string) (
 		}
 		return want, nil
 	}
-	for _, t := range tags {
-		if t == want {
+	// --to is checked against what origin lists, not against local tags a past fetch left behind.
+	res, err = git("ls-remote", "--tags", "--refs", "origin")
+	if err != nil {
+		return "", fmt.Errorf("git ls-remote: %w", err)
+	}
+	if res.Code != 0 {
+		return "", fmt.Errorf("git ls-remote origin failed (offline?): %s", strings.TrimSpace(res.Stderr))
+	}
+	for _, line := range strings.Split(res.Stdout, "\n") {
+		if _, ref, ok := strings.Cut(strings.TrimSpace(line), "\t"); ok && ref == "refs/tags/"+want {
 			return want, nil
 		}
 	}

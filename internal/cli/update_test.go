@@ -25,6 +25,7 @@ func updateFixture(t *testing.T, version string, tags string) (repo string, f *r
 	repo = inRepo(t)
 	f = runtest.NewFake()
 	f.On("git", "-C", repo, "tag", "--list").Return(run.Result{Stdout: tags})
+	f.On("git", "-C", repo, "ls-remote", "--tags", "--refs", "origin").Return(run.Result{Stdout: remoteTags(tags)})
 	f.On("git", "-C", repo, "symbolic-ref", "--quiet", "--short", "HEAD").Return(run.Result{Stdout: "main\n"})
 	f.On("mise", "ls", "--missing", "--json").Return(run.Result{Stdout: "{}"})
 	t.Cleanup(cli.SetRunner(f))
@@ -34,6 +35,15 @@ func updateFixture(t *testing.T, version string, tags string) (repo string, f *r
 	t.Cleanup(cli.SetStdinTTY(false))
 	t.Cleanup(cli.SetUpdateExec(func(string, []string) error { return nil }))
 	return repo, f
+}
+
+// remoteTags renders a tag list as git ls-remote prints it.
+func remoteTags(tags string) string {
+	var b strings.Builder
+	for _, t := range strings.Fields(tags) {
+		fmt.Fprintf(&b, "abc123\trefs/tags/%s\n", t)
+	}
+	return b.String()
 }
 
 func called(f *runtest.Fake, name string, args ...string) bool {
@@ -97,6 +107,18 @@ func TestUpdateToMissingTag(t *testing.T) {
 	_, f := updateFixture(t, "0.5.0", "v0.5.0\nv0.5.2\n")
 	code, _, stderr := runMain("update", "--to", "9.9.9")
 	if code != 1 || !strings.Contains(stderr, "v9.9.9") {
+		t.Fatalf("code %d stderr %q", code, stderr)
+	}
+	if called(f, "chezmoi", "apply") {
+		t.Error("apply ran")
+	}
+}
+
+func TestUpdateToTagOnlyLocalExits1(t *testing.T) {
+	repo, f := updateFixture(t, "0.5.0", "v0.5.0\nv0.5.2\n")
+	f.On("git", "-C", repo, "ls-remote", "--tags", "--refs", "origin").Return(run.Result{Stdout: remoteTags("v0.5.0\n")})
+	code, _, stderr := runMain("update", "--to", "0.5.2")
+	if code != 1 || !strings.Contains(stderr, "origin has no tag v0.5.2") {
 		t.Fatalf("code %d stderr %q", code, stderr)
 	}
 	if called(f, "chezmoi", "apply") {

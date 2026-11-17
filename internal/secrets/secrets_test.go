@@ -412,3 +412,74 @@ func (r failUnlock) Run(ctx context.Context, c run.Cmd) (run.Result, error) {
 	}
 	return res, err
 }
+
+func TestBackupSkipsDotDirsUnderSecrets(t *testing.T) {
+	f := newFx(t)
+	f.withVault()
+	f.write(f.home_(".secrets", ".hidden", ".env"), "H=1")
+	f.write(f.home_(".secrets", "proj", ".env"), "A=1")
+	secrets.Backup(context.Background(), f.opts)
+	if _, err := os.Stat(filepath.Join(f.vault, ".secrets", ".hidden", ".env")); err == nil {
+		t.Error("a dot directory under ~/.secrets was mirrored")
+	}
+	if _, err := os.Stat(filepath.Join(f.vault, ".secrets", "proj", ".env")); err != nil {
+		t.Error("the normal directory was not mirrored")
+	}
+}
+
+func TestBackupVaultDefaultIgnoresVaultName(t *testing.T) {
+	t.Setenv("SECRETS_VAULT", "")
+	t.Setenv("SECRETS_VAULT_NAME", "vlt")
+	b := secrets.BackupFromEnv("/h", runtest.NewFake(), nil, nil)
+	if b.Vault != "/h/.local/share/attic" {
+		t.Errorf("backup vault = %q", b.Vault)
+	}
+	if r := secrets.FromEnv("/h", runtest.NewFake(), nil, nil); r.Vault != "/h/.local/share/vlt" {
+		t.Errorf("restore vault = %q", r.Vault)
+	}
+	t.Setenv("SECRETS_VAULT", "/v")
+	if b := secrets.BackupFromEnv("/h", runtest.NewFake(), nil, nil); b.Vault != "/v" {
+		t.Errorf("SECRETS_VAULT ignored: %q", b.Vault)
+	}
+}
+
+func TestRestoreLsFilesFailureExits1(t *testing.T) {
+	f := newFx(t)
+	f.withVault()
+	f.fake.On("git", "ls-files").Return(run.Result{Code: 128, Stderr: "fatal: not a git repository"})
+	if code := secrets.Restore(context.Background(), f.opts); code != 1 {
+		t.Errorf("code = %d", code)
+	}
+	if !strings.Contains(f.errb.String(), "git ls-files failed") {
+		t.Errorf("stderr %q", f.errb.String())
+	}
+}
+
+func TestRestoreVaultWithNoTrackedFiles(t *testing.T) {
+	f := newFx(t)
+	f.withVault()
+	f.fake.On("git", "ls-files").Return(run.Result{})
+	if code := secrets.Restore(context.Background(), f.opts); code != 0 {
+		t.Errorf("code = %d", code)
+	}
+	if _, err := os.Stat(f.home_(".secrets")); err == nil {
+		t.Error("restore created ~/.secrets for an empty vault")
+	}
+	if strings.Contains(f.out.String(), "restored") {
+		t.Errorf("out %q", f.out.String())
+	}
+}
+
+func TestRestoreRepoEnvWinsOverOwnerInClone(t *testing.T) {
+	t.Setenv("SECRETS_VAULT", "")
+	t.Setenv("SECRETS_VAULT_NAME", "")
+	t.Setenv("SECRETS_VAULT_REPO", "org/custom")
+	t.Setenv("ATHOME_GITHUB_HANDLE", "carol")
+	f := newFx(t)
+	o := secrets.FromEnv(f.home, f.fake, &f.out, &f.errb)
+	f.fake.On("git", "ls-files").Return(run.Result{})
+	secrets.Restore(context.Background(), o)
+	if len(f.calls("gh", "repo", "clone", "org/custom", o.Vault)) != 1 || len(f.calls("gh", "repo", "clone", "carol/attic")) != 0 {
+		t.Errorf("calls %v", f.fake.Calls())
+	}
+}

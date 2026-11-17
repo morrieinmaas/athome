@@ -54,6 +54,14 @@ func FromEnv(home string, r run.Runner, out, errw io.Writer) Opts {
 	}
 }
 
+// BackupFromEnv is FromEnv for backup: the default vault stays ~/.local/share/attic
+// whatever SECRETS_VAULT_NAME says, as the secrets-backup script had it.
+func BackupFromEnv(home string, r run.Runner, out, errw io.Writer) Opts {
+	o := FromEnv(home, r, out, errw)
+	o.Vault = envOr("SECRETS_VAULT", filepath.Join(home, ".local", "share", "attic"))
+	return o
+}
+
 func envOr(key, def string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
@@ -101,6 +109,10 @@ func mirrorSources(home string) []string {
 	for _, pat := range []string{".env", ".env.*"} {
 		m, _ := filepath.Glob(filepath.Join(globEscape(home), ".secrets", "*", pat))
 		for _, f := range m {
+			// bash's * does not match a leading dot
+			if strings.HasPrefix(filepath.Base(filepath.Dir(f)), ".") {
+				continue
+			}
 			switch filepath.Ext(f) {
 			case ".example", ".sample", ".template", ".dist":
 				continue
@@ -223,6 +235,10 @@ func Restore(ctx context.Context, o Opts) int {
 	r, err := o.git(ctx, "ls-files")
 	if err != nil {
 		o.errf("%v\n", err)
+		return exitError
+	}
+	if r.Code != 0 {
+		o.errf("git ls-files failed in %s\n%s", o.Vault, r.Stderr)
 		return exitError
 	}
 	files := lines(r.Stdout)

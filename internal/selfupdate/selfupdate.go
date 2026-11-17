@@ -6,11 +6,13 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const DefaultBase = "https://github.com/morrieinmaas/athome/releases/download"
@@ -74,10 +76,17 @@ func Highest(tags []string) string {
 	return best
 }
 
+// The client bounds every request: connect 10 s, response headers 30 s, and
+// 5 min overall, which covers reading the binary body.
 var client = func() *http.Client {
-	t := &http.Transport{Proxy: http.ProxyFromEnvironment}
+	t := &http.Transport{
+		Proxy:                 http.ProxyFromEnvironment,
+		DialContext:           (&net.Dialer{Timeout: 10 * time.Second}).DialContext,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ResponseHeaderTimeout: 30 * time.Second,
+	}
 	t.RegisterProtocol("file", http.NewFileTransport(http.Dir("/")))
-	return &http.Client{Transport: t}
+	return &http.Client{Transport: t, Timeout: 5 * time.Minute}
 }()
 
 func get(ctx context.Context, url string) (io.ReadCloser, error) {
@@ -103,12 +112,19 @@ func Install(ctx context.Context, base, tag, goos, goarch, dest string) error {
 	asset := fmt.Sprintf("athome_%s_%s", goos, goarch)
 	base = strings.TrimSuffix(base, "/") + "/" + tag + "/"
 
-	body, err := get(ctx, base+"checksums.txt")
+	// The asset goes first, so a tag without assets fails naming the asset URL.
+	body, err := get(ctx, base+asset)
+	if err != nil {
+		return fmt.Errorf("%w (is the release for %s published?)", err, tag)
+	}
+	defer body.Close()
+
+	sumsBody, err := get(ctx, base+"checksums.txt")
 	if err != nil {
 		return err
 	}
-	sums, err := io.ReadAll(body)
-	body.Close()
+	sums, err := io.ReadAll(sumsBody)
+	sumsBody.Close()
 	if err != nil {
 		return fmt.Errorf("read %schecksums.txt: %w", base, err)
 	}
@@ -123,12 +139,6 @@ func Install(ctx context.Context, base, tag, goos, goarch, dest string) error {
 	if want == "" {
 		return fmt.Errorf("checksums.txt has no line for %s", asset)
 	}
-
-	body, err = get(ctx, base+asset)
-	if err != nil {
-		return fmt.Errorf("%w (is the release for %s published?)", err, tag)
-	}
-	defer body.Close()
 
 	part := filepath.Join(filepath.Dir(dest), fmt.Sprintf(".athome.%d", os.Getpid()))
 	f, err := os.OpenFile(part, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o755)

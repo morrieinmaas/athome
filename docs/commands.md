@@ -37,3 +37,25 @@ pinned in `~/.config/chezmoi/chezmoi.toml`, or `~/.local/share/chezmoi`.
 ## athome version
 
 Prints the version and commit, e.g. `athome 0.5.0 (abc1234)`.
+
+## athome status
+
+```
+athome status [--json]
+```
+
+Reads, never writes, and reports five components: `athome` (the running version
+against the highest `vX.Y.Z` tag on `origin`), `dotfiles` (`chezmoi status
+--exclude=scripts` prints nothing), `mise` (`mise ls --missing` lists nothing),
+`grofe` (its version against `pins.grofe`) and `canopy` (its checkout against
+`pins.canopy`). The pins live in `home/.chezmoidata/pins.toml`.
+
+Each is `current`, `not current`, `not installed` or `unknown` (offline, no
+`pins.toml`, a version that is not a release). The text output starts with
+`athome <version> (<commit>), repo <repo> at <ref>`, then one line per component.
+`--json` prints `{"version", "commit", "repo", "ref", "current", "components": [{"name",
+"status", "installed", "wanted", "detail"}]}`, where `current` is true only when all
+five are current.
+
+Exit codes: 0 whenever the report printed, whatever it says; 1 when the repo is not
+found; 2 for a usage error.

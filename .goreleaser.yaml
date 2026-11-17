@@ -1,0 +1,27 @@
+version: 2
+
+project_name: athome
+
+builds:
+  - id: athome
+    main: ./cmd/athome
+    binary: athome_{{ .Os }}_{{ .Arch }}
+    env:
+      - CGO_ENABLED=0
+    goos: [darwin, linux]
+    goarch: [amd64, arm64]
+    no_unique_dist_dir: true
+    ldflags:
+      - -s -w
+      - -X github.com/morrieinmaas/athome/internal/cli.Version={{.Version}}
+      - -X github.com/morrieinmaas/athome/internal/cli.Commit={{.Commit}}
+
+archives:
+  - formats: [binary]
+    name_template: athome_{{ .Os }}_{{ .Arch }}
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  disable: true

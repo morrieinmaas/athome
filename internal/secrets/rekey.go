@@ -41,20 +41,26 @@ func Rekey(ctx context.Context, o RekeyOpts) int {
 	if code := o.preconditions(ctx); code != exitOK {
 		return code
 	}
-	owner := o.owner(ctx)
-	if owner == "" {
-		o.errf("cannot work out the vault owner; set ATHOME_GITHUB_HANDLE or SECRETS_VAULT_REPO, or log in with `gh auth login`\n")
-		return exitError
+	owner, repo, code := o.target(ctx)
+	if code != exitOK {
+		return code
 	}
-	oldName := o.Name + "-old-" + date
-	slug := owner + "/" + o.Name
-	oldItem := "git-crypt/" + o.Name + "-old-" + date + "-key"
-	if code := o.clashes(ctx, owner, oldName, oldItem); code != exitOK {
+	t := rekeyTarget{
+		owner:   owner,
+		repo:    repo,
+		slug:    owner + "/" + repo,
+		oldName: repo + "-old-" + date,
+		oldItem: "git-crypt/" + o.Name + "-old-" + date + "-key",
+		keyFile: filepath.Join(o.Home, ".local", "state", "athome", "rekey-"+date+".key"),
+		date:    date,
+	}
+	t.keyNote = fmt.Sprintf("the new key is exported at %s; keep it until the vault is sorted out\n", t.keyFile)
+	if code := o.clashes(ctx, owner, t.oldName, t.oldItem); code != exitOK {
 		return code
 	}
 
 	if !o.Yes {
-		q := fmt.Sprintf("re-key %s? The old repo becomes %s/%s", slug, owner, oldName)
+		q := fmt.Sprintf("re-key %s? The old repo becomes %s/%s", t.slug, owner, t.oldName)
 		if !prompt.New(o.In, o.Out).Confirm(q, false) {
 			o.outf("athome secrets rekey: cancelled, nothing changed\n")
 			return exitOK
@@ -71,32 +77,53 @@ func Rekey(ctx context.Context, o RekeyOpts) int {
 	if code := o.buildRekey(ctx, rk); code != exitOK {
 		return code
 	}
-
-	keyFile := filepath.Join(o.Home, ".local", "state", "athome", "rekey-"+date+".key")
-	newKey, code := o.exportKey(ctx, rk, keyFile)
+	newKey, code := o.exportKey(ctx, rk, t.keyFile)
 	if code != exitOK {
 		return code
 	}
-	keyNote := fmt.Sprintf("the new key is exported at %s; keep it until the vault is sorted out\n", keyFile)
+	if code := o.publish(ctx, t, rk, newKey); code != exitOK {
+		return code
+	}
+	if code := o.swapCheckout(rk, date); code != exitOK {
+		return code
+	}
 
+	o.outf("✓ vault re-keyed\n")
+	o.outf("once you have checked the new vault, run:\n")
+	o.outf("  gh repo delete %s/%s\n", owner, t.oldName)
+	o.outf("  rbw remove %s\n", t.oldItem)
+	return exitOK
+}
+
+// rekeyTarget is what Rekey works out before it changes anything.
+type rekeyTarget struct {
+	owner, repo, slug string
+	oldName, oldItem  string // the old repo's new name and its Bitwarden item
+	keyFile, keyNote  string // the exported new key and the line that names it
+	date              string
+}
+
+// publish does steps 3 to 6: the old key into Bitwarden, the old repo renamed,
+// the new repo created and the new key stored. Each failure names its undo.
+func (o RekeyOpts) publish(ctx context.Context, t rekeyTarget, rk string, newKey []byte) int {
 	oldKey, err := o.runOut(ctx, "rbw", "get", "git-crypt/"+o.Name+"-key")
 	if err == nil {
-		err = keys.Store(ctx, o.Run, oldItem, strings.TrimSpace(oldKey), "")
+		err = keys.Store(ctx, o.Run, t.oldItem, strings.TrimSpace(oldKey), "")
 	}
 	if err != nil {
-		o.errf("could not store the old key in Bitwarden: %v\n%s", err, keyNote)
+		o.errf("could not store the old key in Bitwarden: %v\n%s", err, t.keyNote)
 		return exitError
 	}
 
-	if err := o.gh(ctx, "repo", "rename", oldName, "--repo", slug, "--yes"); err != nil {
-		o.errf("%v\n%s", err, keyNote)
+	if err := o.gh(ctx, "repo", "rename", t.oldName, "--repo", t.slug, "--yes"); err != nil {
+		o.errf("%v\nthe old key is already stored; undo with: rbw remove %s\n%s", err, t.oldItem, t.keyNote)
 		return exitError
 	}
 
-	if err := o.gh(ctx, "repo", "create", slug, "--private", "--source", rk, "--remote", "origin", "--push"); err != nil {
+	if err := o.gh(ctx, "repo", "create", t.slug, "--private", "--source", rk, "--remote", "origin", "--push"); err != nil {
 		o.errf("%v\nif %s was created (a failed push can create it), delete it with: gh repo delete %s\n"+
 			"then undo with: gh repo rename %s --repo %s/%s --yes\n%s",
-			err, slug, slug, o.Name, owner, oldName, keyNote)
+			err, t.slug, t.slug, t.repo, t.owner, t.oldName, t.keyNote)
 		return exitError
 	}
 	if err := keys.Store(ctx, o.Run, "git-crypt/"+o.Name+"-key", base64.StdEncoding.EncodeToString(newKey), ""); err != nil {
@@ -104,12 +131,16 @@ func Rekey(ctx context.Context, o RekeyOpts) int {
 			"the new repo %s is live with the new key, exported at %s\n"+
 			"retry with: rbw edit git-crypt/%s-key, pasting the base64 of that file (base64 < that file)\n"+
 			"the old key is preserved as %s\n",
-			err, slug, keyFile, o.Name, oldItem)
+			err, t.slug, t.keyFile, o.Name, t.oldItem)
 		return exitError
 	}
-	os.Remove(keyFile)
+	os.Remove(t.keyFile)
+	return exitOK
+}
 
-	// GitHub and Bitwarden are correct from here, so a failure names no GitHub undo.
+// swapCheckout is step 7: the rebuilt checkout takes the vault's place.
+// GitHub and Bitwarden are correct from here, so a failure names no GitHub undo.
+func (o RekeyOpts) swapCheckout(rk, date string) int {
 	oldDir := o.Vault + ".old-" + date
 	for i := 1; ; i++ {
 		if _, err := os.Lstat(oldDir); err != nil {
@@ -129,11 +160,6 @@ func Rekey(ctx context.Context, o RekeyOpts) int {
 		o.errf("could not remove the old checkout %s: %v\nthe new vault is in place at %s; delete %s yourself\n", oldDir, err, o.Vault, oldDir)
 		return exitError
 	}
-
-	o.outf("✓ vault re-keyed\n")
-	o.outf("once you have checked the new vault, run:\n")
-	o.outf("  gh repo delete %s/%s\n", owner, oldName)
-	o.outf("  rbw remove git-crypt/%s-old-%s-key\n", o.Name, date)
 	return exitOK
 }
 
@@ -200,20 +226,35 @@ func (o RekeyOpts) clashes(ctx context.Context, owner, oldName, oldItem string) 
 	return exitOK
 }
 
-// owner finds the vault's GitHub owner as restore does.
-func (o RekeyOpts) owner(ctx context.Context) string {
+// target finds the vault's GitHub owner and repo name. SECRETS_VAULT_REPO, when
+// set, must be exactly <owner>/<repo> and its repo must equal the vault name,
+// which names the Bitwarden key item; otherwise the owner comes as restore
+// finds it and the repo is the vault name.
+func (o RekeyOpts) target(ctx context.Context) (owner, repo string, code int) {
 	if o.Repo != "" {
-		if owner, _, ok := strings.Cut(o.Repo, "/"); ok {
-			return owner
+		owner, repo, ok := strings.Cut(o.Repo, "/")
+		if !ok || owner == "" || repo == "" || strings.ContainsAny(o.Repo, ":@ \t") || strings.Contains(repo, "/") {
+			o.errf("SECRETS_VAULT_REPO must be <owner>/<repo>, not %q; fix it, then re-run athome secrets rekey\n", o.Repo)
+			return "", "", exitError
+		}
+		if repo != o.Name {
+			o.errf("SECRETS_VAULT_REPO names the repo %s but SECRETS_VAULT_NAME is %s; "+
+				"rekey needs the two to match, since the name picks the Bitwarden item git-crypt/%s-key\n", repo, o.Name, o.Name)
+			return "", "", exitError
+		}
+		return owner, repo, exitOK
+	}
+	owner = o.Owner
+	if owner == "" {
+		if r, err := o.Run.Run(ctx, run.Cmd{Name: "gh", Args: []string{"api", "user", "-q", ".login"}}); err == nil && r.Code == 0 {
+			owner = strings.TrimSpace(r.Stdout)
 		}
 	}
-	if o.Owner != "" {
-		return o.Owner
+	if owner == "" {
+		o.errf("cannot work out the vault owner; set ATHOME_GITHUB_HANDLE or SECRETS_VAULT_REPO, or log in with `gh auth login`\n")
+		return "", "", exitError
 	}
-	if r, err := o.Run.Run(ctx, run.Cmd{Name: "gh", Args: []string{"api", "user", "-q", ".login"}}); err == nil && r.Code == 0 {
-		return strings.TrimSpace(r.Stdout)
-	}
-	return ""
+	return owner, o.Name, exitOK
 }
 
 // buildRekey makes rk a fresh repo with a new git-crypt key holding every

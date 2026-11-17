@@ -482,3 +482,60 @@ func (v *vanishRekey) Run(ctx context.Context, c run.Cmd) (run.Result, error) {
 	}
 	return r, err
 }
+
+func TestRekeyRefusesVaultRepoThatIsNotOwnerSlashName(t *testing.T) {
+	for _, c := range []struct{ name, repo, want string }{
+		{"repo name differs from the vault name", "alice/vault", "SECRETS_VAULT_REPO names the repo vault but SECRETS_VAULT_NAME is attic"},
+		{"https url", "https://github.com/alice/attic", "must be <owner>/<repo>"},
+		{"ssh url", "git@github.com:alice/attic", "must be <owner>/<repo>"},
+		{"extra slash", "github.com/alice/attic", "must be <owner>/<repo>"},
+		{"empty owner", "/attic", "must be <owner>/<repo>"},
+		{"empty repo", "alice/", "must be <owner>/<repo>"},
+		{"no slash", "attic", "must be <owner>/<repo>"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			g := newRekeyRig(t)
+			o := g.opts(true, false, "")
+			o.Repo = c.repo
+			if code := secrets.Rekey(context.Background(), o); code != 1 {
+				t.Fatalf("code %d, stderr %q", code, g.errb.String())
+			}
+			if !strings.Contains(g.errb.String(), c.want) {
+				t.Errorf("stderr %q lacks %q", g.errb.String(), c.want)
+			}
+			if m := g.mutating(); len(m) != 0 || len(g.ordered("git-crypt", "git pull", "gh repo")) != 0 {
+				t.Errorf("went on: %v", g.calls)
+			}
+			if _, err := os.Stat(g.vault + ".rekey"); err == nil {
+				t.Errorf(".rekey was created")
+			}
+		})
+	}
+}
+
+func TestRekeyUsesTheConfiguredOwnerAndRepo(t *testing.T) {
+	g := newRekeyRig(t)
+	g.fake.On("gh", "repo", "view", "bob/attic-old-"+rekeyDate).Return(run.Result{Code: 1})
+	o := g.opts(true, false, "")
+	o.Repo = "bob/attic"
+	if code := secrets.Rekey(context.Background(), o); code != 0 {
+		t.Fatalf("code %d, stderr %q", code, g.errb.String())
+	}
+	if got := g.ordered("gh repo rename"); len(got) != 1 || got[0] != "gh repo rename attic-old-"+rekeyDate+" --repo bob/attic --yes" {
+		t.Errorf("rename calls %v", got)
+	}
+	if !strings.Contains(g.out.String(), "gh repo delete bob/attic-old-"+rekeyDate) {
+		t.Errorf("out %q", g.out.String())
+	}
+}
+
+func TestRekeyRenameFailureNamesTheStep3Undo(t *testing.T) {
+	g := newRekeyRig(t)
+	g.fake.On("gh", "repo", "rename", "attic-old-"+rekeyDate, "--repo", "alice/attic", "--yes").Return(run.Result{Code: 1, Stderr: "boom"})
+	if code := secrets.Rekey(context.Background(), g.opts(true, false, "")); code != 1 {
+		t.Fatalf("code %d", code)
+	}
+	if undo := "rbw remove git-crypt/attic-old-" + rekeyDate + "-key"; !strings.Contains(g.errb.String(), undo) {
+		t.Errorf("stderr %q lacks %q", g.errb.String(), undo)
+	}
+}

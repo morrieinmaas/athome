@@ -282,7 +282,11 @@ Decisions:
   `.gitattributes` lacks the git-crypt header), `git status --porcelain` is empty, and no
   same-day clash: Bitwarden has no item `git-crypt/<name>-old-<YYYYMMDD>-key` (exact line of
   `rbw list`) and `gh repo view <owner>/<name>-old-<YYYYMMDD>` does not exit 0; a clash names
-  itself and says to delete it or retry tomorrow. The owner comes as `restore` finds it. On a
+  itself and says to delete it or retry tomorrow. The owner comes as `restore` finds it, except
+  that a set `SECRETS_VAULT_REPO` must be exactly `<owner>/<repo>` (a URL or extra slashes exit 1)
+  and its `<repo>` must equal `SECRETS_VAULT_NAME`, which names the Bitwarden item; otherwise
+  exit 1 before anything changes. The slug, the rename and the messages then use that owner and
+  repo. On a
   terminal without `--yes` it asks `re-key <owner>/<name>? The old repo becomes
   <owner>/<name>-old-<YYYYMMDD>` (default no; no exits 0 with `athome secrets rekey:
   cancelled, nothing changed`); with no terminal, `--yes` is required (exit 2). Only after
@@ -307,7 +311,8 @@ Decisions:
   vault: `gh repo delete <owner>/<name>-old-<YYYYMMDD>` and
   `rbw remove git-crypt/<name>-old-<YYYYMMDD>-key`. athome never deletes either. A failure
   exits 1 and names the undo for where it happened. After step 2 it names the exported key's
-  path. If step 5 fails it first says to delete `<owner>/<name>` with
+  path. If step 4 fails it also says `rbw remove git-crypt/<name>-old-<YYYYMMDD>-key`, since
+  step 3's item is written and would block a same-day retry. If step 5 fails it first says to delete `<owner>/<name>` with
   `gh repo delete <owner>/<name>` if it was created (a failed push can create it), then names
   `gh repo rename <name> --repo <owner>/<name>-old-<YYYYMMDD> --yes`. If step 6 fails the new
   repo is live with the new key at the key-file path: it says to retry with

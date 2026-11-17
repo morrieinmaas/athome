@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/morrieinmaas/athome/internal/prompt"
+	"github.com/morrieinmaas/athome/internal/run/runtest"
 	"github.com/morrieinmaas/athome/internal/steps"
 )
 
@@ -107,6 +108,52 @@ func TestCancelAtPromptExits130(t *testing.T) {
 	if r := <-got; r != exited(exitInterrupted) {
 		t.Fatalf("Confirm ended with %v, want exit(130)", r)
 	}
+	if code != 130 || !cleaned || !strings.Contains(errOut.String(), "athome: interrupted") {
+		t.Errorf("code=%d cleaned=%v stderr=%q", code, cleaned, errOut.String())
+	}
+}
+
+// runInitEnv is the only link between a signal and an open prompt: a cancel while
+// a step's Apply waits at Ask.Confirm cleans up and exits 130.
+func TestRunInitEnvCancelAtPromptExits130(t *testing.T) {
+	t.Setenv("PATH", os.Getenv("PATH"))
+	var code int
+	oldExit, oldCtx, oldList := exit, notifyContext, stepList
+	exit = func(c int) { code = c }
+	t.Cleanup(func() { exit, notifyContext, stepList = oldExit, oldCtx, oldList })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	notifyContext = func(context.Context, ...os.Signal) (context.Context, context.CancelFunc) {
+		return ctx, func() {}
+	}
+	started := make(chan struct{})
+	stepList = func() []steps.Step {
+		return []steps.Step{{
+			Name:  "ask",
+			Check: func(context.Context, *steps.Env) (bool, error) { return false, nil },
+			Apply: func(_ context.Context, env *steps.Env) error {
+				close(started)
+				env.Ask.Confirm("go?", true)
+				return nil
+			},
+		}}
+	}
+	go func() { <-started; cancel() }()
+
+	pr, pw := io.Pipe()
+	defer pw.Close()
+	var errOut bytes.Buffer
+	cleaned := false
+	env := &steps.Env{
+		Ask:     prompt.New(pr, &errOut),
+		Run:     runtest.NewFake(),
+		Home:    t.TempDir(),
+		Opts:    steps.Opts{Ref: "x"},
+		Log:     io.Discard,
+		Cleanup: []func(){func() { cleaned = true }},
+	}
+	runInitEnv(env, io.Discard, &errOut)
 	if code != 130 || !cleaned || !strings.Contains(errOut.String(), "athome: interrupted") {
 		t.Errorf("code=%d cleaned=%v stderr=%q", code, cleaned, errOut.String())
 	}

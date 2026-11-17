@@ -224,14 +224,14 @@ func newInitEnv(o initOpts, stdout, stderr io.Writer) (*steps.Env, int) {
 // runInitEnv runs every step against env, then prints the finish report.
 func runInitEnv(env *steps.Env, stdout, stderr io.Writer) int {
 	defer env.RunCleanup()
-	ctx, stop := signal.NotifyContext(context.Background(), stopSignals...)
+	ctx, stop := notifyContext(context.Background(), stopSignals...)
 	defer stop()
 	bindCancel(ctx, env, stderr)
 	if err := steps.Setup(ctx, env); err != nil {
 		fmt.Fprintf(stderr, "athome init: %v\n", err)
 		return exitError
 	}
-	rep, err := execute(ctx, env, steps.All())
+	rep, err := execute(ctx, env, stepList())
 	if err != nil {
 		fmt.Fprintf(stderr, "athome init: %v\n", err)
 		return exitError
@@ -239,6 +239,12 @@ func runInitEnv(env *steps.Env, stdout, stderr io.Writer) int {
 	printFinish(stdout, rep, env.Warnings, steps.FollowupLogPath())
 	return exitOK
 }
+
+// notifyContext and stepList are seams for tests.
+var (
+	notifyContext = signal.NotifyContext
+	stepList      = steps.All
+)
 
 // exit ends the process; tests replace it.
 var exit = os.Exit

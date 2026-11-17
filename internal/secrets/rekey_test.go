@@ -43,6 +43,7 @@ func newRekeyRig(t *testing.T) *rekeyRig {
 	g.home = filepath.Join(root, "home dir")
 	g.vault = filepath.Join(g.home, ".local", "share", "attic")
 	g.fake.Have("git-crypt", "rbw", "gh")
+	g.fake.On("gh", "repo", "view", "alice/attic-old-"+rekeyDate).Return(run.Result{Code: 1})
 	g.fake.On("rbw", "get", "git-crypt/attic-key").Return(run.Result{Stdout: base64.StdEncoding.EncodeToString([]byte("OLDKEY")) + "\n"})
 	g.cleanerSh = filepath.Join(root, "clean.sh")
 	if err := os.WriteFile(g.cleanerSh, []byte("#!/bin/sh\nprintf '\\000GITCRYPT\\000'\ncat\n"), 0o755); err != nil {
@@ -142,7 +143,7 @@ func (g *rekeyRig) opts(yes, tty bool, in string) secrets.RekeyOpts {
 }
 
 func (g *rekeyRig) mutating() []string {
-	return g.ordered("gh repo", "rbw add", "rbw edit")
+	return g.ordered("gh repo create", "gh repo rename", "gh repo delete", "rbw add", "rbw edit")
 }
 
 func TestRekeyHappyPath(t *testing.T) {
@@ -160,7 +161,7 @@ func TestRekeyHappyPath(t *testing.T) {
 		"gh repo create alice/attic --private --source " + rk + " --remote origin --push",
 		"rbw add git-crypt/attic-key",
 	}
-	got := g.ordered("git init", "git-crypt", "rbw add", "rbw edit", "gh ")
+	got := g.ordered("git init", "git-crypt", "rbw add", "rbw edit", "gh repo create", "gh repo rename")
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Errorf("calls:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
@@ -294,6 +295,9 @@ func TestRekeyCreateFailureNamesUndo(t *testing.T) {
 	if !strings.Contains(g.errb.String(), undo) {
 		t.Errorf("stderr %q lacks %q", g.errb.String(), undo)
 	}
+	if del := "gh repo delete alice/attic"; strings.Index(g.errb.String(), del) < 0 || strings.Index(g.errb.String(), del) > strings.Index(g.errb.String(), undo) {
+		t.Errorf("stderr %q must name %q before the rename undo", g.errb.String(), del)
+	}
 	if !strings.Contains(g.errb.String(), g.exportPath) {
 		t.Errorf("stderr %q lacks the exported key path", g.errb.String())
 	}
@@ -311,6 +315,9 @@ func TestRekeyConfirmation(t *testing.T) {
 		if !strings.Contains(g.errb.String(), "--yes") || len(g.mutating()) != 0 {
 			t.Errorf("stderr %q mutating %v", g.errb.String(), g.mutating())
 		}
+		if p := g.ordered("git pull"); len(p) != 0 {
+			t.Errorf("pulled before the usage check: %v", p)
+		}
 	})
 	t.Run("n cancels", func(t *testing.T) {
 		g := newRekeyRig(t)
@@ -325,6 +332,9 @@ func TestRekeyConfirmation(t *testing.T) {
 		}
 		if _, err := os.Stat(g.vault + ".rekey"); err == nil {
 			t.Errorf(".rekey was created")
+		}
+		if p := g.ordered("git pull"); len(p) != 0 {
+			t.Errorf("pulled although the answer was no: %v", p)
 		}
 	})
 	t.Run("default is no", func(t *testing.T) {
@@ -363,7 +373,112 @@ func TestRekeyStoreFailureWritesNothing(t *testing.T) {
 	if code := secrets.Rekey(context.Background(), g.opts(true, false, "")); code != 1 {
 		t.Fatalf("code %d", code)
 	}
-	if len(g.stored) != 0 || len(g.ordered("gh repo")) != 0 {
-		t.Errorf("stored %v calls %v", g.stored, g.ordered("gh repo"))
+	if len(g.stored) != 0 || len(g.mutating()) != 0 {
+		t.Errorf("stored %v calls %v", g.stored, g.mutating())
 	}
+}
+
+func TestRekeySameDayClashRefuses(t *testing.T) {
+	for _, c := range []struct {
+		name  string
+		setup func(g *rekeyRig)
+		want  string
+	}{
+		{"bitwarden item", func(g *rekeyRig) {
+			g.fake.On("rbw", "list").Return(run.Result{Stdout: "other\ngit-crypt/attic-old-" + rekeyDate + "-key\n"})
+		}, "Bitwarden already has git-crypt/attic-old-" + rekeyDate + "-key"},
+		{"github repo", func(g *rekeyRig) {
+			g.fake.On("gh", "repo", "view", "alice/attic-old-"+rekeyDate).Return(run.Result{Code: 0})
+		}, "alice/attic-old-" + rekeyDate + " already exists"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			g := newRekeyRig(t)
+			c.setup(g)
+			if code := secrets.Rekey(context.Background(), g.opts(true, false, "")); code != 1 {
+				t.Fatalf("code %d, stderr %q", code, g.errb.String())
+			}
+			if !strings.Contains(g.errb.String(), c.want) || !strings.Contains(g.errb.String(), "retry tomorrow") {
+				t.Errorf("stderr %q lacks %q", g.errb.String(), c.want)
+			}
+			if m := g.mutating(); len(m) != 0 || len(g.stored) != 0 {
+				t.Errorf("changed things: %v %v", m, g.stored)
+			}
+			if len(g.ordered("git-crypt", "git pull")) != 0 {
+				t.Errorf("went on past the clash: %v", g.calls)
+			}
+		})
+	}
+}
+
+func TestRekeyNewKeyStoreFailureNamesRetry(t *testing.T) {
+	g := newRekeyRig(t)
+	g.fake.On("rbw", "list").Return(run.Result{Stdout: "git-crypt/attic-key\n"})
+	g.fake.On("rbw", "edit", "git-crypt/attic-key").Return(run.Result{Code: 1, Stderr: "boom"})
+	if code := secrets.Rekey(context.Background(), g.opts(true, false, "")); code != 1 {
+		t.Fatalf("code %d", code)
+	}
+	e := g.errb.String()
+	for _, s := range []string{"rbw edit git-crypt/attic-key", g.exportPath, "git-crypt/attic-old-" + rekeyDate + "-key", "alice/attic is live"} {
+		if !strings.Contains(e, s) {
+			t.Errorf("stderr %q lacks %q", e, s)
+		}
+	}
+	if strings.Contains(e, "gh repo rename") {
+		t.Errorf("stderr %q offers a rename undo although the new repo is live", e)
+	}
+	if strings.Contains(e, base64.StdEncoding.EncodeToString([]byte("NEWKEY"))) {
+		t.Errorf("stderr prints the key")
+	}
+	if _, err := os.Stat(g.exportPath); err != nil {
+		t.Errorf("exported key was removed: %v", err)
+	}
+}
+
+func TestRekeySwapKeepsOldCheckoutUntilReplaced(t *testing.T) {
+	t.Run("old dir name taken gets a suffix", func(t *testing.T) {
+		g := newRekeyRig(t)
+		taken := g.vault + ".old-" + rekeyDate
+		if err := os.MkdirAll(taken, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if code := secrets.Rekey(context.Background(), g.opts(true, false, "")); code != 0 {
+			t.Fatalf("code %d stderr %q", code, g.errb.String())
+		}
+		if _, err := os.Stat(taken); err != nil {
+			t.Errorf("a pre-existing %s was removed", taken)
+		}
+		if _, err := os.Stat(g.vault + ".old-" + rekeyDate + ".1"); err == nil {
+			t.Errorf("suffixed old checkout left behind")
+		}
+	})
+	t.Run("a failed swap reports both checkouts and no GitHub undo", func(t *testing.T) {
+		g := newRekeyRig(t)
+		o := g.opts(true, false, "")
+		o.Run = &vanishRekey{rekeyRig: g}
+		if code := secrets.Rekey(context.Background(), o); code != 1 {
+			t.Fatalf("code %d", code)
+		}
+		e := g.errb.String()
+		if strings.Contains(e, "gh repo rename") || strings.Contains(e, "gh repo delete") {
+			t.Errorf("stderr %q names a GitHub undo", e)
+		}
+		if !strings.Contains(e, g.vault+".old-"+rekeyDate) || !strings.Contains(e, g.vault+".rekey") {
+			t.Errorf("stderr %q does not say where each checkout is", e)
+		}
+		if _, err := os.Stat(filepath.Join(g.vault+".old-"+rekeyDate, ".git")); err != nil {
+			t.Errorf("old checkout was destroyed: %v", err)
+		}
+	})
+}
+
+// vanishRekey removes the .rekey checkout once the new key is stored, so the
+// final rename fails after the old vault has been moved aside.
+type vanishRekey struct{ *rekeyRig }
+
+func (v *vanishRekey) Run(ctx context.Context, c run.Cmd) (run.Result, error) {
+	r, err := v.rekeyRig.Run(ctx, c)
+	if c.Name == "rbw" && c.Args[0] == "add" && c.Args[1] == "git-crypt/attic-key" {
+		os.RemoveAll(v.vault + ".rekey")
+	}
+	return r, err
 }

@@ -269,11 +269,15 @@ Decisions:
   renamed and a fresh one takes its name, so `restore` and `SECRETS_VAULT_NAME` keep working.
   Preconditions, each exit 1 with nothing changed: the vault exists, `git-crypt` and `rbw`
   are on PATH and rbw is unlocked, the vault is unlocked (its first tracked file other than
-  `.gitattributes` lacks the git-crypt header), `git status --porcelain` is empty, and
-  `git pull --ff-only` succeeds. The owner comes as `restore` finds it. On a terminal without
-  `--yes` it asks `re-key <owner>/<name>? The old repo becomes <owner>/<name>-old-<YYYYMMDD>`
-  (default no; no exits 0 with `athome secrets rekey: cancelled, nothing changed`); with no
-  terminal, `--yes` is required (exit 2). Then:
+  `.gitattributes` lacks the git-crypt header), `git status --porcelain` is empty, and no
+  same-day clash: Bitwarden has no item `git-crypt/<name>-old-<YYYYMMDD>-key` (exact line of
+  `rbw list`) and `gh repo view <owner>/<name>-old-<YYYYMMDD>` does not exit 0; a clash names
+  itself and says to delete it or retry tomorrow. The owner comes as `restore` finds it. On a
+  terminal without `--yes` it asks `re-key <owner>/<name>? The old repo becomes
+  <owner>/<name>-old-<YYYYMMDD>` (default no; no exits 0 with `athome secrets rekey:
+  cancelled, nothing changed`); with no terminal, `--yes` is required (exit 2). Only after
+  that confirmation does `git pull --ff-only` run (failure: exit 1, nothing else changed), so
+  a `n` answer leaves the vault untouched. Then:
   1. `<vault>.rekey` (removed first if left over) gets `git init -q -b main`,
      `git-crypt init`, the old vault's `.gitattributes` and every tracked file, `git add -A`,
      the same plaintext gate as `backup` (exit 2, nothing pushed), and a commit as
@@ -285,13 +289,22 @@ Decisions:
   5. `gh repo create <owner>/<name> --private --source <vault>.rekey --remote origin --push`.
   6. The new key's base64 is stored as `git-crypt/<name>-key` (`rbw edit`, in place); the
      exported key file is then removed.
-  7. `<vault>` is removed and `<vault>.rekey` renamed to it.
+  7. `<vault>` is renamed to `<vault>.old-<YYYYMMDD>` (a numeric suffix is added if that
+     exists), `<vault>.rekey` is renamed to `<vault>`, then the `.old-<YYYYMMDD>` directory is
+     removed.
 
   It prints `✓ vault re-keyed` and the two commands to run once you have checked the new
   vault: `gh repo delete <owner>/<name>-old-<YYYYMMDD>` and
   `rbw remove git-crypt/<name>-old-<YYYYMMDD>-key`. athome never deletes either. A failure
-  after step 4 exits 1 naming the undo, `gh repo rename <name> --repo
-  <owner>/<name>-old-<YYYYMMDD> --yes`, and after step 2 the exported key's path.
+  exits 1 and names the undo for where it happened. After step 2 it names the exported key's
+  path. If step 5 fails it first says to delete `<owner>/<name>` with
+  `gh repo delete <owner>/<name>` if it was created (a failed push can create it), then names
+  `gh repo rename <name> --repo <owner>/<name>-old-<YYYYMMDD> --yes`. If step 6 fails the new
+  repo is live with the new key at the key-file path: it says to retry with
+  `rbw edit git-crypt/<name>-key` and that file's base64 (never printed), and that the old
+  key is preserved as `git-crypt/<name>-old-<YYYYMMDD>-key`; no rename undo. A step 7 failure
+  reports where each checkout now is and names no GitHub undo, since GitHub and Bitwarden
+  are already correct.
 - **`athome init --restore`** runs a different list, `steps.RestoreAll()`: `Prepare`,
   `Data`, `Baseline` (which installs `rbw`, `gh` and `bw-setup`), then four restore steps,
   then `SSHKey`, `GitHub` and `Finish` as usual:

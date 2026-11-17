@@ -44,6 +44,10 @@ func Rekey(ctx context.Context, o RekeyOpts) int {
 	}
 	oldName := o.Name + "-old-" + date
 	slug := owner + "/" + o.Name
+	oldItem := "git-crypt/" + o.Name + "-old-" + date + "-key"
+	if code := o.clashes(ctx, owner, oldName, oldItem); code != exitOK {
+		return code
+	}
 
 	if !o.Yes {
 		if !o.TTY {
@@ -55,6 +59,12 @@ func Rekey(ctx context.Context, o RekeyOpts) int {
 			o.outf("athome secrets rekey: cancelled, nothing changed\n")
 			return exitOK
 		}
+	}
+
+	if r, err := o.git(ctx, "pull", "-q", "--ff-only"); err != nil || r.Code != 0 {
+		o.errf("git pull --ff-only failed; the vault is not up to date\n")
+		o.gitFailed(err, r)
+		return exitError
 	}
 
 	rk := o.Vault + ".rekey"
@@ -71,7 +81,7 @@ func Rekey(ctx context.Context, o RekeyOpts) int {
 
 	oldKey, err := o.runOut(ctx, "rbw", "get", "git-crypt/"+o.Name+"-key")
 	if err == nil {
-		err = keys.Store(ctx, o.Run, "git-crypt/"+o.Name+"-old-"+date+"-key", strings.TrimSpace(oldKey), "")
+		err = keys.Store(ctx, o.Run, oldItem, strings.TrimSpace(oldKey), "")
 	}
 	if err != nil {
 		o.errf("could not store the old key in Bitwarden: %v\n%s", err, keyNote)
@@ -82,24 +92,41 @@ func Rekey(ctx context.Context, o RekeyOpts) int {
 		o.errf("%v\n%s", err, keyNote)
 		return exitError
 	}
-	undo := fmt.Sprintf("undo with: gh repo rename %s --repo %s/%s --yes\n", o.Name, owner, oldName)
 
 	if err := o.gh(ctx, "repo", "create", slug, "--private", "--source", rk, "--remote", "origin", "--push"); err != nil {
-		o.errf("%v\n%s%s", err, undo, keyNote)
+		o.errf("%v\nif %s was created (a failed push can create it), delete it with: gh repo delete %s\n"+
+			"then undo with: gh repo rename %s --repo %s/%s --yes\n%s",
+			err, slug, slug, o.Name, owner, oldName, keyNote)
 		return exitError
 	}
 	if err := keys.Store(ctx, o.Run, "git-crypt/"+o.Name+"-key", base64.StdEncoding.EncodeToString(newKey), ""); err != nil {
-		o.errf("could not store the new key in Bitwarden: %v\n%s%s", err, undo, keyNote)
+		o.errf("could not store the new key in Bitwarden: %v\n"+
+			"the new repo %s is live with the new key, exported at %s\n"+
+			"retry with: rbw edit git-crypt/%s-key, pasting the base64 of that file (base64 < that file)\n"+
+			"the old key is preserved as %s\n",
+			err, slug, keyFile, o.Name, oldItem)
 		return exitError
 	}
 	os.Remove(keyFile)
 
-	if err := os.RemoveAll(o.Vault); err != nil {
-		o.errf("could not remove %s: %v\nthe new vault is at %s\n%s", o.Vault, err, rk, undo)
+	// GitHub and Bitwarden are correct from here, so a failure names no GitHub undo.
+	oldDir := o.Vault + ".old-" + date
+	for i := 1; ; i++ {
+		if _, err := os.Lstat(oldDir); err != nil {
+			break
+		}
+		oldDir = fmt.Sprintf("%s.old-%s.%d", o.Vault, date, i)
+	}
+	if err := os.Rename(o.Vault, oldDir); err != nil {
+		o.errf("could not move the old vault %s aside: %v\nthe old checkout is still at %s; the new vault is at %s\n", o.Vault, err, o.Vault, rk)
 		return exitError
 	}
 	if err := os.Rename(rk, o.Vault); err != nil {
-		o.errf("could not move %s to %s: %v\n%s", rk, o.Vault, err, undo)
+		o.errf("could not move %s to %s: %v\nthe old checkout is at %s; the new vault is at %s\n", rk, o.Vault, err, oldDir, rk)
+		return exitError
+	}
+	if err := os.RemoveAll(oldDir); err != nil {
+		o.errf("could not remove the old checkout %s: %v\nthe new vault is in place at %s; delete %s yourself\n", oldDir, err, o.Vault, oldDir)
 		return exitError
 	}
 
@@ -144,10 +171,30 @@ func (o RekeyOpts) preconditions(ctx context.Context) int {
 		o.errf("the vault has uncommitted changes; run athome secrets backup first\n")
 		return exitError
 	}
-	r, err = o.git(ctx, "pull", "-q", "--ff-only")
+	return exitOK
+}
+
+// clashes refuses a same-day rerun: the old repo's name or its Bitwarden item
+// already existing would be overwritten or fail half way.
+func (o RekeyOpts) clashes(ctx context.Context, owner, oldName, oldItem string) int {
+	r, err := o.Run.Run(ctx, run.Cmd{Name: "rbw", Args: []string{"list"}})
 	if err != nil || r.Code != 0 {
-		o.errf("git pull --ff-only failed; the vault is not up to date\n")
-		o.gitFailed(err, r)
+		o.errf("rbw list failed; cannot check for an existing %s\n", oldItem)
+		return exitError
+	}
+	for _, l := range strings.Split(r.Stdout, "\n") {
+		if strings.TrimSpace(l) == oldItem {
+			o.errf("Bitwarden already has %s; delete it (rbw remove %s) or retry tomorrow\n", oldItem, oldItem)
+			return exitError
+		}
+	}
+	r, err = o.Run.Run(ctx, run.Cmd{Name: "gh", Args: []string{"repo", "view", owner + "/" + oldName}})
+	if err != nil {
+		o.errf("could not check for an existing %s/%s: %v\n", owner, oldName, err)
+		return exitError
+	}
+	if r.Code == 0 {
+		o.errf("%s/%s already exists; delete it (gh repo delete %s/%s) or retry tomorrow\n", owner, oldName, owner, oldName)
 		return exitError
 	}
 	return exitOK

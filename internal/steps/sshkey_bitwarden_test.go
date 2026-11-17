@@ -157,11 +157,29 @@ func TestImportBWPassphraseKey(t *testing.T) {
 	})
 }
 
+// keygenWrites makes a fake `ssh-keygen -t ... -f <key>` leave the private key,
+// as the real one does, so ssh-bw-backup has something to store.
+type keygenWrites struct{ run.Runner }
+
+func (k keygenWrites) Run(ctx context.Context, c run.Cmd) (run.Result, error) {
+	if c.Name == "ssh-keygen" && containsSeq(c.Args, "-t", "ed25519") {
+		for i, a := range c.Args {
+			if a == "-f" && i+1 < len(c.Args) {
+				if err := os.WriteFile(c.Args[i+1], []byte("GENERATED-PRIVATE\n"), 0o600); err != nil {
+					return run.Result{}, err
+				}
+			}
+		}
+	}
+	return k.Runner.Run(ctx, c)
+}
+
 func TestBWCopyOnlyFresh(t *testing.T) {
 	item := "ssh/" + testHost + "_ed25519"
 
 	t.Run("after a fresh generate with rbw unlocked", func(t *testing.T) {
 		fx := newFixture(t)
+		fx.Env.Run = keygenWrites{fx.Env.Run}
 		fx.Fake.Have("rbw")
 		fx.MustExec(steps.SSHKey())
 		adds := fx.callsTo("rbw", "add", item)

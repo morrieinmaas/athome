@@ -110,6 +110,11 @@ func storedBitwardenURL(env *Env) string {
 
 // dataDone: chezmoi.toml already holds every seed key with the wanted value.
 func dataDone(env *Env, entries []dataEntry) bool {
+	for _, e := range entries {
+		if env.Ask != nil && e.key == "githubHandle" && e.val == "" {
+			return false // asked on every interactive run until answered
+		}
+	}
 	var doc struct {
 		Data map[string]any `toml:"data"`
 	}

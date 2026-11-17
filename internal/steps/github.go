@@ -74,9 +74,6 @@ func ghCheck(ctx context.Context, env *Env, p ghPlan) (bool, error) {
 		}
 		return false, nil
 	case ghUpload:
-		if !ghForceUpload(ctx, env) && fileExists(ghDeclinedMarker(env)) {
-			return true, nil
-		}
 		// No key scope and the refresh was refused or impossible earlier (the
 		// marker): the upload is manual, which the user finishes by hand. The
 		// first run applies, so the instructions and the post-upload steps run
@@ -292,7 +289,6 @@ func ghUploadAll(ctx context.Context, env *Env, p ghPlan) {
 		envLogf(env, "  gh auth refresh -h github.com -s admin:public_key,admin:ssh_signing_key\n")
 		envLogf(env, "  gh ssh-key add %s --title \"%s\"\n", p.pub, p.sshHost)
 		envLogf(env, "  gh ssh-key add %s --title \"%s-sign\" --type signing\n", p.pub, p.sshHost)
-		ghWriteMarker(env, ghDeclinedMarker(env))
 		return
 	}
 	if ghEnsureScopes(ctx, env) {
@@ -314,12 +310,6 @@ func ghMissingScopes(ctx context.Context, env *Env) []string {
 		}
 	}
 	return missing
-}
-
-// ghDeclinedMarker records an interactive "no" to the upload prompt, so a rerun
-// does not ask again.
-func ghDeclinedMarker(env *Env) string {
-	return filepath.Join(env.Home, ".local", "state", "athome", "github-upload-declined")
 }
 
 func ghWriteManualMarker(env *Env) { ghWriteMarker(env, ghManualMarker(env)) }

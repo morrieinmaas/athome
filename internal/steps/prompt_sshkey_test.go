@@ -31,6 +31,9 @@ func TestPromptKeyAbsent(t *testing.T) {
 		if !strings.Contains(out.String(), "create one?") {
 			t.Errorf("no prompt shown: %q", out)
 		}
+		fx2 := newFixture(t) // no terminal: generating is the default
+		fx2.MustExec(steps.SSHKey())
+		pr5SameRun(t, fx, fx2)
 	})
 	t.Run("no equals generateSshKey=false", func(t *testing.T) {
 		fx := newFixture(t)
@@ -42,6 +45,10 @@ func TestPromptKeyAbsent(t *testing.T) {
 		if fx.Env.Cfg.Data["generateSshKey"] != "false" {
 			t.Errorf("answer not recorded: %v", fx.Env.Cfg.Data)
 		}
+		fx2 := newFixture(t)
+		fx2.Env.Cfg.Data["generateSshKey"] = "false"
+		fx2.MustExec(steps.SSHKey())
+		pr5SameRun(t, fx, fx2)
 	})
 	t.Run("preset prints nothing", func(t *testing.T) {
 		fx := newFixture(t)
@@ -117,6 +124,9 @@ func TestPromptSymlink(t *testing.T) {
 		if got, _ := os.Readlink(chezmoiLink(fx)); got != fx.Repo {
 			t.Errorf("link = %q, want %q", got, fx.Repo)
 		}
+		fx2 := newFixture(t) // no terminal: linking is the default
+		fx2.MustExec(steps.Prepare())
+		pr5SameRun(t, fx, fx2)
 		if !strings.Contains(out.String(), "symlink it?") || !strings.Contains(out.String(), fx.Repo) {
 			t.Errorf("prompt = %q", out)
 		}

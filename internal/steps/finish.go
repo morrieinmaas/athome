@@ -212,7 +212,6 @@ func secretsHint(_ context.Context, env *Env) error {
 func restoreSecrets(ctx context.Context, env *Env) error {
 	if env.Ask != nil && !env.Ask.Confirm("restore your encrypted secrets now (secrets-restore)?", true) { // B:1025
 		appendFollowup(env, secretsFollowup)
-		writeRestoreMarker(env)
 		return nil
 	}
 	r, err := env.Run.Run(ctx, run.Cmd{Name: restoreScript(env), Interactive: true})
@@ -271,10 +270,6 @@ func checkoutMain(ctx context.Context, env *Env) error {
 
 func bwSetupScript(env *Env) string { return filepath.Join(env.Home, ".local", "bin", "bw-setup") }
 
-func bwDeclinedMarker(env *Env) string {
-	return filepath.Join(env.Home, ".local", "state", "athome", "bitwarden-declined")
-}
-
 // rbwDeviceID is the file rbw writes once onboarded (B:984-987).
 func rbwDeviceID(env *Env) string {
 	if env.OS == "darwin" {
@@ -292,12 +287,16 @@ func bwSetupRunnable(env *Env) bool {
 	return err == nil && fi.Mode().Perm()&0o111 != 0
 }
 
-// bitwardenDone: nothing to do without a terminal, with Bitwarden switched off or
-// declined, once rbw is unlocked or registered, or when there is no script to run.
-// It never prompts.
+// bitwardenDone: nothing to do without a terminal or with Bitwarden switched off.
+// An unset useBitwarden is asked on every interactive run (B:990). Once chosen,
+// it is done when rbw is unlocked or registered, or when there is no script to
+// run. It never prompts.
 func bitwardenDone(ctx context.Context, env *Env) (bool, error) {
-	if env.Ask == nil || env.Cfg.Data["useBitwarden"] == "false" || fileExists(bwDeclinedMarker(env)) {
+	if env.Ask == nil || env.Cfg.Data["useBitwarden"] == "false" {
 		return true, nil
+	}
+	if env.Cfg.Data["useBitwarden"] == "" {
+		return false, nil
 	}
 	if rbwUnlocked(ctx, env) || fileExists(rbwDeviceID(env)) {
 		return true, nil
@@ -310,14 +309,6 @@ func bitwardenSetup(ctx context.Context, env *Env) error {
 	if env.Cfg.Data["useBitwarden"] == "" && !env.Ask.Confirm("Use Bitwarden (rbw) for secrets sync?", true) { // B:990
 		envLogf(env, "local-only secrets, Bitwarden skipped. Populate ~/.secrets/<repo>/.env by hand,\n")
 		envLogf(env, "  or run `bw-setup` later to sync from Bitwarden.\n")
-		marker := bwDeclinedMarker(env)
-		err := os.MkdirAll(filepath.Dir(marker), 0o755)
-		if err == nil {
-			err = os.WriteFile(marker, nil, 0o644)
-		}
-		if err != nil {
-			envLogf(env, "could not record the choice in %s: %v\n", marker, err)
-		}
 		return nil
 	}
 	switch {

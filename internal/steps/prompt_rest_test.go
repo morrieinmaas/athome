@@ -2,6 +2,8 @@ package steps_test
 
 import (
 	"bytes"
+	"os"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -15,6 +17,26 @@ func pr5Ask(fx *fixture, answers string) *bytes.Buffer {
 	out := &bytes.Buffer{}
 	fx.Env.Ask = prompt.New(strings.NewReader(answers), out)
 	return out
+}
+
+// pr5SameRun fails unless both fixtures recorded the same commands, with the
+// per-fixture home and repo paths masked. An interactive answer must do exactly
+// what the equivalent preset value does without a terminal. The read-only
+// hostname and rbw state probes are dropped: asking makes extra ones.
+func pr5SameRun(t *testing.T, ask, preset *fixture) {
+	t.Helper()
+	norm := func(fx *fixture) string {
+		var keep []string
+		for _, l := range strings.Split(fx.dump(), "\n") {
+			if !strings.HasPrefix(l, "chezmoi execute-template") && l != "rbw unlocked" {
+				keep = append(keep, l)
+			}
+		}
+		return strings.NewReplacer(fx.Home, "$HOME", fx.Repo, "$REPO").Replace(strings.Join(keep, "\n"))
+	}
+	if a, b := norm(ask), norm(preset); a != b {
+		t.Errorf("interactive answer and preset recorded different commands\nasked:\n%s\npreset:\n%s", a, b)
+	}
 }
 
 func pr5Data(t *testing.T, fx *fixture) map[string]any {
@@ -55,6 +77,37 @@ func TestPromptHandle(t *testing.T) {
 			t.Errorf("githubHandle = %v, want empty", got)
 		}
 	})
+	t.Run("an empty handle is asked again on the next interactive run", func(t *testing.T) {
+		fx := newFixture(t)
+		pr5Ask(fx, "")
+		fx.MustExec(steps.Data())
+		out := pr5Ask(fx, "alice\n")
+		fx.MustExec(steps.Data())
+		if got := pr5Data(t, fx)["githubHandle"]; got != "alice" {
+			t.Errorf("githubHandle = %v, want alice", got)
+		}
+		if !strings.Contains(out.String(), "GitHub username: ") {
+			t.Errorf("not asked again: %q", out)
+		}
+		for _, s := range steps.Data() { // a check never prompts
+			out := pr5Ask(fx, "never\n")
+			if done, err := s.Check(t.Context(), fx.Env); err != nil || !done || out.Len() != 0 {
+				t.Errorf("check done=%v err=%v prompted %q", done, err, out)
+			}
+		}
+	})
+	t.Run("answer equals the preset handle", func(t *testing.T) {
+		fx := newFixture(t)
+		pr5Ask(fx, "alice\n")
+		fx.MustExec(steps.Data())
+		fx2 := newFixture(t)
+		fx2.Env.Cfg.Data["githubHandle"] = "alice"
+		fx2.MustExec(steps.Data())
+		pr5SameRun(t, fx, fx2)
+		if !reflect.DeepEqual(pr5Data(t, fx), pr5Data(t, fx2)) {
+			t.Errorf("data differs: %v vs %v", pr5Data(t, fx), pr5Data(t, fx2))
+		}
+	})
 }
 
 func TestPromptBitwardenURL(t *testing.T) {
@@ -77,6 +130,19 @@ func TestPromptBitwardenURL(t *testing.T) {
 		fx.MustExec(steps.Data())
 		if got := pr5Data(t, fx)["bitwardenUrl"]; got != "https://vault.bitwarden.eu" {
 			t.Errorf("bitwardenUrl = %v", got)
+		}
+	})
+	t.Run("answer equals the preset URL", func(t *testing.T) {
+		fx := newFixture(t)
+		fx.Env.Cfg.Data["githubHandle"] = "octo"
+		pr5Ask(fx, "https://vault.bitwarden.eu\n")
+		fx.MustExec(steps.Data())
+		fx2 := newFixture(t)
+		fx2.Env.Cfg.Data = map[string]string{"githubHandle": "octo", "bitwardenUrl": "https://vault.bitwarden.eu"}
+		fx2.MustExec(steps.Data())
+		pr5SameRun(t, fx, fx2)
+		if !reflect.DeepEqual(pr5Data(t, fx), pr5Data(t, fx2)) {
+			t.Errorf("data differs: %v vs %v", pr5Data(t, fx), pr5Data(t, fx2))
 		}
 	})
 	t.Run("not asked when preset, or bitwarden is off", func(t *testing.T) {
@@ -121,7 +187,7 @@ func pr5BW(t *testing.T, answers string) (*fixture, *bytes.Buffer, string) {
 }
 
 func TestPromptUseBitwarden(t *testing.T) {
-	t.Run("n: local-only, marker, no setup, rerun done", func(t *testing.T) {
+	t.Run("n: local-only, no setup, no marker, asked again", func(t *testing.T) {
 		fx, out, bw := pr5BW(t, "n\n")
 		fx.MustExec(steps.Finish())
 		if fx.mentions(bw) || !strings.Contains(fx.Log.String(), "local-only secrets, Bitwarden skipped") {
@@ -130,17 +196,51 @@ func TestPromptUseBitwarden(t *testing.T) {
 		if !strings.Contains(out.String(), "Use Bitwarden (rbw) for secrets sync?") {
 			t.Errorf("no prompt: %q", out)
 		}
-		done, _ := steps.Finish()[3].Check(t.Context(), fx.Env)
-		if !done {
-			t.Errorf("bitwarden-setup not done after n")
+		fx2, _, _ := pr5BW(t, "")
+		fx2.Env.Ask = nil
+		fx2.Env.Cfg.Data["useBitwarden"] = "false"
+		fx2.MustExec(steps.Finish())
+		pr5SameRun(t, fx, fx2)
+		if exists(fx.Path(".local", "state", "athome", "bitwarden-declined")) {
+			t.Errorf("a decline must not be remembered")
+		}
+		if done, _ := steps.Finish()[3].Check(t.Context(), fx.Env); done {
+			t.Errorf("bitwarden-setup done after n, the next run must ask again")
+		}
+		out2 := pr5Ask(fx, "n\n")
+		fx.MustExec(steps.Finish())
+		if !strings.Contains(out2.String(), "Use Bitwarden (rbw) for secrets sync?") {
+			t.Errorf("not asked again: %q", out2)
 		}
 	})
-	t.Run("y: runs bw-setup", func(t *testing.T) {
+	t.Run("asked even without bw-setup", func(t *testing.T) {
+		fx, out, bw := pr5BW(t, "y\n")
+		if err := os.Remove(bw); err != nil {
+			t.Fatal(err)
+		}
+		fx.MustExec(steps.Finish())
+		if !strings.Contains(out.String(), "Use Bitwarden (rbw) for secrets sync?") {
+			t.Errorf("no prompt: %q", out)
+		}
+		if !strings.Contains(fx.Log.String(), "run `bw-setup` in a terminal to sync Bitwarden later") {
+			t.Errorf("no local-only line:\n%s", fx.Log)
+		}
+	})
+	t.Run("y: runs bw-setup, like a preset true on a terminal", func(t *testing.T) {
 		fx, _, bw := pr5BW(t, "y\n")
 		fx.MustExec(steps.Finish())
 		if !fx.mentions(bw) {
 			t.Errorf("bw-setup did not run:\n%s", fx.dump())
 		}
+		// Without a terminal bw-setup never runs, so the equivalent preset
+		// keeps a terminal and only skips the question.
+		fx2, out2, _ := pr5BW(t, "never\n")
+		fx2.Env.Cfg.Data["useBitwarden"] = "true"
+		fx2.MustExec(steps.Finish())
+		if out2.Len() != 0 {
+			t.Errorf("preset prompted: %q", out2)
+		}
+		pr5SameRun(t, fx, fx2)
 	})
 	t.Run("failed bw-setup warns and leaves a follow-up", func(t *testing.T) {
 		fx, _, bw := pr5BW(t, "y\n")
@@ -157,6 +257,9 @@ func TestPromptUseBitwarden(t *testing.T) {
 		if fx.mentions(bw) {
 			t.Errorf("bw-setup ran while unlocked")
 		}
+		if !strings.Contains(fx.Log.String(), "Bitwarden already unlocked") {
+			t.Errorf("no unlocked line:\n%s", fx.Log)
+		}
 	})
 	t.Run("device registered: no setup", func(t *testing.T) {
 		fx, _, bw := pr5BW(t, "y\n")
@@ -165,6 +268,9 @@ func TestPromptUseBitwarden(t *testing.T) {
 		fx.MustExec(steps.Finish())
 		if fx.mentions(bw) {
 			t.Errorf("bw-setup ran with a registered device:\n%s", fx.Log)
+		}
+		if !strings.Contains(fx.Log.String(), "device registered") {
+			t.Errorf("no registered line:\n%s", fx.Log)
 		}
 	})
 	t.Run("preset or no Ask: no prompt, no setup when off", func(t *testing.T) {
@@ -190,7 +296,7 @@ func pr5GHUpload(t *testing.T, answers string) (*fixture, *bytes.Buffer) {
 }
 
 func TestPromptUpload(t *testing.T) {
-	t.Run("n: no ssh-key add, and a rerun applies nothing", func(t *testing.T) {
+	t.Run("n: no ssh-key add, no marker, a rerun asks again", func(t *testing.T) {
 		fx, out := pr5GHUpload(t, "n\n")
 		fx.MustExec(steps.GitHub())
 		if len(fx.addCalls()) != 0 {
@@ -199,8 +305,19 @@ func TestPromptUpload(t *testing.T) {
 		if !strings.Contains(out.String(), "Upload SSH public keys to GitHub now (auth + signing)?") {
 			t.Errorf("no prompt: %q", out)
 		}
-		if rep := fx.MustRerun(steps.GitHub()); len(rep.Applied) != 0 {
-			t.Errorf("rerun applied %v", rep.Applied)
+		if !strings.Contains(fx.Log.String(), "skipping ssh-key upload, run manually later:") {
+			t.Errorf("no skip text:\n%s", fx.Log)
+		}
+		if exists(fx.Path(".local", "state", "athome", "github-upload-declined")) {
+			t.Errorf("a decline must not be remembered")
+		}
+		out2 := pr5Ask(fx, "y\n")
+		fx.MustExec(steps.GitHub())
+		if !strings.Contains(out2.String(), "Upload SSH public keys to GitHub now (auth + signing)?") {
+			t.Errorf("not asked again: %q", out2)
+		}
+		if len(fx.addCalls()) != 2 {
+			t.Errorf("want 2 adds after the second answer:\n%s", fx.dump())
 		}
 	})
 	t.Run("y uploads", func(t *testing.T) {
@@ -209,6 +326,9 @@ func TestPromptUpload(t *testing.T) {
 		if len(fx.addCalls()) != 2 {
 			t.Errorf("want 2 adds:\n%s", fx.dump())
 		}
+		fx2 := ghFixture(t) // no terminal: the upload is the default
+		fx2.MustExec(steps.GitHub())
+		pr5SameRun(t, fx, fx2)
 	})
 	t.Run("refresh n: manual marker, no gh auth refresh", func(t *testing.T) {
 		fx, out := pr5GHUpload(t, "y\nn\n")
@@ -226,6 +346,12 @@ func TestPromptUpload(t *testing.T) {
 		if !strings.Contains(out.String(), "refresh via gh?") {
 			t.Errorf("no refresh prompt: %q", out)
 		}
+		// an env token cannot be refreshed, which is the same fallback without a terminal
+		fx2 := ghFixture(t)
+		t.Setenv("GITHUB_TOKEN", "tok")
+		fx2.Fake.On("gh", "auth", "status").Return(run.Result{Stdout: noScopes, Stderr: noScopes})
+		fx2.MustExec(steps.GitHub())
+		pr5SameRun(t, fx, fx2)
 	})
 	t.Run("force upload and scopes present: no prompt", func(t *testing.T) {
 		fx, out := pr5GHUpload(t, "n\n")
@@ -246,7 +372,7 @@ func TestPromptRestore(t *testing.T) {
 		writeFile(t, p, "#!/bin/sh\nexit 0\n", 0o755)
 		return fx, pr5Ask(fx, answers), p
 	}
-	t.Run("n: not run, rerun applies nothing new", func(t *testing.T) {
+	t.Run("n: not run, no marker, a rerun asks again", func(t *testing.T) {
 		fx, out, p := setup(t, "n\n")
 		fx.MustExec(steps.Finish())
 		if fx.mentions(p) {
@@ -255,11 +381,13 @@ func TestPromptRestore(t *testing.T) {
 		if !strings.Contains(out.String(), "restore your encrypted secrets now (secrets-restore)?") {
 			t.Errorf("no prompt: %q", out)
 		}
-		rep := fx.MustRerun(steps.Finish())
-		for _, a := range rep.Applied {
-			if a == "secrets-restore" {
-				t.Errorf("secrets-restore applied again")
-			}
+		if exists(fx.Path(".local", "state", "athome", "secrets-restore-attempted")) {
+			t.Errorf("a decline must not be remembered")
+		}
+		out2 := pr5Ask(fx, "n\n")
+		fx.MustExec(steps.Finish())
+		if !strings.Contains(out2.String(), "restore your encrypted secrets now (secrets-restore)?") {
+			t.Errorf("not asked again: %q", out2)
 		}
 	})
 	t.Run("y: runs", func(t *testing.T) {
@@ -268,6 +396,10 @@ func TestPromptRestore(t *testing.T) {
 		if !fx.mentions(p) {
 			t.Errorf("restore did not run:\n%s", fx.dump())
 		}
+		fx2, _, _ := setup(t, "")
+		fx2.Env.Ask = nil // no terminal: the restore is the default
+		fx2.MustExec(steps.Finish())
+		pr5SameRun(t, fx, fx2)
 	})
 	t.Run("secrets present: no prompt", func(t *testing.T) {
 		fx, out, _ := setup(t, "n\n")

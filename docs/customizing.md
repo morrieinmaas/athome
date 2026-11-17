@@ -117,7 +117,7 @@ Always `mise run diff` before `apply` if you suspect uncaptured live edits.
 ## Conventions (for editing scripts)
 
 - **Scripts that run *from the repo*** (`scripts/bootstrap.sh`)
-  share helpers from **`scripts/lib/`** (`colors.sh`, `ssh.sh`, `pm.sh`) — source
+  share helpers from **`scripts/lib/`** (`ssh.sh`) — source
   them; don't re-inline.
 - **chezmoi `run_*` scripts are islands.** They run rendered-standalone in
   chezmoi's apply context and **cannot `source` `scripts/lib/`**. So each one

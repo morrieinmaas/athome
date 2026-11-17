@@ -212,15 +212,11 @@ Prompts are plain questions asked only on a terminal. They are skipped with
 `-y` or `--non-interactive`, and a value that comes from a flag, an `ATHOME_*`
 variable or the config file is never asked.
 
-The installer needs a release that carries `athome` binaries; the first is the
-release after this change. Until then it prints a note and falls back to
-`scripts/bootstrap-legacy.sh`. To install the binary meanwhile, build it and
+The installer needs a release that carries `athome` binaries. When the release
+has none it exits 1 naming the tag and the URL it tried. To install a local build,
 pass it in with `--install-from`:
 
 ```bash
 go build -o athome ./cmd/athome
 ./scripts/bootstrap.sh --install-from ./athome
 ```
-
-The previous bash installer is kept as `scripts/bootstrap-legacy.sh` for one
-release, with the same flags. It will then be removed.

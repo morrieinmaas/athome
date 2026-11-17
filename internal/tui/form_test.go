@@ -327,6 +327,39 @@ func TestFormCancelOnReviewIsQuit(t *testing.T) {
 }
 
 // Whether a key exists follows the hostname the form answered, not the seeded one.
+// A cancel on a huh page quits, and RunForm returns only once bubbletea's read
+// loop is done with the input, so closing it then is no race (run with -race).
+func TestFormCancelOnPageIsQuit(t *testing.T) {
+	pr, pw, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pw.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	out := &syncBuf{}
+	done := make(chan error, 1)
+	go func() {
+		_, err := RunForm(ctx, pr, out, Seed{Values: map[string]string{}})
+		done <- err
+	}()
+	for deadline := time.Now().Add(10 * time.Second); !strings.Contains(out.String(), "Hostname"); time.Sleep(10 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for the first page in %q", out.String())
+		}
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if !errors.Is(err, ErrQuit) {
+			t.Fatalf("err = %v, want ErrQuit", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("RunForm did not return after the context was cancelled")
+	}
+	pr.Close()
+}
+
 func TestFormKeyExistsFollowsAnsweredHostname(t *testing.T) {
 	seed := Seed{
 		Values:    map[string]string{"hostname": "old"},
@@ -376,6 +409,7 @@ func keysForm(useBitwarden string) *huh.Form {
 func keysPage(t *testing.T, useBitwarden string) *teatest.TestModel {
 	t.Helper()
 	tm := teatest.NewTestModel(t, keysForm(useBitwarden), teatest.WithInitialTermSize(80, 24))
+	waitOutput(t, tm, "Use Bitwarden") // keys sent before the first frame can race the form's Init
 	for range 3 {
 		tm.Send(tea.KeyMsg{Type: tea.KeyEnter})
 	}

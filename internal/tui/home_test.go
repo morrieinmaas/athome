@@ -13,6 +13,7 @@ import (
 func runHomeModel(t *testing.T, info HomeInfo, keys ...tea.KeyMsg) *homeModel {
 	t.Helper()
 	tm := teatest.NewTestModel(t, &homeModel{info: info}, teatest.WithInitialTermSize(80, 24))
+	waitOutput(t, tm, "athome")
 	for _, k := range keys {
 		tm.Send(k)
 	}

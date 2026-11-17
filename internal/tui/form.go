@@ -121,6 +121,9 @@ func (s *formState) answers() map[string]string {
 	}
 	if s.sshHasKey {
 		out["sshKeyAction"] = s.ssh
+		if s.ssh == "reupload" { // the upload question is hidden: reupload means upload
+			out["uploadSshKeys"] = "true"
+		}
 	} else if s.ssh == "skip" {
 		out["generateSshKey"] = "false"
 	} else {
@@ -237,8 +240,10 @@ func (s *formState) pages(ctx context.Context) []func() *huh.Form {
 				huh.NewGroup(
 					s.yesNo("useBitwarden", "Use Bitwarden (rbw) for secrets sync?"),
 					s.choice("sshKey", sshTitle, &s.ssh, sshOpts...),
-					s.yesNo("uploadSshKeys", "Upload keys to GitHub?"),
 				).Title("Keys and secrets"),
+				huh.NewGroup(
+					s.yesNo("uploadSshKeys", "Upload keys to GitHub?"),
+				).Title("Keys and secrets").WithHideFunc(func() bool { return s.sshHasKey && s.ssh == "reupload" }),
 				huh.NewGroup(
 					s.input("bitwardenUrl", "Bitwarden server URL", "empty = US cloud; EU = https://vault.bitwarden.eu; or your Vaultwarden URL", validBitwardenURL(s.seed.CheckURL, ctx, s.isSubmitting)),
 					s.yesNo("restoreSecrets", "Restore secrets from Bitwarden?"),
@@ -320,14 +325,26 @@ func (s *formState) reviewText() string {
 	return b.String()
 }
 
+// runProgram runs m until it quits; a cancelled ctx quits it too. It never
+// uses tea.WithContext or tea.Interrupt: both take bubbletea's kill path, which
+// closes the input reader without waiting for the read loop still using it (a
+// data race, and the loop may outlive Run and touch the caller's reader).
+func runProgram(ctx context.Context, m tea.Model, opts ...tea.ProgramOption) (tea.Model, error) {
+	p := tea.NewProgram(m, opts...)
+	defer context.AfterFunc(ctx, p.Quit)()
+	return p.Run()
+}
+
 // RunForm shows the pages and returns the answers keyed as chezmoi's [data].
-// A quit key, a cancelled context (SIGTERM) or huh's timeout all give ErrQuit.
+// A quit key or a cancelled context (SIGTERM) gives ErrQuit.
 func RunForm(ctx context.Context, in io.Reader, out io.Writer, seed Seed) (map[string]string, error) {
 	s := newFormState(seed)
 	for {
 		for _, page := range s.pages(ctx) {
-			err := page().WithProgramOptions(tea.WithFilter(s.trackSubmit)).WithInput(in).WithOutput(out).WithKeyMap(quitKeys).RunWithContext(ctx)
-			if errors.Is(err, huh.ErrUserAborted) || errors.Is(err, huh.ErrTimeout) || errors.Is(err, context.Canceled) || ctx.Err() != nil {
+			f := page().WithKeyMap(quitKeys)
+			f.SubmitCmd, f.CancelCmd = tea.Quit, tea.Quit
+			_, err := runProgram(ctx, f, tea.WithFilter(s.trackSubmit), tea.WithInput(in), tea.WithOutput(out))
+			if f.State == huh.StateAborted || ctx.Err() != nil {
 				return nil, ErrQuit
 			}
 			if err != nil {
@@ -335,8 +352,8 @@ func RunForm(ctx context.Context, in io.Reader, out io.Writer, seed Seed) (map[s
 			}
 		}
 		rm := &reviewModel{text: s.reviewText()}
-		_, err := tea.NewProgram(rm, tea.WithInput(in), tea.WithOutput(out), tea.WithContext(ctx)).Run()
-		if errors.Is(err, tea.ErrProgramKilled) || errors.Is(err, context.Canceled) || ctx.Err() != nil {
+		_, err := runProgram(ctx, rm, tea.WithInput(in), tea.WithOutput(out))
+		if ctx.Err() != nil {
 			return nil, ErrQuit
 		}
 		if err != nil {

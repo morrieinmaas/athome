@@ -411,3 +411,11 @@ func TestFormBadEmailDoesNotAdvance(t *testing.T) {
 	pr.Close()
 	pw.Close()
 }
+
+// esc clears a select's filter, so it must not quit the form.
+func TestEscDoesNotQuitForm(t *testing.T) {
+	keys := quitKeys.Quit.Keys()
+	if len(keys) != 1 || keys[0] != "ctrl+c" {
+		t.Errorf("quit keys = %v, want only ctrl+c", keys)
+	}
+}

@@ -37,6 +37,18 @@ type formState struct {
 	// sshHasKey is the key existence ssh was last defaulted for; it is reset when
 	// the answered hostname changes it.
 	sshHasKey bool
+	// submitting is true while the message being handled is an enter or tab key,
+	// so a validator can tell a submit from huh's validation on blur.
+	submitting bool
+}
+
+func (s *formState) isSubmitting() bool { return s.submitting }
+
+// trackSubmit is a tea message filter that records whether the message is a submit key.
+func (s *formState) trackSubmit(_ tea.Model, msg tea.Msg) tea.Msg {
+	k, ok := msg.(tea.KeyMsg)
+	s.submitting = ok && key.Matches(k, quitKeys.Input.Next, quitKeys.Input.Submit)
+	return msg
 }
 
 var formKeys = []string{
@@ -193,7 +205,7 @@ func (s *formState) pages(ctx context.Context) []func() *huh.Form {
 		},
 		func() *huh.Form {
 			return huh.NewForm(huh.NewGroup(
-				s.input("githubHandle", "GitHub username", "e.g. octocat", validHandle(s.seed.CheckHandle, ctx)),
+				s.input("githubHandle", "GitHub username", "e.g. octocat", validHandle(s.seed.CheckHandle, ctx, s.isSubmitting)),
 				s.input("personalName", "Personal git name", "empty = your GitHub username", nil),
 				s.input("workEmail", "Work git email", "empty = personal everywhere", validOptionalEmail),
 				s.input("workName", "Work git name", "empty = personal name", nil),
@@ -216,7 +228,7 @@ func (s *formState) pages(ctx context.Context) []func() *huh.Form {
 					s.yesNo("uploadSshKeys", "Upload keys to GitHub?"),
 				).Title("Keys and secrets"),
 				huh.NewGroup(
-					s.input("bitwardenUrl", "Bitwarden server URL", "empty = US cloud; EU = https://vault.bitwarden.eu; or your Vaultwarden URL", validBitwardenURL(s.seed.CheckURL, ctx)),
+					s.input("bitwardenUrl", "Bitwarden server URL", "empty = US cloud; EU = https://vault.bitwarden.eu; or your Vaultwarden URL", validBitwardenURL(s.seed.CheckURL, ctx, s.isSubmitting)),
 					s.yesNo("restoreSecrets", "Restore secrets from Bitwarden?"),
 				).Title("Bitwarden").WithHideFunc(func() bool { return *s.v["useBitwarden"] == "false" }),
 			)
@@ -242,9 +254,10 @@ func (s *formState) pages(ctx context.Context) []func() *huh.Form {
 	}
 }
 
+// Only ctrl+c quits: esc clears a select filter and must not end the form.
 var quitKeys = func() *huh.KeyMap {
 	km := huh.NewDefaultKeyMap()
-	km.Quit = key.NewBinding(key.WithKeys("ctrl+c", "esc"))
+	km.Quit = key.NewBinding(key.WithKeys("ctrl+c"))
 	return km
 }()
 
@@ -298,7 +311,7 @@ func RunForm(ctx context.Context, in io.Reader, out io.Writer, seed Seed) (map[s
 	s := newFormState(seed)
 	for {
 		for _, page := range s.pages(ctx) {
-			err := page().WithInput(in).WithOutput(out).WithKeyMap(quitKeys).RunWithContext(ctx)
+			err := page().WithProgramOptions(tea.WithFilter(s.trackSubmit)).WithInput(in).WithOutput(out).WithKeyMap(quitKeys).RunWithContext(ctx)
 			if errors.Is(err, huh.ErrUserAborted) || errors.Is(err, huh.ErrTimeout) || errors.Is(err, context.Canceled) || ctx.Err() != nil {
 				return nil, ErrQuit
 			}

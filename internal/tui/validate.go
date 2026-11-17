@@ -24,13 +24,13 @@ func validOptionalEmail(s string) error {
 	return errors.New("not an email address (want name@host.tld)")
 }
 
-func validHandle(check func(context.Context, string) error, ctx context.Context) func(string) error {
+func validHandle(check func(context.Context, string) error, ctx context.Context, submitting func() bool) func(string) error {
 	once := overridable(func(v string) error {
 		if check == nil {
 			return nil
 		}
 		return check(ctx, v)
-	})
+	}, submitting)
 	return func(s string) error {
 		if strings.TrimSpace(s) == "" {
 			return errors.New("a GitHub handle is required")
@@ -39,13 +39,13 @@ func validHandle(check func(context.Context, string) error, ctx context.Context)
 	}
 }
 
-func validBitwardenURL(check func(context.Context, string) error, ctx context.Context) func(string) error {
+func validBitwardenURL(check func(context.Context, string) error, ctx context.Context, submitting func() bool) func(string) error {
 	once := overridable(func(v string) error {
 		if check == nil {
 			return nil
 		}
 		return check(ctx, v)
-	})
+	}, submitting)
 	return func(s string) error {
 		if s == "" {
 			return nil
@@ -59,25 +59,39 @@ func validBitwardenURL(check func(context.Context, string) error, ctx context.Co
 
 // overridable wraps a network check. A value that passed is not checked again
 // (huh validates on enter and on blur). A failure that wraps ErrCheckUnavailable
-// is shown once: a second submit of the same value is accepted (offline machines
-// must still init). Any other failure blocks every time.
-func overridable(check func(string) error) func(string) error {
-	last := ""
-	has := false
+// is shown once and remembered: only a repeated submit (enter or tab, see
+// submitting) of the same value is then accepted, so offline machines can still
+// init. A blur (shift+tab, moving on) repeats the remembered message and never
+// accepts. Any other failure blocks every time.
+//
+// ponytail: the check runs synchronously inside Update, so the UI freezes for up
+// to the 5 s check timeout. Upgrade path: run it as a tea.Cmd and show a spinner.
+func overridable(check func(string) error, submitting func() bool) func(string) error {
+	var last, failed string
+	var passed, hasFailed bool
+	var failedErr error
 	return func(v string) error {
-		if has && v == last {
+		if passed && v == last {
+			return nil
+		}
+		if hasFailed && v == failed {
+			if submitting != nil && !submitting() {
+				return failedErr
+			}
+			last, passed = v, true
 			return nil
 		}
 		err := check(v)
 		if err == nil {
-			last, has = v, true
+			last, passed = v, true
 			return nil
 		}
 		if !errors.Is(err, ErrCheckUnavailable) {
 			return err
 		}
-		last, has = v, true
-		return errors.New(err.Error() + " (press enter again to use it anyway)")
+		failed, hasFailed = v, true
+		failedErr = errors.New(err.Error() + " (press enter again to use it anyway)")
+		return failedErr
 	}
 }
 

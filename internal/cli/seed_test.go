@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/morrieinmaas/athome/internal/config"
 	"github.com/morrieinmaas/athome/internal/prompt"
 	"github.com/morrieinmaas/athome/internal/run"
 	"github.com/morrieinmaas/athome/internal/run/runtest"
@@ -214,5 +215,43 @@ func TestImportedKeyIsUsedWithoutAsking(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(home, ".ssh", "testbox_ed25519")); err != nil {
 		t.Errorf("imported key missing: %v", err)
+	}
+}
+
+func TestSeedDropsStoredGithubIdWhenHandleDiffers(t *testing.T) {
+	stored := map[string]string{"githubHandle": "old", "githubId": "42"}
+	dir := t.TempDir()
+	write := func(body string) string {
+		p := filepath.Join(dir, "a.toml")
+		os.WriteFile(p, []byte(body), 0o644)
+		return p
+	}
+
+	// handle from env
+	cfg := config.Config{Data: map[string]string{"githubHandle": "new"}}
+	vals, _ := seedPrecedence(stored, cfg, initOpts{}, map[string]string{"ATHOME_GITHUB_HANDLE": "new"})
+	if vals["githubId"] != "" {
+		t.Errorf("env handle: stale id kept: %q", vals["githubId"])
+	}
+
+	// handle from file
+	cfg = config.Config{Data: map[string]string{"githubHandle": "new"}, Source: write("githubHandle = \"new\"\n")}
+	vals, _ = seedPrecedence(stored, cfg, initOpts{}, map[string]string{})
+	if vals["githubId"] != "" {
+		t.Errorf("file handle: stale id kept: %q", vals["githubId"])
+	}
+
+	// id set by the file alongside the handle is kept
+	cfg = config.Config{Data: map[string]string{"githubHandle": "new", "githubId": "7"}, Source: write("githubHandle = \"new\"\ngithubId = \"7\"\n")}
+	vals, _ = seedPrecedence(stored, cfg, initOpts{}, map[string]string{})
+	if vals["githubId"] != "7" {
+		t.Errorf("file id = %q, want 7", vals["githubId"])
+	}
+
+	// same handle keeps the stored id
+	cfg = config.Config{Data: map[string]string{"githubHandle": "old"}}
+	vals, _ = seedPrecedence(stored, cfg, initOpts{}, map[string]string{"ATHOME_GITHUB_HANDLE": "old"})
+	if vals["githubId"] != "42" {
+		t.Errorf("same handle: id = %q, want 42", vals["githubId"])
 	}
 }

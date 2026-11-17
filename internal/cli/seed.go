@@ -63,6 +63,11 @@ func seedPrecedence(stored map[string]string, cfg config.Config, o initOpts, env
 			locked[k] = true
 		}
 	}
+	// A stored id belongs to the stored handle; a different handle from env or
+	// file drops it unless env or file also set the id.
+	if vals["githubHandle"] != stored["githubHandle"] && environ[config.DataEnv["githubId"]] == "" && !fileSets("githubId") {
+		delete(vals, "githubId")
+	}
 	if fileSets("machine") {
 		vals["machineType"] = cfg.Machine
 	}

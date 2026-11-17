@@ -42,8 +42,10 @@ Run `athome` with no arguments on a terminal to open the home screen: version, r
 and the machine type, hostname and GitHub handle from `chezmoi.toml` (or "not set up"),
 with `init` and `quit`. Without a terminal it prints usage.
 
-Questions are asked only on a terminal, and never for a value already given by
-a flag, an `ATHOME_*` variable or the config file. Details on the answers are
+Questions are asked only on a terminal. A value from a flag or `ATHOME_*`
+variable is read-only; a value from the config file is prefilled and editable.
+`--config` is unattended only with `-y` or without a terminal; on a terminal it
+uses line prompts, not the TUI. Details on the answers are
 in [unattended installs](install.md#unattended-installs).
 
 `athome init` finds the repo through `ATHOME_REPO` (a path that must hold

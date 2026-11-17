@@ -223,7 +223,6 @@ func dataEntries(ctx context.Context, env *Env) ([]dataEntry, error) {
 
 var idRe = regexp.MustCompile(`"id"\s*:\s*([0-9]*)`)
 
-// storedData is the [data] table already in chezmoi.toml, or nil.
 // StoredData decodes the [data] table of the chezmoi.toml under home; nil when it is missing or unreadable.
 func StoredData(home string) map[string]any {
 	var doc struct {
@@ -235,6 +234,7 @@ func StoredData(home string) map[string]any {
 	return doc.Data
 }
 
+// storedData is the [data] table already in chezmoi.toml, or nil.
 func storedData(env *Env) map[string]any { return StoredData(env.Home) }
 
 // dataIdentity ports B:830-846. Failures leave the value empty; it never errors.

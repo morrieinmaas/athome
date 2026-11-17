@@ -126,6 +126,15 @@ See the [Arch wiki on netboot](https://wiki.archlinux.org/title/Netboot).
 | `--import-ssh-bw <item>` | Restore this machine's SSH key from a Bitwarden note instead of generating one. |
 | `--import-from <dir> --import-ssh` | Same, from a backup folder you copied over yourself. |
 
+## Interactive, plain or unattended
+
+Three ways to run the same steps:
+
+- **Interactive form** (default on a terminal): `./scripts/bootstrap.sh` opens a full-screen form,
+  then a progress view. Answers set by a flag or `ATHOME_*` variable are shown read-only.
+- **Plain prompts**: `--plain` (or `ATHOME_PLAIN=1`) asks line by line, as older releases did.
+- **Unattended**: `-y` or no terminal never asks; a `--config` file supplies the answers.
+
 ## Unattended installs
 
 Bootstrap asks a handful of questions when run in a terminal, each with a

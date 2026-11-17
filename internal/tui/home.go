@@ -13,6 +13,7 @@ import (
 type HomeInfo struct {
 	Version, Commit, Repo, MachineType, Hostname, Handle string
 	SetUp                                                bool
+	KeysReminder                                         string // shown when set: rotation is due
 }
 
 var homeChoices = []string{"init", "update", "quit"}
@@ -54,6 +55,9 @@ func (m *homeModel) View() string {
 		fmt.Fprintf(&b, "machine type: %s\nhostname: %s\ngithub handle: %s\n\n", i.MachineType, i.Hostname, i.Handle)
 	} else {
 		b.WriteString("not set up\n\n")
+	}
+	if i.KeysReminder != "" {
+		b.WriteString(i.KeysReminder + "\n\n")
 	}
 	for n, c := range homeChoices {
 		cur := "  "

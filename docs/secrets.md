@@ -169,13 +169,140 @@ carried on and copied still-encrypted files), or any file failed to copy. Any ot
 - git-crypt is **deterministic** → unchanged files produce no diff, so `athome secrets backup` is a clean
   **no-op when nothing changed** (safe to run on a timer/watcher).
 - A **safety gate** aborts the commit/push if any staged file isn't encrypted (no accidental plaintext leak).
-- **Rotate** by deleting/recreating the repo (git-crypt has no in-place symmetric-key rotation).
+- **Re-key** with `athome secrets rekey` (git-crypt has no in-place key rotation, so it makes a new repo with a new key; see below).
 
-### Lost-laptop recovery (the whole point)
-1. install athome (gets `git-crypt`, mise, rbw via nanobrew) — `athome init` offers `athome secrets restore`
-2. `gh auth login` (clone access) → `bw-setup` / `rbw unlock` — the *only* secret you carry is your master password
-3. `athome secrets restore` → clones the vault, decrypts with the BW key, repopulates `~/.secrets/*/.env`, `~/.aws/*`
-4. clone dev repos → committed `mise.toml` + restored `~/.secrets/<name>/.env` → `mise trust` → working
+### Lost-laptop recovery
+Short version: `./scripts/bootstrap.sh --restore` on the new laptop, then
+`athome keys rotate --laptop`. The full drill is under
+[Recovering a lost laptop](#recovering-a-lost-laptop).
 
 > Deep-dive + the backup/restore mechanism rationale also lives in the agent skill
 > `~/.config/agents/skills/mise-secrets/` (symlinked into `~/.claude/skills/` for Claude Code).
+
+## Keys, rotation and recovery
+
+### Where everything lives
+
+| What | Where |
+| --- | --- |
+| git-crypt key | Bitwarden, `git-crypt/attic-key` |
+| Laptop ssh key | the laptop (`~/.ssh/id_ed25519` if present, else `~/.ssh/<host>_ed25519`), plus Bitwarden `ssh/<that file name>`, refreshed in place on every rotation |
+| Break-glass key, one per scope | Bitwarden only, `athome/<context>/<scope>/break-glass` |
+| `.env` files | the git-crypt vault (`~/.local/share/attic`) |
+
+Bitwarden items are login items: the password is `ssh-key-backup` (or the base64 git-crypt
+key), the notes hold the private key. athome edits an existing item with `rbw edit` and
+never adds a second item with the same name, because two items with one name make
+`rbw get` fail. If you already have duplicates, athome stops and asks you to delete the
+extras.
+
+Break-glass keys are for remote boxes, which arrive with `athome machine`. Until then the
+inventory is empty and rotation reaches GitHub and Bitwarden only.
+
+### Rotation
+
+```bash
+athome keys rotate --laptop       # this laptop's key
+athome keys rotate --break-glass  # each scope's break-glass key
+athome keys rotate --all          # laptop, box keys and break-glass keys
+athome keys rotate --resume       # finish a run that skipped boxes or stopped midway
+```
+
+Every rotation runs in the same order, so a failure never locks you out: generate the new
+key, store it in Bitwarden, add it to GitHub (authentication and signing) and to each box,
+check a login with only the new key, and only then remove the old key everywhere. A box's
+`authorized_keys` is reset to the managed set (laptop key and the scope's break-glass key),
+which also drops any key someone else added. An unreachable box is skipped and listed; it
+keeps the old key, and so does the laptop (as `<key>.old`) until `--resume` reaches it.
+Progress is in `~/.local/state/athome/rotate.json`.
+A machine that shares the key (restored with `--import-ssh-bw`) loses GitHub access when the
+key is rotated; restore the new key there with `--import-ssh-bw` again.
+The new key waits in Bitwarden as `<item>.rotate` until it works everywhere it must (GitHub
+for the laptop key, every box in the scope for a break-glass key), so the item under the real
+name holds a key that logs in wherever the rotation has not finished yet. A box already reset
+during an unfinished break-glass rotation accepts only the new key, which is in the `.rotate`
+item until the rotation is done. A locked rbw stops the run before anything changes.
+
+`gh` needs the key scopes: `gh auth refresh -h github.com -s
+admin:public_key,admin:ssh_signing_key`. `athome status` reminds you once the key is more
+than 90 days old. Rotation is never an unattended job; run it by hand, and always after a
+loss or theft.
+
+### Recovering a lost laptop
+
+On the replacement laptop:
+
+1. Clone athome and run `./scripts/bootstrap.sh --restore`. That runs `athome init --restore`,
+   which does steps 2 to 4 before any key is generated.
+2. Bitwarden login (`bw-setup`: `rbw register` then `rbw login` on Bitwarden's cloud,
+   `rbw login` on Vaultwarden), then `gh auth login`, needed to clone the vault.
+3. The laptop key is restored from `ssh/<old-host>_ed25519`. With several such items it
+   asks which one; pass `--import-ssh-bw <item>` to choose up front.
+4. `athome secrets restore` brings back the vault and every `.env`. The rest of `init` runs
+   as usual.
+5. `athome keys rotate --laptop` cuts off the old laptop's copy of the key. The new key is stored as
+   `ssh/<new-host>_ed25519`; then run `rbw remove ssh/<old-host>_ed25519`, so the revoked key is
+   not offered at the next `--restore`.
+
+**If the laptop was taken unlocked,** whoever had it could reach everything rbw could while
+it was unlocked. Also:
+
+6. Run `athome keys rotate --all` instead of step 5, so box and break-glass keys rotate
+   too and every box's `authorized_keys` is reset.
+7. Revoke the old laptop's and every box's `gh` token at GitHub (Settings, Applications,
+   Authorized OAuth apps), log each box in again, and rotate the tokens in the affected
+   `.env` files at their providers.
+8. Re-key the vault with `athome secrets rekey` (below), then delete the old repo.
+
+If the laptop key was revoked before you restored it, reach each box with its scope's
+break-glass key (`rbw get --field notes athome/<context>/<scope>/break-glass`), or from
+`athome/<context>/<scope>/break-glass.rotate` when that item exists (a break-glass rotation was
+unfinished), and run the
+rotation from there.
+
+### Re-keying the vault
+
+```bash
+athome secrets rekey [--yes]
+```
+
+git-crypt cannot change its key in place, so `rekey` builds a new repo: it copies every
+tracked file of the unlocked vault into a fresh git-crypt repo with a new key, renames the
+old GitHub repo to `<name>-old-<YYYYMMDD>`, creates a new private `<owner>/<name>` and pushes,
+stores the new key as `git-crypt/<name>-key` and keeps the old one as
+`git-crypt/<name>-old-<YYYYMMDD>-key`. The names stay the same, so `restore` keeps working. It
+needs the vault unlocked, clean and up to date, and rbw unlocked. Once you have checked the
+new vault, delete the old repo and key yourself; athome prints the commands
+(`gh repo delete ...`, `rbw remove ...`) and never runs them.
+
+Before it changes anything, `rekey` exports the key the old vault actually uses and compares it
+with `git-crypt/<name>-key` in Bitwarden. If Bitwarden's copy differs, it warns and saves the
+vault's own key as the old key. A failure while building the new checkout removes
+`<vault>.rekey` (it holds plaintext copies), naming the path if it cannot.
+
+`rekey` and `backup` share an exclusive lock, `~/.local/state/athome/secrets.lock`, held for
+the whole run. If another one holds it, the second exits 1 with "another secrets run is in
+progress"; wait, then re-run.
+
+### Accepted risk: one GitHub account
+
+A key registered on your GitHub account reaches every repo that account can push to. A
+breached box key can therefore push to more than its own client's repos. This is accepted
+to keep plain `gh` and git over ssh; revoking the key ends it, and a per-client GitHub
+account narrows it where a client requires one.
+
+### The live drill (manual, before a release)
+
+The unit tests cover rotation, rekey and restore with fake `gh` and `rbw`. Before a release, run it once for real
+against a GitHub test account and a Vaultwarden instance, never your own accounts:
+
+1. On a scratch machine or VM logged in to the test account, run `./scripts/bootstrap.sh`
+   and let it store the key in Bitwarden.
+2. On a second scratch machine, run `./scripts/bootstrap.sh --restore`; check that
+   `ssh -T git@github.com` authenticates and `~/.secrets` is restored.
+3. Run `athome keys rotate --laptop`; check that the test account lists only the new key
+   and that the first machine's key no longer authenticates.
+4. Run `athome keys rotate --laptop` again and check Vaultwarden still has one
+   `ssh/<host>_ed25519` item.
+5. Run `athome secrets rekey --yes`, then `athome secrets restore` on the first machine
+   after removing its vault checkout.

@@ -78,3 +78,13 @@ func TestHomeMenuOffersUpdate(t *testing.T) {
 		t.Errorf("choice = %q, want update", m.choice)
 	}
 }
+
+func TestHomeShowsKeysReminder(t *testing.T) {
+	info := HomeInfo{Version: "v1", SetUp: true, KeysReminder: "keys: last rotated 120 days ago; run athome keys rotate --laptop"}
+	tm := teatest.NewTestModel(t, &homeModel{info: info}, teatest.WithInitialTermSize(80, 24))
+	teatest.WaitFor(t, tm.Output(), func(b []byte) bool {
+		return strings.Contains(string(b), "last rotated 120 days ago")
+	}, teatest.WithDuration(5*time.Second))
+	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
+	tm.FinalModel(t, teatest.WithFinalTimeout(5*time.Second))
+}

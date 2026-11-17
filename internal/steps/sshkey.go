@@ -2,6 +2,7 @@ package steps
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/user"
@@ -10,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/morrieinmaas/athome/internal/keys"
 	"github.com/morrieinmaas/athome/internal/run"
 )
 
@@ -392,10 +394,6 @@ func skPubMarkerTidy(env *Env) {
 	}
 }
 
-func skShellQuote(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
-}
-
 // skBWBackup ports B:464-496. It never fails: without an unlocked rbw it
 // prints the manual commands. bwBackupSshKey=false skips it; empty or true
 // keeps the copy.
@@ -406,32 +404,25 @@ func skBWBackup(ctx context.Context, env *Env) error {
 	key := skKeyPath(ctx, env)
 	item := "ssh/" + filepath.Base(key)
 	if _, err := env.Run.LookPath("rbw"); err == nil {
-		if res, err := env.Run.Run(ctx, run.Cmd{Name: "rbw", Args: []string{"unlocked"}}); err == nil && res.Code == 0 {
-			if skStoreInRBW(ctx, env, key, item) {
-				envLogln(env, "stored in Bitwarden: %s", item)
-				return nil
-			}
+		err := skStoreInRBW(ctx, env, key, item)
+		if err == nil {
+			envLogln(env, "stored in Bitwarden: %s", item)
+			return nil
+		}
+		if !errors.Is(err, keys.ErrLocked) {
+			// An `rbw add` hint here could make the duplicate item Store refuses.
+			envLogln(env, "could not store %s in Bitwarden: %v", item, err)
+			return nil
 		}
 	}
-	envLogln(env, "back up this machine's SSH key to Bitwarden (recommended): once rbw is unlocked run\n    rbw add '%s'   # line 1: ssh-key-backup, line 2+: paste %s\nRestore it elsewhere with: --import-ssh-bw %s", item, filepath.Base(key), item)
+	envLogln(env, "back up this machine's SSH key to Bitwarden (recommended): once rbw is unlocked run\n    rbw add '%s'   # or rbw edit if it already exists; line 1: ssh-key-backup, line 2+: paste %s\nRestore it elsewhere with: --import-ssh-bw %s", item, filepath.Base(key), item)
 	return nil
 }
 
-func skStoreInRBW(ctx context.Context, env *Env, key, item string) bool {
-	ed, err := os.CreateTemp("", "athome-editor-")
+func skStoreInRBW(ctx context.Context, env *Env, key, item string) error {
+	priv, err := os.ReadFile(key)
 	if err != nil {
-		return false
+		return err
 	}
-	defer os.Remove(ed.Name())
-	script := "#!/usr/bin/env bash\nprintf 'ssh-key-backup\\n%s\\n' \"$(cat " + skShellQuote(key) + ")\" > \"$1\"\n"
-	_, werr := ed.WriteString(script)
-	ed.Close()
-	if werr != nil || os.Chmod(ed.Name(), 0o700) != nil {
-		return false
-	}
-	res, err := env.Run.Run(ctx, run.Cmd{
-		Name: "rbw", Args: []string{"add", item},
-		Env: []string{"EDITOR=" + ed.Name(), "VISUAL=" + ed.Name()},
-	})
-	return err == nil && res.Code == 0
+	return keys.Store(ctx, env.Run, item, keys.SSHKeyPassword, strings.TrimRight(string(priv), "\n"))
 }

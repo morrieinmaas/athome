@@ -8,8 +8,10 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/morrieinmaas/athome/internal/status"
+	"github.com/morrieinmaas/athome/internal/steps"
 )
 
 func runStatus(args []string, stdout, stderr io.Writer) int {
@@ -39,6 +41,7 @@ func runStatus(args []string, stdout, stderr io.Writer) int {
 		return exitError
 	}
 	rep := status.Collect(context.Background(), newRunner(), Version, Commit, home, repo)
+	rep.Keys = status.Keys(home, steps.KeyHostname(), time.Now())
 	if *asJSON {
 		b, _ := json.Marshal(rep)
 		fmt.Fprintf(stdout, "%s\n", b)
@@ -47,6 +50,9 @@ func runStatus(args []string, stdout, stderr io.Writer) int {
 	fmt.Fprintf(stdout, "athome %s (%s), repo %s at %s\n", rep.Version, rep.Commit, rep.Repo, rep.Ref)
 	for _, c := range rep.Components {
 		fmt.Fprintf(stdout, "%-9s %-14s %s\n", c.Name, c.Status, detailText(c))
+	}
+	if r := reminderText(rep.Keys, time.Now()); r != "" {
+		fmt.Fprintln(stdout, r)
 	}
 	return exitOK
 }
@@ -60,4 +66,17 @@ func detailText(c status.Component) string {
 		return c.Installed + " (wanted " + c.Wanted + ")"
 	}
 	return c.Installed
+}
+
+// reminderText is the rotation reminder line, "" when none is due.
+func reminderText(k status.KeysStatus, now time.Time) string {
+	if !k.Due {
+		return ""
+	}
+	return fmt.Sprintf("keys: last rotated %d days ago; run athome keys rotate --laptop", k.DaysSince(now))
+}
+
+// keysReminder is reminderText for this laptop, for the home screen.
+func keysReminder(home string, now time.Time) string {
+	return reminderText(status.Keys(home, steps.KeyHostname(), now), now)
 }

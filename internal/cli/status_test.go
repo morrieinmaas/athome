@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/morrieinmaas/athome/internal/cli"
 	"github.com/morrieinmaas/athome/internal/run"
@@ -256,5 +257,26 @@ func TestStatusUsageAndMissingRepo(t *testing.T) {
 	t.Setenv("ATHOME_REPO", t.TempDir())
 	if code, _, errs := runStatus(); code != 1 || !strings.Contains(errs, "athome status:") {
 		t.Errorf("missing repo exit %d, %q", code, errs)
+	}
+}
+
+func TestStatusKeysReminder(t *testing.T) {
+	e := newStatusEnv(t)
+	_, out, _ := runStatus()
+	if strings.Contains(out, "keys:") {
+		t.Errorf("reminder with no laptop key:\n%s", out)
+	}
+	key := keysLaptopKey(e.home)
+	os.MkdirAll(filepath.Dir(key), 0o700)
+	os.WriteFile(key, []byte("k"), 0o600)
+	old := time.Now().Add(-120 * 24 * time.Hour)
+	os.Chtimes(key, old, old)
+	code, out, _ := runStatus()
+	if code != 0 || !strings.Contains(out, "keys: last rotated 120 days ago; run athome keys rotate --laptop") {
+		t.Errorf("code %d, out:\n%s", code, out)
+	}
+	_, js, _ := runStatus("--json")
+	if !strings.Contains(js, `"due":true`) || !strings.Contains(js, `"current":true`) {
+		t.Errorf("json = %s", js)
 	}
 }

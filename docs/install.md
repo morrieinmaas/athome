@@ -190,6 +190,21 @@ That's the quick baseline. `mise run apply` then does the slow part: the full
 package list, all the mise tools, and the desktop setup. Keeping them apart
 means the heavy step can be re-run on its own at any time.
 
+## Replacement laptop: restoring from Bitwarden
+
+After losing a laptop, clone athome on the new one and run:
+
+```bash
+./scripts/bootstrap.sh --restore
+```
+
+The installer passes `--restore` to `athome init`, which logs in to Bitwarden (`bw-setup`)
+and `gh`, restores the ssh key from `ssh/<old-host>_ed25519` and runs
+`athome secrets restore`, all before any key is generated; then the rest of init runs as
+usual. Without a terminal it stops with a message instead of prompting. Afterwards run
+`athome keys rotate --laptop`. The whole drill, including the case of a laptop taken
+unlocked, is in [secrets](secrets.md#recovering-a-lost-laptop).
+
 ## Second machine: reusing an SSH key
 
 Keys are per machine by default: lose a laptop, delete that one key on

@@ -204,6 +204,7 @@ func runHomeScreen(stdout, stderr io.Writer) int {
 		d := storedChezmoiData(home)
 		info.MachineType, info.Hostname, info.Handle = d["machineType"], d["hostname"], d["githubHandle"]
 		info.SetUp = info.MachineType != ""
+		info.KeysReminder = keysReminder(home, time.Now())
 	}
 	choice, err := runHome(os.Stdin, os.Stdout, info)
 	if err != nil {

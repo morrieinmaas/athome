@@ -277,7 +277,11 @@ Decisions:
   installer with `--install-from`.
 - The installer picks the release for the clone it runs from: the tag at `HEAD`, else the
   nearest tag (`git describe --tags --abbrev=0`). `ATHOME_VERSION` overrides it. With no
-  tag, or no release for it, it exits 1 and names `--install-from` and `go build`.
+  tag it exits 1 and names `--install-from` and `go build`. If the asset download for the
+  tag fails (no release asset) and `--install-from` was not given, it prints a note to
+  stderr and execs `scripts/bootstrap-legacy.sh` with the same arguments. This is for one
+  release only: tags v0.4.0 to v0.4.3 have no athome assets, so a fresh clone would
+  otherwise fail. It goes when `bootstrap-legacy.sh` is deleted (migration step 4).
 - Base URL: `ATHOME_RELEASE_BASE`, default
   `https://github.com/morrieinmaas/athome/releases/download`. Assets are
   `<base>/<tag>/athome_<os>_<arch>` and `<base>/<tag>/checksums.txt`, os `darwin|linux`,
@@ -308,8 +312,9 @@ Acceptance criteria:
 1. `bootstrap.sh` on darwin or linux, amd64 or arm64, downloads `athome_<os>_<arch>`, checks
    its sha256 against `checksums.txt`, installs it as `~/.local/bin/athome` with mode 0755,
    and execs `athome init` with every argument except `--install-from <path>`.
-2. A checksum mismatch, a missing asset or an unsupported os or arch exits 1, leaves no
-   `~/.local/bin/athome` behind, and names the problem.
+2. A missing asset falls back to `bootstrap-legacy.sh` with a note; a checksum mismatch, a
+   missing checksums line, a missing sha tool or an unsupported os or arch exits 1, leaves
+   no `~/.local/bin/athome` behind, and names the problem.
 3. `--install-from <path>` installs that file and downloads nothing; a missing path exits 1.
 4. An installed binary at the wanted version is reused without a download.
 5. `bootstrap.sh --help` prints the installer usage; any other flag passes through to
@@ -334,7 +339,7 @@ Test list (unit unless marked):
 
 - installer (bats, `test/bootstrap.bats`, release served from a `file://` base): good
   checksum installs and execs a stub `athome` that records its args; mismatch exits 1 with
-  no binary left; missing asset exits 1; unsupported `uname` (faked) exits 1;
+  no binary left; missing asset runs a stub legacy script with the same args and a note; unsupported `uname` (faked) exits 1;
   `--install-from` installs that file with no download; `--install-from` with no path exits 1;
   version already installed downloads nothing; no tags exits 1 naming `--install-from`;
   `ATHOME_VERSION` overrides the tag; `--help` prints usage.

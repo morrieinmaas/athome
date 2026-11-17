@@ -91,10 +91,10 @@ func dataPrompt(env *Env, entries []dataEntry) bool {
 	}
 	d := env.Cfg.Data
 	if d["bitwardenUrl"] == "" && d["useBitwarden"] != "false" && storedBitwardenURL(env) == "" { // B:855-861
-		envLogf(env, "Bitwarden server (for rbw secrets):\n")
-		envLogf(env, "  empty  = US cloud (bitwarden.com)\n")
-		envLogf(env, "  EU     = https://vault.bitwarden.eu\n")
-		envLogf(env, "  self-hosted Vaultwarden = your URL (https://vault.example.com)\n")
+		env.Ask.Say("Bitwarden server (for rbw secrets):\n")
+		env.Ask.Say("  empty  = US cloud (bitwarden.com)\n")
+		env.Ask.Say("  EU     = https://vault.bitwarden.eu\n")
+		env.Ask.Say("  self-hosted Vaultwarden = your URL (https://vault.example.com)\n")
 		if u := env.Ask.String("Bitwarden server URL [empty = US cloud]: ", false); u != "" {
 			d["bitwardenUrl"] = u
 			changed = true

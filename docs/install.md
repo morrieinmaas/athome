@@ -204,15 +204,17 @@ it takes.
 | --- | --- |
 | `--install-from <path>` | Install this `athome` binary instead of downloading one (a local build, or CI). |
 | `--help` | Show the installer's usage. |
-| `ATHOME_VERSION` | Release to install, e.g. `v0.4.0`. Default: the latest. |
+| `ATHOME_VERSION` | Release to install, e.g. `v0.4.0`. Default: the tag at `HEAD`, else the nearest tag. |
 | `ATHOME_RELEASE_BASE` | Base URL to download releases from, for a mirror or a test server. |
 
 Prompts are plain questions asked only on a terminal. They are skipped with
 `-y` or `--non-interactive`, and a value that comes from a flag, an `ATHOME_*`
 variable or the config file is never asked.
 
-The installer needs a published release. Until the first `v*` release exists,
-build one yourself and pass it in:
+The installer needs a release that carries `athome` binaries; the first is the
+release after this change. Until then it prints a note and falls back to
+`scripts/bootstrap-legacy.sh`. To install the binary meanwhile, build it and
+pass it in with `--install-from`:
 
 ```bash
 go build -o athome ./cmd/athome

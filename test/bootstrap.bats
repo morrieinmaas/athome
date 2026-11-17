@@ -34,6 +34,7 @@ FAKE
   [ -x "$DEST" ]
   [[ "$(ls -l "$DEST")" == -rwxr-xr-x* ]]
   grep -qx 'init-args:init --machine work -y' "$HOME/calls"
+  [ -z "$(ls -d "$TMPDIR"/athome-install.* 2>/dev/null)" ]
 }
 
 @test "checksum mismatch exits 1 and leaves no binary" {
@@ -45,11 +46,17 @@ FAKE
   [ -z "$(ls -A "$HOME/.local/bin")" ]
 }
 
-@test "missing asset exits 1 and leaves no binary" {
-  ATHOME_VERSION=v0.0.1 run bash "$ROOT/scripts/bootstrap.sh"
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"cannot download"* ]]
+@test "missing asset falls back to bootstrap-legacy.sh with a note and the same args" {
+  mkdir -p "$BATS_TEST_TMPDIR/lclone/scripts"
+  cp "$ROOT/scripts/bootstrap.sh" "$BATS_TEST_TMPDIR/lclone/scripts/"
+  printf '#!/bin/sh\necho "legacy-args:$*" >> "$HOME/calls"\n' >"$BATS_TEST_TMPDIR/lclone/scripts/bootstrap-legacy.sh"
+  chmod 0755 "$BATS_TEST_TMPDIR/lclone/scripts/bootstrap-legacy.sh"
+  ATHOME_VERSION=v0.0.1 run bash "$BATS_TEST_TMPDIR/lclone/scripts/bootstrap.sh" --machine work -y
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"no athome release for v0.0.1; falling back to scripts/bootstrap-legacy.sh for this release"* ]]
+  grep -qx 'legacy-args:--machine work -y' "$HOME/calls"
   [ ! -e "$DEST" ]
+  [ -z "$(ls -d "$TMPDIR"/athome-install.* 2>/dev/null)" ]
 }
 
 @test "checksums.txt without the asset line exits 1" {
@@ -67,6 +74,16 @@ FAKE
   PATH="$BATS_TEST_TMPDIR/fakebin:$PATH" run bash "$ROOT/scripts/bootstrap.sh"
   [ "$status" -eq 1 ]
   [[ "$output" == *"unsupported arch"* ]]
+  [ ! -e "$DEST" ]
+}
+
+@test "unsupported os exits 1" {
+  mkdir "$BATS_TEST_TMPDIR/fakebin"
+  printf '#!/bin/sh\n[ "$1" = -s ] && echo FreeBSD || /usr/bin/uname "$@"\n' >"$BATS_TEST_TMPDIR/fakebin/uname"
+  chmod +x "$BATS_TEST_TMPDIR/fakebin/uname"
+  PATH="$BATS_TEST_TMPDIR/fakebin:$PATH" run bash "$ROOT/scripts/bootstrap.sh"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"unsupported os"* ]]
   [ ! -e "$DEST" ]
 }
 

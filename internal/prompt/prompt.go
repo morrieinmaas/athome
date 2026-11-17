@@ -19,6 +19,11 @@ func New(in io.Reader, out io.Writer) *Asker {
 	return &Asker{in: bufio.NewReader(in), out: out}
 }
 
+// Say prints a line of context for the next question to the same writer.
+func (a *Asker) Say(format string, args ...any) {
+	fmt.Fprintf(a.out, format, args...)
+}
+
 // line prints q and returns the trimmed answer; ok is false at EOF with no input.
 func (a *Asker) line(q string) (string, bool) {
 	fmt.Fprint(a.out, q)

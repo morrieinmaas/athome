@@ -94,3 +94,11 @@ func TestSuccessiveQuestionsKeepBufferedInput(t *testing.T) {
 		t.Errorf("got %q", got)
 	}
 }
+
+func TestSayWritesToTheAskersOutput(t *testing.T) {
+	a, out := ask("")
+	a.Say("menu %s\n", "line")
+	if got := out.String(); got != "menu line\n" {
+		t.Fatalf("Say wrote %q", got)
+	}
+}

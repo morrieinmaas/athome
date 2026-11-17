@@ -66,6 +66,9 @@ install_file() {
 }
 
 run_init() {
+  # exec skips the EXIT trap, so clean up first.
+  cleanup
+  trap - EXIT
   exec "$dest" init ${args[@]+"${args[@]}"}
 }
 
@@ -118,8 +121,14 @@ base="${ATHOME_RELEASE_BASE:-https://github.com/morrieinmaas/athome/releases/dow
 asset="athome_${os}_${arch}"
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/athome-install.XXXXXX")"
 
-curl -fsSL "$base/$tag/$asset" -o "$tmp/$asset" ||
-  die "cannot download $base/$tag/$asset; $hint"
+if ! curl -fsSL "$base/$tag/$asset" -o "$tmp/$asset"; then
+  # ponytail: tags v0.4.0..v0.4.3 have no athome assets. Goes when
+  # bootstrap-legacy.sh is deleted (migration step 4).
+  echo "bootstrap: no athome release for $tag; falling back to scripts/bootstrap-legacy.sh for this release" >&2
+  cleanup
+  trap - EXIT
+  exec "$repo_dir/scripts/bootstrap-legacy.sh" ${args[@]+"${args[@]}"}
+fi
 curl -fsSL "$base/$tag/checksums.txt" -o "$tmp/checksums.txt" ||
   die "cannot download $base/$tag/checksums.txt; $hint"
 

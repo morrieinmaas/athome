@@ -312,9 +312,8 @@ func ghMissingScopes(ctx context.Context, env *Env) []string {
 	return missing
 }
 
-func ghWriteManualMarker(env *Env) { ghWriteMarker(env, ghManualMarker(env)) }
-
-func ghWriteMarker(env *Env, path string) {
+func ghWriteManualMarker(env *Env) {
+	path := ghManualMarker(env)
 	err := os.MkdirAll(filepath.Dir(path), 0o755)
 	if err == nil {
 		err = os.WriteFile(path, nil, 0o644)

@@ -1,6 +1,7 @@
 package secrets
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"fmt"
@@ -39,6 +40,11 @@ func Rekey(ctx context.Context, o RekeyOpts) int {
 		o.errf("athome secrets rekey: --yes is required without a terminal\n")
 		return exitAbort
 	}
+	unlock, ok := o.Opts.acquire()
+	if !ok {
+		return exitError
+	}
+	defer unlock()
 	if code := o.preconditions(ctx); code != exitOK {
 		return code
 	}
@@ -74,15 +80,22 @@ func Rekey(ctx context.Context, o RekeyOpts) int {
 		return exitError
 	}
 
+	oldKey, code := o.oldVaultKey(ctx)
+	if code != exitOK {
+		return code
+	}
+
 	rk := o.Vault + ".rekey"
 	if code := o.buildRekey(ctx, rk); code != exitOK {
+		o.dropRekey(rk)
 		return code
 	}
 	newKey, code := o.exportKey(ctx, rk, t.keyFile)
 	if code != exitOK {
+		o.dropRekey(rk)
 		return code
 	}
-	if code := o.publish(ctx, t, rk, newKey); code != exitOK {
+	if code := o.publish(ctx, t, rk, oldKey, newKey); code != exitOK {
 		return code
 	}
 	if code := o.swapCheckout(ctx, rk, date); code != exitOK {
@@ -106,12 +119,52 @@ type rekeyTarget struct {
 
 // publish does steps 3 to 6: the old key into Bitwarden, the old repo renamed,
 // the new repo created and the new key stored. Each failure names its undo.
-func (o RekeyOpts) publish(ctx context.Context, t rekeyTarget, rk string, newKey []byte) int {
-	oldKey, err := o.runOut(ctx, "rbw", "get", "git-crypt/"+o.Name+"-key")
-	if err == nil {
-		err = keys.Store(ctx, o.Run, t.oldItem, strings.TrimSpace(oldKey), "")
+// dropRekey removes a half-built .rekey checkout: it holds plaintext copies and
+// a new key that nothing has published yet.
+func (o RekeyOpts) dropRekey(rk string) {
+	if err := os.RemoveAll(rk); err != nil {
+		o.errf("could not remove %s: %v\nit holds plaintext copies of the vault; delete it yourself\n", rk, err)
 	}
+}
+
+// oldVaultKey returns the key the vault really uses. Bitwarden's copy may be
+// stale, so the vault's own key is what gets saved as the old key; a mismatch
+// is reported, not fatal.
+func (o RekeyOpts) oldVaultKey(ctx context.Context) ([]byte, int) {
+	dir, err := os.MkdirTemp("", "athome-vaultkey-")
 	if err != nil {
+		o.errf("%v\n", err)
+		return nil, exitError
+	}
+	defer os.RemoveAll(dir)
+	file := filepath.Join(dir, "key")
+	if err := os.WriteFile(file, nil, 0o600); err != nil {
+		o.errf("%v\n", err)
+		return nil, exitError
+	}
+	r, err := o.Run.Run(ctx, run.Cmd{Name: "git-crypt", Args: []string{"export-key", file}, Dir: o.Vault})
+	if err != nil || r.Code != 0 {
+		o.errf("git-crypt export-key failed in %s; cannot check the old key\n%s", o.Vault, r.Stderr)
+		return nil, exitError
+	}
+	key, err := os.ReadFile(file)
+	if err != nil || len(key) == 0 {
+		o.errf("git-crypt export-key wrote no key for %s; cannot check the old key\n", o.Vault)
+		return nil, exitError
+	}
+	saved, err := o.runOut(ctx, "rbw", "get", "git-crypt/"+o.Name+"-key")
+	if err == nil {
+		var dec []byte
+		if dec, err = base64.StdEncoding.DecodeString(strings.Join(strings.Fields(saved), "")); err == nil && bytes.Equal(dec, key) {
+			return key, exitOK
+		}
+	}
+	o.errf("warning: git-crypt/%s-key in Bitwarden is not the key this vault uses; saving the vault's own key as the old key\n", o.Name)
+	return key, exitOK
+}
+
+func (o RekeyOpts) publish(ctx context.Context, t rekeyTarget, rk string, oldKey, newKey []byte) int {
+	if err := keys.Store(ctx, o.Run, t.oldItem, base64.StdEncoding.EncodeToString(oldKey), ""); err != nil {
 		o.errf("could not store the old key in Bitwarden: %v\n%s", err, t.keyNote)
 		return exitError
 	}

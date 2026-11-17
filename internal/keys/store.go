@@ -21,7 +21,7 @@ const SSHKeyPassword = "ssh-key-backup"
 // file exists, else ~/.ssh/<host>_ed25519.
 func LaptopKey(home, host string) string {
 	id := filepath.Join(home, ".ssh", "id_ed25519")
-	if fi, err := os.Stat(id); err == nil && fi.Mode().IsRegular() {
+	if fi, err := os.Lstat(id); err == nil && fi.Mode().IsRegular() {
 		return id
 	}
 	return filepath.Join(home, ".ssh", host+"_ed25519")

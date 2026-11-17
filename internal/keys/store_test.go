@@ -110,3 +110,25 @@ func TestStoreWithoutRbw(t *testing.T) {
 		t.Errorf("err = %v, want ErrNoRbw (not a locked message)", err)
 	}
 }
+
+func TestLaptopKeySymlinkIsRefused(t *testing.T) {
+	for _, name := range []string{"id_ed25519", "h_ed25519"} {
+		t.Run(name, func(t *testing.T) {
+			home := t.TempDir()
+			ssh := filepath.Join(home, ".ssh")
+			os.MkdirAll(ssh, 0o700)
+			target := filepath.Join(t.TempDir(), "real")
+			os.WriteFile(target, []byte("k"), 0o600)
+			if err := os.Symlink(target, filepath.Join(ssh, name)); err != nil {
+				t.Fatal(err)
+			}
+			if got := LaptopKey(home, "h"); name == "id_ed25519" && got == filepath.Join(ssh, name) {
+				t.Errorf("a symlinked id_ed25519 was chosen as the laptop key")
+			}
+			_, err := newLaptopJob(context.Background(), Options{Home: home, Host: "h", Run: runtest.NewFake()})
+			if err == nil || !strings.Contains(err.Error(), "symlink") {
+				t.Errorf("err %v, want a symlink refusal", err)
+			}
+		})
+	}
+}

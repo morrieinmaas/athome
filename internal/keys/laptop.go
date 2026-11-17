@@ -13,8 +13,15 @@ import (
 
 func newLaptopJob(ctx context.Context, o Options) (*job, error) {
 	key := LaptopKey(o.Home, o.Host)
-	if _, err := os.Stat(key); err != nil {
+	if fi, err := os.Lstat(filepath.Join(o.Home, ".ssh", "id_ed25519")); err == nil && fi.Mode()&os.ModeSymlink != 0 {
+		return nil, fmt.Errorf("%s is a symlink; the laptop key must be a regular file, replace the link with the key itself", filepath.Join(o.Home, ".ssh", "id_ed25519"))
+	}
+	fi, err := os.Lstat(key)
+	if err != nil {
 		return nil, fmt.Errorf("no laptop key at %s; athome init creates one", key)
+	}
+	if !fi.Mode().IsRegular() {
+		return nil, fmt.Errorf("%s is not a regular file; the laptop key must be one, not a symlink", key)
 	}
 	pub, err := os.ReadFile(key + ".pub")
 	if err != nil {

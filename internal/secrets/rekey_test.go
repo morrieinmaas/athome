@@ -30,6 +30,9 @@ type rekeyRig struct {
 	noEncrypt  bool
 	cleanerSh  string
 	exportPath string
+	onCall     func(call string) // runs before each command is handled
+	exportFail bool              // the new key's export-key fails
+	vaultKey   string            // what export-key writes in the old vault
 }
 
 const rekeyDate = "20261117"
@@ -40,7 +43,7 @@ func newRekeyRig(t *testing.T) *rekeyRig {
 	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
 	t.Setenv("GIT_CONFIG_SYSTEM", os.DevNull)
 	root := t.TempDir()
-	g := &rekeyRig{t: t, fake: runtest.NewFake(), stored: map[string]string{}}
+	g := &rekeyRig{t: t, fake: runtest.NewFake(), stored: map[string]string{}, vaultKey: "OLDKEY"}
 	g.home = filepath.Join(root, "home dir")
 	g.vault = filepath.Join(g.home, ".local", "share", "attic")
 	g.fake.Have("git-crypt", "rbw", "gh")
@@ -85,7 +88,11 @@ func (g *rekeyRig) git(dir string, args ...string) {
 }
 
 func (g *rekeyRig) Run(ctx context.Context, c run.Cmd) (run.Result, error) {
-	g.calls = append(g.calls, c.Name+" "+strings.Join(c.Args, " "))
+	call := c.Name + " " + strings.Join(c.Args, " ")
+	g.calls = append(g.calls, call)
+	if g.onCall != nil {
+		g.onCall(call)
+	}
 	switch {
 	case c.Name == "git" && c.Args[0] != "pull":
 		return run.Exec().Run(ctx, c)
@@ -93,8 +100,15 @@ func (g *rekeyRig) Run(ctx context.Context, c run.Cmd) (run.Result, error) {
 		if !g.noEncrypt {
 			g.git(c.Dir, "config", "filter.git-crypt.clean", g.cleanerSh)
 		}
+	case c.Name == "git-crypt" && c.Args[0] == "export-key" && c.Dir == g.vault:
+		if err := os.WriteFile(c.Args[1], []byte(g.vaultKey), 0o600); err != nil {
+			g.t.Fatal(err)
+		}
 	case c.Name == "git-crypt" && c.Args[0] == "export-key":
 		g.exportPath = c.Args[1]
+		if g.exportFail {
+			return run.Result{Code: 1, Stderr: "no key"}, nil
+		}
 		if err := os.WriteFile(c.Args[1], []byte("NEWKEY"), 0o644); err != nil {
 			g.t.Fatal(err)
 		}
@@ -164,6 +178,10 @@ func TestRekeyHappyPath(t *testing.T) {
 		"rbw edit git-crypt/attic-key",
 	}
 	got := g.ordered("git init", "git-crypt", "rbw add", "rbw edit", "gh repo create", "gh repo rename")
+	if len(got) == 0 || !strings.HasPrefix(got[0], "git-crypt export-key ") || !strings.Contains(got[0], "athome-vaultkey-") {
+		t.Fatalf("the old vault's key is checked first: %v", got)
+	}
+	got = got[1:]
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Errorf("calls:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
@@ -574,5 +592,76 @@ func TestRekeyVaultWithTrailingSlash(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(g.vault, ".rekey")); err == nil {
 		t.Error(".rekey was built inside the vault")
+	}
+}
+
+func TestRekeyFailureBeforePublishRemovesRekeyDir(t *testing.T) {
+	for _, c := range []struct {
+		name  string
+		setup func(g *rekeyRig)
+		code  int
+	}{
+		{"step 1: plaintext gate", func(g *rekeyRig) { g.noEncrypt = true }, 2},
+		{"step 2: export-key fails", func(g *rekeyRig) { g.exportFail = true }, 1},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			g := newRekeyRig(t)
+			c.setup(g)
+			if code := secrets.Rekey(context.Background(), g.opts(true, false, "")); code != c.code {
+				t.Fatalf("code %d, stderr %q", code, g.errb.String())
+			}
+			if _, err := os.Stat(g.vault + ".rekey"); err == nil {
+				t.Errorf("%s.rekey left behind with plaintext copies", g.vault)
+			}
+		})
+	}
+}
+
+func TestRekeyNamesRekeyDirItCannotRemove(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root removes anything")
+	}
+	g := newRekeyRig(t)
+	g.exportFail = true
+	parent := filepath.Dir(g.vault)
+	g.onCall = func(call string) {
+		if strings.HasPrefix(call, "git-crypt export-key") && strings.Contains(call, "rekey-") {
+			os.Chmod(parent, 0o500)
+		}
+	}
+	t.Cleanup(func() { os.Chmod(parent, 0o755) })
+	if code := secrets.Rekey(context.Background(), g.opts(true, false, "")); code != 1 {
+		t.Fatalf("code %d", code)
+	}
+	if !strings.Contains(g.errb.String(), "could not remove "+g.vault+".rekey") {
+		t.Errorf("stderr %q does not name the leftover", g.errb.String())
+	}
+}
+
+func TestRekeySavesTheVaultsRealKeyAsOldKey(t *testing.T) {
+	g := newRekeyRig(t)
+	g.vaultKey = "REALKEY" // Bitwarden still holds OLDKEY
+	if code := secrets.Rekey(context.Background(), g.opts(true, false, "")); code != 0 {
+		t.Fatalf("code %d, stderr %q", code, g.errb.String())
+	}
+	if got, want := g.stored["git-crypt/attic-old-"+rekeyDate+"-key"], base64.StdEncoding.EncodeToString([]byte("REALKEY"))+"\n\n"; got != want {
+		t.Errorf("old key stored %q, want %q", got, want)
+	}
+	if !strings.Contains(g.errb.String(), "not the key this vault uses") {
+		t.Errorf("no mismatch warning: %q", g.errb.String())
+	}
+}
+
+func TestRekeyRefusesWhenVaultKeyCannotBeExported(t *testing.T) {
+	g := newRekeyRig(t)
+	g.vaultKey = ""
+	if code := secrets.Rekey(context.Background(), g.opts(true, false, "")); code != 1 {
+		t.Fatalf("code %d", code)
+	}
+	if len(g.mutating()) != 0 {
+		t.Errorf("changed things: %v", g.mutating())
+	}
+	if _, err := os.Stat(g.vault + ".rekey"); err == nil {
+		t.Errorf(".rekey was created")
 	}
 }

@@ -275,6 +275,15 @@ needs the vault unlocked, clean and up to date, and rbw unlocked. Once you have 
 new vault, delete the old repo and key yourself; athome prints the commands
 (`gh repo delete ...`, `rbw remove ...`) and never runs them.
 
+Before it changes anything, `rekey` exports the key the old vault actually uses and compares it
+with `git-crypt/<name>-key` in Bitwarden. If Bitwarden's copy differs, it warns and saves the
+vault's own key as the old key. A failure while building the new checkout removes
+`<vault>.rekey` (it holds plaintext copies), naming the path if it cannot.
+
+`rekey` and `backup` share an exclusive lock, `~/.local/state/athome/secrets.lock`, held for
+the whole run. If another one holds it, the second exits 1 with "another secrets run is in
+progress"; wait, then re-run.
+
 ### Accepted risk: one GitHub account
 
 A key registered on your GitHub account reaches every repo that account can push to. A

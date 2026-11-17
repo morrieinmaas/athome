@@ -168,6 +168,11 @@ func copyFile(src, dst string, perm os.FileMode) error {
 // Backup mirrors the secret files into the vault, commits and pushes. It
 // returns the process exit code.
 func Backup(ctx context.Context, o Opts) int {
+	unlock, ok := o.acquire()
+	if !ok {
+		return exitError
+	}
+	defer unlock()
 	if fi, err := os.Stat(filepath.Join(o.Vault, ".git")); err != nil || !fi.IsDir() {
 		o.errf("vault not found at %s; run 'athome secrets restore' to clone it first\n", o.Vault)
 		return exitError

@@ -45,6 +45,7 @@ func newRekeyRig(t *testing.T) *rekeyRig {
 	g.fake.Have("git-crypt", "rbw", "gh")
 	g.fake.On("gh", "repo", "view", "alice/attic-old-"+rekeyDate).Return(run.Result{Code: 1})
 	g.fake.On("rbw", "get", "git-crypt/attic-key").Return(run.Result{Stdout: base64.StdEncoding.EncodeToString([]byte("OLDKEY")) + "\n"})
+	g.fake.On("rbw", "list").Return(run.Result{Stdout: "git-crypt/attic-key\n"}) // a real vault has its key item
 	g.cleanerSh = filepath.Join(root, "clean.sh")
 	if err := os.WriteFile(g.cleanerSh, []byte("#!/bin/sh\nprintf '\\000GITCRYPT\\000'\ncat\n"), 0o755); err != nil {
 		t.Fatal(err)
@@ -159,7 +160,7 @@ func TestRekeyHappyPath(t *testing.T) {
 		"rbw add git-crypt/attic-old-" + rekeyDate + "-key",
 		"gh repo rename attic-old-" + rekeyDate + " --repo alice/attic --yes",
 		"gh repo create alice/attic --private --source " + rk + " --remote origin --push",
-		"rbw add git-crypt/attic-key",
+		"rbw edit git-crypt/attic-key",
 	}
 	got := g.ordered("git init", "git-crypt", "rbw add", "rbw edit", "gh repo create", "gh repo rename")
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
@@ -477,7 +478,7 @@ type vanishRekey struct{ *rekeyRig }
 
 func (v *vanishRekey) Run(ctx context.Context, c run.Cmd) (run.Result, error) {
 	r, err := v.rekeyRig.Run(ctx, c)
-	if c.Name == "rbw" && c.Args[0] == "add" && c.Args[1] == "git-crypt/attic-key" {
+	if c.Name == "rbw" && (c.Args[0] == "add" || c.Args[0] == "edit") && c.Args[1] == "git-crypt/attic-key" {
 		os.RemoveAll(v.vault + ".rekey")
 	}
 	return r, err

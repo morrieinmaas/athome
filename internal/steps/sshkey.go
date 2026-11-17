@@ -404,8 +404,14 @@ func skBWBackup(ctx context.Context, env *Env) error {
 	key := skKeyPath(ctx, env)
 	item := "ssh/" + filepath.Base(key)
 	if _, err := env.Run.LookPath("rbw"); err == nil {
-		if skStoreInRBW(ctx, env, key, item) {
+		err := skStoreInRBW(ctx, env, key, item)
+		if err == nil {
 			envLogln(env, "stored in Bitwarden: %s", item)
+			return nil
+		}
+		if !errors.Is(err, keys.ErrLocked) {
+			// An `rbw add` hint here could make the duplicate item Store refuses.
+			envLogln(env, "could not store %s in Bitwarden: %v", item, err)
 			return nil
 		}
 	}
@@ -413,14 +419,10 @@ func skBWBackup(ctx context.Context, env *Env) error {
 	return nil
 }
 
-func skStoreInRBW(ctx context.Context, env *Env, key, item string) bool {
+func skStoreInRBW(ctx context.Context, env *Env, key, item string) error {
 	priv, err := os.ReadFile(key)
 	if err != nil {
-		return false
+		return err
 	}
-	err = keys.Store(ctx, env.Run, item, keys.SSHKeyPassword, strings.TrimRight(string(priv), "\n"))
-	if err != nil && !errors.Is(err, keys.ErrLocked) {
-		envLogln(env, "could not store %s in Bitwarden: %v", item, err)
-	}
-	return err == nil
+	return keys.Store(ctx, env.Run, item, keys.SSHKeyPassword, strings.TrimRight(string(priv), "\n"))
 }

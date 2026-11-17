@@ -326,18 +326,26 @@ func (o RekeyOpts) exportKey(ctx context.Context, rk, keyFile string) ([]byte, i
 		o.errf("%v\n", err)
 		return nil, exitError
 	}
-	os.Remove(keyFile)
-	r, err := o.Run.Run(ctx, run.Cmd{Name: "git-crypt", Args: []string{"export-key", keyFile}, Dir: rk})
-	if err != nil || r.Code != 0 {
-		o.errf("git-crypt export-key failed\n%s", r.Stderr)
+	if err := os.Chmod(filepath.Dir(keyFile), 0o700); err != nil {
+		o.errf("%v\n", err)
 		return nil, exitError
 	}
-	if err := os.Chmod(keyFile, 0o600); err != nil {
+	// Created 0600 first: git-crypt truncates an existing file and keeps its mode,
+	// so the key is never readable by others, whatever the umask.
+	os.Remove(keyFile)
+	if err := os.WriteFile(keyFile, nil, 0o600); err != nil {
 		o.errf("%v\n", err)
+		return nil, exitError
+	}
+	r, err := o.Run.Run(ctx, run.Cmd{Name: "git-crypt", Args: []string{"export-key", keyFile}, Dir: rk})
+	if err != nil || r.Code != 0 {
+		os.Remove(keyFile)
+		o.errf("git-crypt export-key failed\n%s", r.Stderr)
 		return nil, exitError
 	}
 	key, err := os.ReadFile(keyFile)
 	if err != nil || len(key) == 0 {
+		os.Remove(keyFile)
 		o.errf("git-crypt export-key wrote no key to %s\n", keyFile)
 		return nil, exitError
 	}

@@ -185,8 +185,19 @@ func runBreakGlass(ctx context.Context, o Options, j *job, boxes []Box, save fun
 }
 
 // managedSet is what a box's authorized_keys holds: the laptop key and its
-// scope's break-glass key, when it has one.
-func managedSet(ctx context.Context, o Options, laptop, scope string) ([]string, error) {
+// scope's break-glass key, when it has one. A pending break-glass job that has
+// already put its new key on this box wins over the item, which still holds the
+// old key until every box in the scope has the new one.
+func managedSet(ctx context.Context, o Options, laptop string, b Box, jobs []*job) ([]string, error) {
+	for _, j := range jobs {
+		if j.Kind != kindBreakGlass || j.Scope != b.Scope() {
+			continue
+		}
+		if p := j.Targets[boxTarget(b)]; p == phaseChecked || p == phaseRemoved {
+			return []string{laptop, j.NewPub}, nil
+		}
+	}
+	scope := b.Scope()
 	bg, err := BreakGlassPub(ctx, o.Run, scope)
 	if errors.Is(err, ErrNoItem) {
 		return []string{laptop}, nil

@@ -19,6 +19,8 @@ const jqIDKey = `.[] | "\(.id) \(.key)"`
 type fakeBox struct {
 	name, scope string
 	down        bool
+	failOnce    bool
+	reject      string // Authorize fails for a key whose line contains this
 	authorized  []string
 	log         *[]string
 }
@@ -27,6 +29,13 @@ func (b *fakeBox) Name() string  { return b.name }
 func (b *fakeBox) Scope() string { return b.scope }
 func (b *fakeBox) note(s string) { *b.log = append(*b.log, b.name+" "+s) }
 func (b *fakeBox) Authorize(_ context.Context, pub string) error {
+	if b.reject != "" && strings.Contains(pub, b.reject) {
+		return errors.New("rejected")
+	}
+	if b.failOnce {
+		b.failOnce = false
+		return errors.New("flaky")
+	}
 	if b.down {
 		return errors.New("unreachable")
 	}
@@ -579,6 +588,9 @@ func TestResumeAfterCrashInsideSwap(t *testing.T) {
 	if !exists(key+".pub") || exists(key+".rotate.pub") {
 		t.Error("swap not finished")
 	}
+	if n := strings.Count(strings.Join(cmdLines(f, o.Home), "\n"), "chezmoi apply"); n != 2 {
+		t.Errorf("allowed_signers re-rendered %d times, want 2 (the run and the finished swap)", n)
+	}
 	if st, _ := loadState(o.Home); len(st.Jobs) != 0 {
 		t.Errorf("job left: %+v", st.Jobs)
 	}
@@ -616,4 +628,49 @@ func (n *noChezmoi) LookPath(name string) (string, error) {
 		return "", errors.New("not found")
 	}
 	return n.fakeBW.LookPath(name)
+}
+
+func TestResumeLaptopResetKeepsNewBreakGlass(t *testing.T) {
+	o, f, _ := rotateHome(t)
+	if _, err := NewBreakGlass(context.Background(), f, "work/acme"); err != nil {
+		t.Fatal(err)
+	}
+	var log []string
+	b1 := &fakeBox{name: "b1", scope: "work/acme", failOnce: true, log: &log}
+	b2 := &fakeBox{name: "b2", scope: "work/acme", down: true, log: &log}
+	withInventory(t, b1, b2)
+	Rotate(context.Background(), o, Kinds{Laptop: true, BreakGlass: true})
+	st, _ := loadState(o.Home)
+	var bgNew string
+	for _, j := range st.Jobs {
+		if j.Kind == kindBreakGlass {
+			bgNew = j.NewPub
+		}
+	}
+	if bgNew == "" || st.LastRotated != "" {
+		t.Fatalf("state = %+v", st)
+	}
+	if err := Resume(context.Background(), o); err == nil {
+		t.Fatal("b2 is still down")
+	}
+	found := false
+	for _, k := range b1.authorized {
+		found = found || pubBlob(k) == pubBlob(bgNew)
+	}
+	if !found {
+		t.Errorf("laptop reset dropped the new break-glass key from b1: %v", b1.authorized)
+	}
+}
+
+func TestLastRotatedSetWhenLaptopDoneDespiteSkippedBreakGlass(t *testing.T) {
+	o, _, _ := rotateHome(t)
+	var log []string
+	// The box takes the laptop key but refuses the break-glass key, so only the laptop job finishes.
+	withInventory(t, &fakeBox{name: "b", scope: "work/acme", reject: "break-glass", log: &log})
+	if err := Rotate(context.Background(), o, Kinds{Laptop: true, BreakGlass: true}); err == nil {
+		t.Fatal("want the break-glass job incomplete")
+	}
+	if st, _ := loadState(o.Home); st.LastRotated == "" {
+		t.Error("last_rotated not set after the laptop rotation")
+	}
 }

@@ -29,7 +29,7 @@ func newLaptopJob(ctx context.Context, o Options) (*job, error) {
 
 // runLaptop rotates the laptop key: generate, store, add everywhere, check
 // everywhere, and only then swap the files and remove the old key.
-func runLaptop(ctx context.Context, o Options, j *job, boxes []Box, save func() error) error {
+func runLaptop(ctx context.Context, o Options, j *job, boxes []Box, jobs []*job, save func() error) error {
 	newKey, err := laptopNewKey(ctx, o, j, save)
 	if err != nil {
 		return err
@@ -44,7 +44,7 @@ func runLaptop(ctx context.Context, o Options, j *job, boxes []Box, save func() 
 	if err := laptopInstall(ctx, o, j, save); err != nil {
 		return err
 	}
-	if err := laptopRemoveOld(ctx, o, j, bs, save); err != nil {
+	if err := laptopRemoveOld(ctx, o, j, bs, jobs, save); err != nil {
 		return err
 	}
 	if len(skippedOf(j)) == 0 {
@@ -80,6 +80,10 @@ func laptopNewKey(ctx context.Context, o Options, j *job, save func() error) (st
 				return "", err
 			}
 		}
+		if err := os.Chmod(j.Key, 0o600); err != nil {
+			return "", err
+		}
+		reapplySigners(ctx, o)
 		j.Installed = true
 	}
 	newKey := staged
@@ -168,7 +172,7 @@ func laptopInstall(ctx context.Context, o Options, j *job, save func() error) er
 	return nil
 }
 
-func laptopRemoveOld(ctx context.Context, o Options, j *job, bs []Box, save func() error) error {
+func laptopRemoveOld(ctx context.Context, o Options, j *job, bs []Box, jobs []*job, save func() error) error {
 	if j.Targets["github"] == phaseChecked {
 		o.say("==> laptop key: removing the old key from GitHub")
 		if err := ghRemove(ctx, o.Run, j.OldPub); err != nil {
@@ -180,7 +184,7 @@ func laptopRemoveOld(ctx context.Context, o Options, j *job, bs []Box, save func
 		}
 	}
 	boxStep(o, j, bs, []string{phaseChecked}, phaseRemoved, func(b Box) error {
-		managed, err := managedSet(ctx, o, j.NewPub, b.Scope())
+		managed, err := managedSet(ctx, o, j.NewPub, b, jobs)
 		if err != nil {
 			return err
 		}

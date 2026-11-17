@@ -132,6 +132,10 @@ func scopesOf(boxes []Box) []string {
 // runJobs runs every job in order, saving after each step. Done jobs are
 // dropped; a job with skipped boxes stays for --resume.
 func runJobs(ctx context.Context, o Options, st *state, boxes []Box) error {
+	now := time.Now
+	if o.Now != nil {
+		now = o.Now
+	}
 	var skipped []string
 	var left []*job
 	for _, j := range st.Jobs {
@@ -142,16 +146,18 @@ func runJobs(ctx context.Context, o Options, st *state, boxes []Box) error {
 		var err error
 		switch j.Kind {
 		case kindLaptop:
-			err = runLaptop(ctx, o, j, boxes, save)
+			err = runLaptop(ctx, o, j, boxes, st.Jobs, save)
 		case kindBreakGlass:
 			err = runBreakGlass(ctx, o, j, boxes, save)
 		default:
 			err = fmt.Errorf("unknown job kind %q in %s", j.Kind, StatePath(o.Home))
 		}
+		if j.Kind == kindLaptop && jobDone(j) {
+			st.LastRotated = now().UTC().Format(time.RFC3339)
+		}
 		if err != nil {
 			st.dropDone()
-			st.save(o.Home)
-			return err
+			return errors.Join(err, st.save(o.Home))
 		}
 		if s := skippedOf(j); len(s) > 0 {
 			skipped = append(skipped, s...)
@@ -159,13 +165,6 @@ func runJobs(ctx context.Context, o Options, st *state, boxes []Box) error {
 		}
 	}
 	st.Jobs = left
-	if len(left) == 0 {
-		now := time.Now
-		if o.Now != nil {
-			now = o.Now
-		}
-		st.LastRotated = now().UTC().Format(time.RFC3339)
-	}
 	if err := st.save(o.Home); err != nil {
 		return err
 	}

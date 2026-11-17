@@ -148,7 +148,7 @@ func runJobs(ctx context.Context, o Options, st *state, boxes []Box) error {
 		case kindLaptop:
 			err = runLaptop(ctx, o, j, boxes, st.Jobs, save)
 		case kindBreakGlass:
-			err = runBreakGlass(ctx, o, j, boxes, save)
+			err = runBreakGlass(ctx, o, j, boxes, st.Jobs, save)
 		default:
 			err = fmt.Errorf("unknown job kind %q in %s", j.Kind, StatePath(o.Home))
 		}

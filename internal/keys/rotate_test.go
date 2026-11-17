@@ -20,6 +20,7 @@ type fakeBox struct {
 	name, scope string
 	down        bool
 	failOnce    bool
+	loginFail   int    // Login fails this many times first
 	reject      string // Authorize fails for a key whose line contains this
 	authorized  []string
 	log         *[]string
@@ -44,6 +45,10 @@ func (b *fakeBox) Authorize(_ context.Context, pub string) error {
 	return nil
 }
 func (b *fakeBox) Login(_ context.Context, key string) error {
+	if b.loginFail > 0 {
+		b.loginFail--
+		return errors.New("login refused")
+	}
 	if b.down {
 		return errors.New("unreachable")
 	}
@@ -672,5 +677,33 @@ func TestLastRotatedSetWhenLaptopDoneDespiteSkippedBreakGlass(t *testing.T) {
 	}
 	if st, _ := loadState(o.Home); st.LastRotated == "" {
 		t.Error("last_rotated not set after the laptop rotation")
+	}
+}
+
+func TestBreakGlassResetKeepsUnfinishedLaptopKey(t *testing.T) {
+	o, _, key := rotateHome(t)
+	oldLaptop := readPub(t, key+".pub")
+	var log []string
+	b := &fakeBox{name: "b", scope: "work/acme", loginFail: 1, log: &log}
+	withInventory(t, b)
+	if err := Rotate(context.Background(), o, Kinds{Laptop: true, BreakGlass: true}); err == nil {
+		t.Fatal("the laptop job should skip b")
+	}
+	found := false
+	for _, k := range b.authorized {
+		found = found || pubBlob(k) == pubBlob(oldLaptop)
+	}
+	if !found {
+		t.Errorf("break-glass reset dropped the old laptop key before the new one logged in: %v", b.authorized)
+	}
+}
+
+func TestManagedSetKeepsAddedBreakGlass(t *testing.T) {
+	o, _, _ := rotateHome(t)
+	b := &fakeBox{name: "b", scope: "work/acme"}
+	jobs := []*job{{Kind: kindBreakGlass, Scope: "work/acme", NewPub: "ssh-ed25519 NEWBG x", Targets: map[string]string{"box:b": phaseAdded}}}
+	got, err := managedSet(context.Background(), o, "ssh-ed25519 LAPTOP x", b, jobs)
+	if err != nil || len(got) != 2 || got[1] != "ssh-ed25519 NEWBG x" {
+		t.Errorf("managedSet = %v, %v", got, err)
 	}
 }

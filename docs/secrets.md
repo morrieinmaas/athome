@@ -215,6 +215,8 @@ check a login with only the new key, and only then remove the old key everywhere
 which also drops any key someone else added. An unreachable box is skipped and listed; it
 keeps the old key, and so does the laptop (as `<key>.old`) until `--resume` reaches it.
 Progress is in `~/.local/state/athome/rotate.json`.
+A machine that shares the key (restored with `--import-ssh-bw`) loses GitHub access when the
+key is rotated; restore the new key there with `--import-ssh-bw` again.
 The new key waits in Bitwarden as `<item>.rotate` until it works everywhere it must (GitHub
 for the laptop key, every box in the scope for a break-glass key), so the item under the real
 name always holds a key that logs in. A locked rbw stops the run before anything changes.
@@ -236,7 +238,9 @@ On the replacement laptop:
    asks which one; pass `--import-ssh-bw <item>` to choose up front.
 4. `athome secrets restore` brings back the vault and every `.env`. The rest of `init` runs
    as usual.
-5. `athome keys rotate --laptop` cuts off the old laptop's copy of the key.
+5. `athome keys rotate --laptop` cuts off the old laptop's copy of the key. The new key is stored as
+   `ssh/<new-host>_ed25519`; then run `rbw remove ssh/<old-host>_ed25519`, so the revoked key is
+   not offered at the next `--restore`.
 
 **If the laptop was taken unlocked,** whoever had it could reach everything rbw could while
 it was unlocked. Also:

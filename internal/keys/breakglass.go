@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/morrieinmaas/athome/internal/run"
@@ -124,7 +125,7 @@ func itemReadError(ctx context.Context, r run.Runner, item string, got run.Resul
 // runBreakGlass rotates one scope's break-glass key. The new key waits under
 // the staging item until every box in the scope has it, so a skipped box stays
 // reachable with the key under the real name.
-func runBreakGlass(ctx context.Context, o Options, j *job, boxes []Box, save func() error) error {
+func runBreakGlass(ctx context.Context, o Options, j *job, boxes []Box, jobs []*job, save func() error) error {
 	staging := stagingItem(j.Item)
 	if j.NewPub == "" {
 		o.say("==> break-glass key for %s: generating and storing %s", j.Scope, staging)
@@ -159,7 +160,7 @@ func runBreakGlass(ctx context.Context, o Options, j *job, boxes []Box, save fun
 		return err
 	}
 	boxStep(o, j, bs, []string{phaseChecked}, phaseRemoved, func(b Box) error {
-		return b.Reset(ctx, []string{laptop, j.NewPub})
+		return b.Reset(ctx, append(laptopKeys(laptop, b, jobs), j.NewPub))
 	})
 	if err := save(); err != nil {
 		return err
@@ -193,7 +194,7 @@ func managedSet(ctx context.Context, o Options, laptop string, b Box, jobs []*jo
 		if j.Kind != kindBreakGlass || j.Scope != b.Scope() {
 			continue
 		}
-		if p := j.Targets[boxTarget(b)]; p == phaseChecked || p == phaseRemoved {
+		if p := j.Targets[boxTarget(b)]; p == phaseAdded || p == phaseChecked || p == phaseRemoved {
 			return []string{laptop, j.NewPub}, nil
 		}
 	}
@@ -225,4 +226,22 @@ func anyAt(j *job, phase string) bool {
 		}
 	}
 	return false
+}
+
+// laptopKeys is the laptop part of a break-glass reset. While a laptop rotation
+// has not yet finished on this box, both its old and new keys stay, so the
+// reset never removes the laptop key that still logs in.
+func laptopKeys(current string, b Box, jobs []*job) []string {
+	keys := []string{current}
+	for _, j := range jobs {
+		if j.Kind != kindLaptop || j.Targets[boxTarget(b)] == phaseRemoved {
+			continue
+		}
+		for _, k := range []string{j.OldPub, j.NewPub} {
+			if k != "" && !slices.ContainsFunc(keys, func(x string) bool { return pubBlob(x) == pubBlob(k) }) {
+				keys = append(keys, k)
+			}
+		}
+	}
+	return keys
 }

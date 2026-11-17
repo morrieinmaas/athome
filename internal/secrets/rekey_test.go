@@ -36,6 +36,7 @@ const rekeyDate = "20261117"
 
 func newRekeyRig(t *testing.T) *rekeyRig {
 	t.Helper()
+	t.Setenv("TMPDIR", t.TempDir())
 	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
 	t.Setenv("GIT_CONFIG_SYSTEM", os.DevNull)
 	root := t.TempDir()

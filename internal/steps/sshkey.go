@@ -415,7 +415,7 @@ func skBWBackup(ctx context.Context, env *Env) error {
 			return nil
 		}
 	}
-	envLogln(env, "back up this machine's SSH key to Bitwarden (recommended): once rbw is unlocked run\n    rbw add '%s'   # line 1: ssh-key-backup, line 2+: paste %s\nRestore it elsewhere with: --import-ssh-bw %s", item, filepath.Base(key), item)
+	envLogln(env, "back up this machine's SSH key to Bitwarden (recommended): once rbw is unlocked run\n    rbw add '%s'   # or rbw edit if it already exists; line 1: ssh-key-backup, line 2+: paste %s\nRestore it elsewhere with: --import-ssh-bw %s", item, filepath.Base(key), item)
 	return nil
 }
 

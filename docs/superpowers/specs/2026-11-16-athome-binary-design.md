@@ -444,12 +444,12 @@ Decisions:
 - **grofe installs from its release.** `run_onchange_17` keeps `ATHOME_GROFE_BIN` first,
   then downloads
   `https://github.com/termage/grofe/releases/download/<pin>/grofe-<pin>-<target>.tar.gz`
-  and `SHA256SUMS` from the same release, targets `x86_64-unknown-linux-musl`,
+  and its `<tarball>.sha256` beside it (the pin is the tag, e.g. `v0.3.1`), targets `x86_64-unknown-linux-musl`,
   `aarch64-unknown-linux-musl`, `x86_64-apple-darwin`, `aarch64-apple-darwin`, checks the
   sha256 (`sha256sum`, else `shasum -a 256`), and installs `grofe-<pin>-<target>/grofe`.
   The cargo build goes. A download that fails prints
   `grofe: cannot download <url>, so grofe is not installed; tmux stays tmux` and exits 0, as
-  an unreachable repo does today; a checksum mismatch or a missing `SHA256SUMS` line exits 1.
+  an unreachable repo does today; a checksum mismatch or a missing `.sha256` file exits 1.
 - **`athome update [--to <version>] [--yes|-y]`** first resolves the target, so the step
   checks only read: `git -C <repo> fetch --quiet --tags --force origin`, then `--to`, else
   the highest local `vX.Y.Z` tag. A failed fetch exits 1 before any step. It then runs
@@ -680,7 +680,7 @@ Test list (unit unless marked):
 - grofe install script (bats, `test/install-grofe.bats`, release served from a `file://`
   base through a `GROFE_RELEASE_BASE` override, rendered with a fake home): a good
   tarball installs `~/.local/lib/grofe/grofe` and the `bin/tmux` link; a wrong
-  `SHA256SUMS` line exits 1 with nothing installed; a missing tarball exits 0 with the
+  `.sha256` file exits 1 with nothing installed; a missing tarball exits 0 with the
   `tmux stays tmux` note; `ATHOME_GROFE_BIN` wins over the download.
 - installer (bats, `test/bootstrap.bats`): the fallback test becomes a missing asset
   exiting 1 naming the tag and URL with no legacy script run, with and without

@@ -2,6 +2,7 @@ package prompt
 
 import (
 	"bytes"
+	"io"
 	"strings"
 	"testing"
 )
@@ -100,5 +101,50 @@ func TestSayWritesToTheAskersOutput(t *testing.T) {
 	a.Say("menu %s\n", "line")
 	if got := out.String(); got != "menu line\n" {
 		t.Fatalf("Say wrote %q", got)
+	}
+}
+
+// Closing Done during a blocked read calls OnCancel; Confirm must not fall back
+// to its default.
+func TestCancelAtPrompt(t *testing.T) {
+	pr, pw := io.Pipe()
+	defer pw.Close()
+	var out bytes.Buffer
+	a := New(pr, &out)
+	done := make(chan struct{})
+	called := make(chan struct{})
+	a.Done = done
+	a.OnCancel = func() {
+		close(called)
+		panic("exit")
+	}
+	returned := make(chan bool, 1)
+	go func() {
+		defer func() { recover() }()
+		returned <- a.Confirm("go?", true)
+	}()
+	close(done)
+	select {
+	case <-called:
+	case got := <-returned:
+		t.Fatalf("Confirm returned %v without calling OnCancel", got)
+	}
+	select {
+	case got := <-returned:
+		t.Errorf("Confirm returned %v after cancel, want it not to return", got)
+	default:
+	}
+}
+
+// A Done that is already closed cancels before any input is read.
+func TestCancelBeforePrompt(t *testing.T) {
+	a, _ := ask("y\n")
+	done := make(chan struct{})
+	close(done)
+	a.Done = done
+	cancelled := false
+	a.OnCancel = func() { cancelled = true }
+	if _, ok := a.line("q "); ok || !cancelled {
+		t.Errorf("ok=%v cancelled=%v, want a cancelled read", ok, cancelled)
 	}
 }

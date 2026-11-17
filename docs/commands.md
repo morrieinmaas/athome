@@ -34,4 +34,4 @@ pinned in `~/.config/chezmoi/chezmoi.toml`, or `~/.local/share/chezmoi`.
 
 ## athome version
 
-Prints the version and commit, e.g. `athome 0.4.0 (abc1234)`.
+Prints the version and commit, e.g. `athome 0.5.0 (abc1234)`.

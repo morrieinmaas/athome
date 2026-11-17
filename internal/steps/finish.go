@@ -11,7 +11,7 @@ import (
 	"github.com/morrieinmaas/athome/internal/run"
 )
 
-// Finish ports the tail of bootstrap.sh (B:951-1048): sourceDir pin, repo git
+// Finish ports the tail of bootstrap-legacy.sh (B:951-1048): sourceDir pin, repo git
 // hooks, local secrets home, secrets restore and the detached-HEAD recovery.
 // Bitwarden setup (bw-setup) runs only with env.Ask set, never without a terminal.
 func Finish() []Step {

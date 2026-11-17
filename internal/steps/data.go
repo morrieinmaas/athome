@@ -13,7 +13,7 @@ import (
 	"github.com/morrieinmaas/athome/internal/run"
 )
 
-// dataKeys are the string keys of chezmoi's [data], in the order bootstrap.sh
+// dataKeys are the string keys of chezmoi's [data], in the order bootstrap-legacy.sh
 // writes them (B:880-898), between hostname/githubId and includeAgents.
 var dataKeysAfterIdentity = []string{
 	"personalName", "workEmail", "workName", "sidebizEmail", "sidebizName",
@@ -71,7 +71,7 @@ func Data() []Step {
 	}}
 }
 
-// dataPrompt asks for the values bootstrap.sh prompts for (B:837, B:855-861) when
+// dataPrompt asks for the values bootstrap-legacy.sh prompts for (B:837, B:855-861) when
 // env.Ask is set and the value is neither preset nor already stored. Answers go
 // into env.Cfg.Data, where an env or config value would be. It reports whether
 // anything was set, so the entries must be rebuilt. Only Apply calls it: a check
@@ -174,7 +174,7 @@ func writeData(env *Env, entries []dataEntry) error {
 	return nil
 }
 
-// tomlStr escapes a value for a TOML basic string. bootstrap.sh escapes only
+// tomlStr escapes a value for a TOML basic string. bootstrap-legacy.sh escapes only
 // backslash and quote (B:877); control characters are added so the file always parses.
 func tomlStr(s string) string {
 	var b strings.Builder

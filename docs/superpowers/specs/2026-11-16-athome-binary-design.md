@@ -285,6 +285,9 @@ Decisions:
   naming it. The fallback is for one
   release only: tags v0.4.0 to v0.4.3 have no athome assets, so a fresh clone would
   otherwise fail. It goes when `bootstrap-legacy.sh` is deleted (migration step 4).
+- `ATHOME_REPO` names the repo to apply instead of searching from the working directory; a
+  relative value is made absolute. `--install-from=PATH` is accepted as well as
+  `--install-from PATH`.
 - Base URL: `ATHOME_RELEASE_BASE`, default
   `https://github.com/morrieinmaas/athome/releases/download`. Assets are
   `<base>/<tag>/athome_<os>_<arch>` and `<base>/<tag>/checksums.txt`, os `darwin|linux`,

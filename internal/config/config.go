@@ -1,4 +1,4 @@
-// Package config loads the non-interactive answers, porting scripts/bootstrap.sh B:169-234.
+// Package config loads the non-interactive answers, porting scripts/bootstrap-legacy.sh B:169-234.
 package config
 
 import (

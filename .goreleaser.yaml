@@ -13,7 +13,7 @@ builds:
     ldflags:
       - -s -w
       - -X github.com/morrieinmaas/athome/internal/cli.Version={{.Version}}
-      - -X github.com/morrieinmaas/athome/internal/cli.Commit={{.Commit}}
+      - -X github.com/morrieinmaas/athome/internal/cli.Commit={{.ShortCommit}}
 
 archives:
   - formats: [binary]

@@ -64,10 +64,10 @@ cleanup() { [ -z "$tmp" ] || rm -rf "$tmp"; }
 trap cleanup EXIT
 
 install_file() {
-  mkdir -p "$dest_dir"
   local part="$dest_dir/.athome.$$"
+  mkdir -p "$dest_dir" || die "cannot create $dest_dir"
   cp "$1" "$part" || { rm -f "$part"; die "cannot write $part"; }
-  chmod 0755 "$part"
+  chmod 0755 "$part" || { rm -f "$part"; die "cannot make $part executable"; }
   mv -f "$part" "$dest" || { rm -f "$part"; die "cannot install $dest"; }
 }
 

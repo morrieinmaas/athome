@@ -1,10 +1,16 @@
 package cli
 
 import (
+	"bytes"
+	"context"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/morrieinmaas/athome/internal/prompt"
+	"github.com/morrieinmaas/athome/internal/steps"
 )
 
 func TestIsInteractive(t *testing.T) {
@@ -72,5 +78,56 @@ func TestIsTerminalFalseForDevNull(t *testing.T) {
 	defer f.Close()
 	if isTerminal(f) {
 		t.Error("/dev/null must not count as a terminal")
+	}
+}
+
+type exited int
+
+// Ctrl-C at an open prompt cleans up and exits 130; it does not take the default.
+func TestCancelAtPromptExits130(t *testing.T) {
+	var code int
+	old := exit
+	exit = func(c int) { code = c; panic(exited(c)) }
+	t.Cleanup(func() { exit = old })
+
+	pr, pw := io.Pipe()
+	defer pw.Close()
+	var errOut bytes.Buffer
+	cleaned := false
+	env := &steps.Env{Ask: prompt.New(pr, &errOut), Cleanup: []func(){func() { cleaned = true }}}
+	ctx, cancel := context.WithCancel(context.Background())
+	bindCancel(ctx, env, &errOut)
+
+	got := make(chan any, 1)
+	go func() {
+		defer func() { got <- recover() }()
+		env.Ask.Confirm("go?", true)
+	}()
+	cancel()
+	if r := <-got; r != exited(exitInterrupted) {
+		t.Fatalf("Confirm ended with %v, want exit(130)", r)
+	}
+	if code != 130 || !cleaned || !strings.Contains(errOut.String(), "athome: interrupted") {
+		t.Errorf("code=%d cleaned=%v stderr=%q", code, cleaned, errOut.String())
+	}
+}
+
+// A relative ATHOME_REPO is made absolute.
+func TestFindRepoRootAbsolutizesAthomeRepo(t *testing.T) {
+	parent := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(parent, "repo"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(parent, "repo", ".chezmoiroot"), []byte("home\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(parent)
+	t.Setenv("ATHOME_REPO", "repo")
+	got, err := findRepoRoot(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !filepath.IsAbs(got) || filepath.Base(got) != "repo" {
+		t.Errorf("findRepoRoot = %q, want an absolute path ending in repo", got)
 	}
 }

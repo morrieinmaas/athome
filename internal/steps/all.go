@@ -1,6 +1,6 @@
 package steps
 
-// All is the full init list in bash order (bootstrap.sh).
+// All is the full init list in bash order (bootstrap-legacy.sh).
 func All() []Step {
 	var all []Step
 	for _, g := range [][]Step{Prepare(), SSHKey(), GitHub(), Data(), Baseline(), Finish()} {

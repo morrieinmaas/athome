@@ -226,6 +226,7 @@ func runInitEnv(env *steps.Env, stdout, stderr io.Writer) int {
 	defer env.RunCleanup()
 	ctx, stop := signal.NotifyContext(context.Background(), stopSignals...)
 	defer stop()
+	bindCancel(ctx, env, stderr)
 	if err := steps.Setup(ctx, env); err != nil {
 		fmt.Fprintf(stderr, "athome init: %v\n", err)
 		return exitError
@@ -237,6 +238,26 @@ func runInitEnv(env *steps.Env, stdout, stderr io.Writer) int {
 	}
 	printFinish(stdout, rep, env.Warnings, steps.FollowupLogPath())
 	return exitOK
+}
+
+// exit ends the process; tests replace it.
+var exit = os.Exit
+
+// exitInterrupted is the status bash gives a run ended by Ctrl-C (128 + SIGINT).
+const exitInterrupted = 130
+
+// bindCancel makes a signal at an open prompt abort the run like bash, instead of
+// taking the prompt's default: it cleans up and exits 130.
+func bindCancel(ctx context.Context, env *steps.Env, stderr io.Writer) {
+	if env.Ask == nil {
+		return
+	}
+	env.Ask.Done = ctx.Done()
+	env.Ask.OnCancel = func() {
+		fmt.Fprint(stderr, "\nathome: interrupted\n")
+		env.RunCleanup()
+		exit(exitInterrupted)
+	}
 }
 
 // buildOptions turns the parsed flags into the config and step options.
@@ -346,6 +367,10 @@ func printSummary(w io.Writer, rep steps.Report) {
 // chezmoi's own clone at ~/.local/share/chezmoi.
 func findRepoRoot(home string) (string, error) {
 	if repo := os.Getenv("ATHOME_REPO"); repo != "" {
+		repo, err := filepath.Abs(repo)
+		if err != nil {
+			return "", err
+		}
 		if _, err := os.Stat(filepath.Join(repo, ".chezmoiroot")); err != nil {
 			return "", fmt.Errorf("ATHOME_REPO=%s is not an athome repo: no .chezmoiroot there", repo)
 		}

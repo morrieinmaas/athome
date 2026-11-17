@@ -100,10 +100,18 @@ func selfApply(ctx context.Context, env *Env) error {
 	if err != nil {
 		return err
 	}
+	// Under the progress view the confirm question releases the terminal, so the
+	// changelog is also held for it with Say; the run log keeps it for the report.
+	say := func(format string, a ...any) {
+		envLogln(env, format, a...)
+		if env.Ask != nil && env.Ask.Around != nil && !o.Yes {
+			env.Ask.Say(format+"\n", a...)
+		}
+	}
 	if cur, ok := selfupdate.Normalize(o.Version); ok {
-		changelog(ctx, env, cur, o.Target)
+		changelog(ctx, env, cur, o.Target, say)
 	} else {
-		envLogln(env, "  (%s is not a release, so there is no changelog)", o.Version)
+		say("  (%s is not a release, so there is no changelog)", o.Version)
 	}
 	if env.Ask != nil && !o.Yes {
 		if !env.Ask.Confirm(fmt.Sprintf("update athome from %s to %s?", o.Version, o.Target), true) {
@@ -130,25 +138,30 @@ func selfApply(ctx context.Context, env *Env) error {
 	if exec == nil {
 		exec = execBinary
 	}
+	if env.Ask != nil && env.Ask.Around != nil { // the new binary must not inherit the progress view's terminal state
+		var err error
+		env.Ask.Around(func() { err = exec(dest, argv) })
+		return err
+	}
 	return exec(dest, argv)
 }
 
-func changelog(ctx context.Context, env *Env, cur, target string) {
+func changelog(ctx context.Context, env *Env, cur, target string, say func(string, ...any)) {
 	git := func(args ...string) (run.Result, error) {
 		return env.Run.Run(ctx, run.Cmd{Name: "git", Args: append([]string{"-C", env.RepoRoot}, args...)})
 	}
 	res, err := git("rev-parse", "--verify", "--quiet", "refs/tags/"+cur)
 	if err != nil || res.Code != 0 || strings.TrimSpace(res.Stdout) == "" {
-		envLogln(env, "  (no changelog: %s is not a tag in this clone)", cur)
+		say("  (no changelog: %s is not a tag in this clone)", cur)
 		return
 	}
 	res, err = git("log", "--no-merges", "--format=  %s", cur+".."+target)
 	if err != nil || res.Code != 0 {
 		return
 	}
-	envLogln(env, "athome %s -> %s:", cur, target)
+	say("athome %s -> %s:", cur, target)
 	if out := strings.TrimRight(res.Stdout, "\n"); out != "" {
-		envLogln(env, "%s", out)
+		say("%s", out)
 	}
 }
 

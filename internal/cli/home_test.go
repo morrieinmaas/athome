@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/morrieinmaas/athome/internal/run"
+	"github.com/morrieinmaas/athome/internal/run/runtest"
 	"github.com/morrieinmaas/athome/internal/tui"
 )
 
@@ -61,13 +63,22 @@ func TestHomeNotSetUpAndNoRepo(t *testing.T) {
 }
 
 func TestHomeUpdateRunsAthomeUpdate(t *testing.T) {
-	_, shown := tuiSandbox(t)
+	home, shown := tuiSandbox(t)
+	repo, err := findRepoRoot(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := runtest.NewFake()
+	newRunner = func() run.Runner { return f }
 	runHome = func(io.Reader, io.Writer, tui.HomeInfo) (string, error) { return "update", nil }
 	code, _, stderr := run2()
 	if len(*shown) > 0 {
-		t.Errorf("update must not open the init form: %v", *shown)
+		t.Errorf("update must not open the init form or progress: %v", *shown)
 	}
-	if code != 1 || !strings.Contains(stderr, "athome update:") {
-		t.Errorf("exit %d stderr %q, want the athome update path (no release tag in the sandbox repo)", code, stderr)
+	if code != 1 || !strings.Contains(stderr, "athome update: no release tag (vX.Y.Z) found in the repo") {
+		t.Errorf("exit %d stderr %q, want the no-release-tag error of the update path", code, stderr)
+	}
+	if !hasCall(f, "git", "-C", repo, "fetch", "--quiet", "--tags", "--force", "origin") {
+		t.Errorf("update did not fetch tags: %v", f.Calls())
 	}
 }

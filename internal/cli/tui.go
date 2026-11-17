@@ -155,22 +155,8 @@ func runInitTUI(env *steps.Env, o initOpts, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "athome init: %v\n", err)
 		return exitError
 	}
-	inner := env.Run
-	var stopSudo func()
-	defer func() {
-		if stopSudo != nil {
-			stopSudo()
-		}
-		env.Run = inner
-	}()
-	wire := func(around func(func())) {
-		if env.Ask != nil {
-			env.Ask.Around = around
-		}
-		var warm run.Runner
-		warm, stopSudo = steps.WarmSudo(run.Suspending(inner, around), env.Log)
-		env.Run = warm
-	}
+	wire, release := progressWire(env)
+	defer release()
 	rep, err := runProgress(ctx, os.Stdin, os.Stdout, env, stepList(), wire)
 	if errors.Is(err, context.Canceled) {
 		return exitInterrupted
@@ -181,6 +167,33 @@ func runInitTUI(env *steps.Env, o initOpts, stdout, stderr io.Writer) int {
 	}
 	printFinish(stdout, rep, env.Warnings, steps.FollowupLogPath())
 	return exitOK
+}
+
+// progressWire is how the progress view hands the terminal over: questions and
+// interactive commands run around it, and sudo is cached once. release undoes it.
+func progressWire(env *steps.Env) (wire func(around func(func())), release func()) {
+	inner := env.Run
+	var stopSudo func()
+	release = func() {
+		if stopSudo != nil {
+			stopSudo()
+		}
+		env.Run = inner
+	}
+	wire = func(around func(func())) {
+		if env.Ask != nil {
+			env.Ask.Around = around
+		}
+		var warm run.Runner
+		warm, stopSudo = steps.WarmSudo(run.Suspending(inner, around), env.Log)
+		env.Run = warm
+	}
+	return wire, release
+}
+
+// useUpdateTUI: update shows the progress view when it would prompt, on a terminal.
+func useUpdateTUI(yes bool) bool {
+	return isInteractive(yes, stdinIsTTY()) && stdoutIsTTY()
 }
 
 // runHomeScreen is `athome` on a terminal: the home screen, then init or update when chosen.

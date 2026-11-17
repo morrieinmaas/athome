@@ -213,8 +213,8 @@ Decisions:
   composes the two.
 - **The box seam.** `keys.Box` is what rotation needs from a machine: `Name()`, `Scope()`,
   `Authorize(ctx, pub)`, `Login(ctx, keyPath)` and `Reset(ctx, managed []string)` (replace
-  `authorized_keys` with exactly those public keys). Any of the three may return
-  `keys.ErrUnreachable`, which skips the box. `keys.Inventory(home)` lists the boxes; in this
+  `authorized_keys` with exactly those public keys). An error from any of them skips
+  the box, listed with the error. `keys.Inventory(home)` lists the boxes; in this
   build it returns none, and the remote-machines build replaces it with the inventory reader
   and an ssh-backed `Box`. The managed set for a box is the laptop public key plus its
   scope's break-glass public key.
@@ -405,8 +405,8 @@ Test list (unit unless marked):
   `gh ssh-key add` exit 1 (criterion 3); `gh api user/keys` returning
   `7 <old blob>` and `8 <other blob>` deletes only `user/keys/7`; resume with the old blob
   absent deletes nothing and finishes; corrupt `rotate.json` exits 1.
-- keys rotate boxes (fake `Box` recording calls, one reachable, one returning
-  `ErrUnreachable`): criterion 4, including a pre-existing hand-added key absent after
+- keys rotate boxes (fake `Box` recording calls, one reachable, one failing every
+  call): criterion 4, including a pre-existing hand-added key absent after
   `Reset`, `Reset` never called on a box before its `Login`, and `rotate.json` showing
   `box:b2` `skipped`; `--resume` finishes it.
 - keys rotate twice: one item per name (criterion 5).

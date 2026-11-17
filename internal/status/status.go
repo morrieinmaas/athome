@@ -39,6 +39,7 @@ type Report struct {
 	Ref        string      `json:"ref"`
 	Current    bool        `json:"current"`
 	Components []Component `json:"components"`
+	Keys       KeysStatus  `json:"keys"`
 }
 
 // Collect checks every component. Version and commit are the running binary's.

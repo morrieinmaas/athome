@@ -8,8 +8,10 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/morrieinmaas/athome/internal/status"
+	"github.com/morrieinmaas/athome/internal/steps"
 )
 
 func runStatus(args []string, stdout, stderr io.Writer) int {
@@ -39,6 +41,7 @@ func runStatus(args []string, stdout, stderr io.Writer) int {
 		return exitError
 	}
 	rep := status.Collect(context.Background(), newRunner(), Version, Commit, home, repo)
+	rep.Keys = status.Keys(home, steps.KeyHostname(), time.Now())
 	if *asJSON {
 		b, _ := json.Marshal(rep)
 		fmt.Fprintf(stdout, "%s\n", b)
@@ -47,6 +50,9 @@ func runStatus(args []string, stdout, stderr io.Writer) int {
 	fmt.Fprintf(stdout, "athome %s (%s), repo %s at %s\n", rep.Version, rep.Commit, rep.Repo, rep.Ref)
 	for _, c := range rep.Components {
 		fmt.Fprintf(stdout, "%-9s %-14s %s\n", c.Name, c.Status, detailText(c))
+	}
+	if rep.Keys.Due {
+		fmt.Fprintf(stdout, "keys: last rotated %d days ago; run athome keys rotate --laptop\n", rep.Keys.DaysSince(time.Now()))
 	}
 	return exitOK
 }

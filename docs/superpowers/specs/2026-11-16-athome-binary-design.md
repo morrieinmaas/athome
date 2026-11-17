@@ -401,7 +401,7 @@ Decisions:
     failing, so a rerun after a half-finished `--all` completes.
   - A failing action stops the run with exit 1 naming the command (bash exited with the
     command's own status under `set -e`); `rbw stop-agent` failures are still ignored.
-  - The hostname for the ssh key paths is the one init names the key from (chezmoi's hostname, else the short hostname, the part before the first dot), not the full `os.Hostname()` (bash: `uname -n`).
+  - The hostname for the ssh key paths is the one init names the key from (the short hostname, the part before the first dot, which is what chezmoi's `.chezmoi.hostname` is; computed in process so a dry run runs no `chezmoi execute-template`), not the full `os.Hostname()` (bash: `uname -n`).
   - The em dashes in bash's messages become a colon or a comma. Every substring
     `test/teardown.bats` checks is kept: `pick a tier`, `unknown argument`, `DRY-RUN`,
     `would:`, `LEFT ALONE`, `.secrets`, `aborted`.

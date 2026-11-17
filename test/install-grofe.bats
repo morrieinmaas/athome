@@ -3,6 +3,8 @@
 # template is rendered against home/.chezmoidata/pins.toml, then run with a
 # fake HOME and a file:// release base. No network.
 
+bats_require_minimum_version 1.5.0
+
 setup() {
   unset TMUX GROFE ATHOME_GROFE_BIN
   ROOT="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
@@ -84,7 +86,7 @@ install_grofe() {
   perl -pi -e 's/^grofe = ".*"/grofe = "v9.9.9"/' "$sed_pin/.chezmoidata/pins.toml"
   chezmoi --source "$sed_pin" --config "$BATS_TEST_TMPDIR/empty.toml" execute-template \
     <"$ROOT/home/.chezmoiscripts/run_onchange_17-install-grofe.sh.tmpl" >"$BATS_TEST_TMPDIR/changed.sh"
-  ! cmp -s "$SCRIPT" "$BATS_TEST_TMPDIR/changed.sh"
+  run ! cmp -s "$SCRIPT" "$BATS_TEST_TMPDIR/changed.sh"
   grep -q 'v9.9.9' "$BATS_TEST_TMPDIR/changed.sh"
   CAN="$(chezmoi --source "$ROOT/home" --config "$BATS_TEST_TMPDIR/empty.toml" execute-template \
     <"$ROOT/home/.chezmoiscripts/run_onchange_18-install-canopy.sh.tmpl")"

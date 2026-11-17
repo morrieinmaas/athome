@@ -286,10 +286,9 @@ func dataHostname(ctx context.Context, env *Env) string {
 	return shortHostname()
 }
 
-// KeyHostname is the hostname init names the per-machine ssh key from.
-func KeyHostname(ctx context.Context, r run.Runner) string {
-	return dataHostname(ctx, &Env{Run: r})
-}
+// KeyHostname is the hostname init names the per-machine ssh key from. chezmoi's
+// .chezmoi.hostname is the short os.Hostname(), so no external command is needed.
+func KeyHostname() string { return shortHostname() }
 
 var (
 	osHostname  = os.Hostname // gethostname(2), what bash's $HOSTNAME builtin is

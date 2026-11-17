@@ -18,7 +18,7 @@ func runTeardown(args []string, stdout, stderr io.Writer) int {
 		return exitError
 	}
 	r := newRunner()
-	host := steps.KeyHostname(context.Background(), r)
+	host := steps.KeyHostname()
 	f, isFile := stdout.(*os.File)
 	return teardown.Main(context.Background(), args, teardown.Env{
 		Home: home, OS: runtime.GOOS, Hostname: host, Run: r,

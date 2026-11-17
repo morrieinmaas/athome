@@ -34,3 +34,20 @@ func TestTeardownKeyPathUsesTheShortHostname(t *testing.T) {
 		t.Errorf("exit %d, want %q in:\n%s", code, want, out)
 	}
 }
+
+func TestTeardownDryRunRunsNoExecuteTemplate(t *testing.T) {
+	for _, tier := range []string{"--state", "--all"} {
+		sandbox(t)
+		f := runtest.NewFake()
+		restore := cli.SetRunner(f)
+		if code, _, _ := runMain("teardown", tier); code != 0 {
+			t.Errorf("%s: exit %d", tier, code)
+		}
+		restore()
+		for _, c := range f.Calls() {
+			if len(c.Args) > 0 && c.Args[0] == "execute-template" {
+				t.Errorf("%s: ran %s %v", tier, c.Name, c.Args)
+			}
+		}
+	}
+}

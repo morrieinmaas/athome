@@ -18,6 +18,9 @@ type Asker struct {
 	// line reports no input, as at EOF.
 	Done     <-chan struct{}
 	OnCancel func()
+
+	// Around, when set, wraps each question (print and read), e.g. to suspend a TUI.
+	Around func(func())
 }
 
 func New(in io.Reader, out io.Writer) *Asker {
@@ -30,7 +33,15 @@ func (a *Asker) Say(format string, args ...any) {
 }
 
 // line prints q and returns the trimmed answer; ok is false at EOF with no input.
-func (a *Asker) line(q string) (string, bool) {
+func (a *Asker) line(q string) (s string, ok bool) {
+	if a.Around != nil {
+		a.Around(func() { s, ok = a.ask(q) })
+		return s, ok
+	}
+	return a.ask(q)
+}
+
+func (a *Asker) ask(q string) (string, bool) {
 	fmt.Fprint(a.out, q)
 	s, cancelled, err := a.read()
 	if cancelled {

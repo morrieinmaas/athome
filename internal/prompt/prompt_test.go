@@ -160,3 +160,29 @@ func TestConfirmLeavesTypedAhead(t *testing.T) {
 		t.Errorf("unread = %q, want %q", rest, "rest\n")
 	}
 }
+
+func TestAround(t *testing.T) {
+	a, out := ask("y\n")
+	depth, wrapped := 0, 0
+	a.Around = func(f func()) { wrapped++; depth++; f(); depth-- }
+	a.in = &depthReader{r: a.in, depth: &depth, t: t}
+	if !a.Confirm("ok?", false) {
+		t.Errorf("answer lost")
+	}
+	if wrapped != 1 || !strings.Contains(out.String(), "ok?") {
+		t.Errorf("wrapped=%d out=%q", wrapped, out)
+	}
+}
+
+type depthReader struct {
+	r     io.Reader
+	depth *int
+	t     *testing.T
+}
+
+func (d *depthReader) Read(p []byte) (int, error) {
+	if *d.depth == 0 {
+		d.t.Errorf("read outside Around")
+	}
+	return d.r.Read(p)
+}

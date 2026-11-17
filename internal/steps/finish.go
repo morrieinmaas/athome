@@ -212,7 +212,7 @@ func secretsHint(_ context.Context, env *Env) error {
 }
 
 func restoreSecrets(ctx context.Context, env *Env) error {
-	if env.Ask != nil && !env.Ask.Confirm("restore your encrypted secrets now (secrets-restore)?", true) { // B:1025
+	if !presetConfirm(env, "restoreSecrets", "restore your encrypted secrets now (secrets-restore)?") { // B:1025
 		appendFollowup(env, secretsFollowup)
 		return nil
 	}
@@ -328,4 +328,16 @@ func bitwardenSetup(ctx context.Context, env *Env) error {
 		envLogf(env, "local-only secrets for now, run `bw-setup` in a terminal to sync Bitwarden later.\n")
 	}
 	return nil
+}
+
+// presetConfirm answers a default-yes confirm from env.Cfg.Data[key] when it is
+// "true" or "false"; otherwise it asks, and without a terminal it is yes.
+func presetConfirm(env *Env, key, q string) bool {
+	switch env.Cfg.Data[key] {
+	case "true":
+		return true
+	case "false":
+		return false
+	}
+	return env.Ask == nil || env.Ask.Confirm(q, true)
 }

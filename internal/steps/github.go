@@ -287,7 +287,7 @@ func ghManualMarker(env *Env) string {
 
 // ghUploadAll ports B:633-747.
 func ghUploadAll(ctx context.Context, env *Env, p ghPlan) {
-	if env.Ask != nil && !ghForceUpload(ctx, env) && !env.Ask.Confirm("Upload SSH public keys to GitHub now (auth + signing)?", true) { // B:633
+	if !ghUploadAnswer(ctx, env) { // B:633
 		envLogf(env, "skipping ssh-key upload, run manually later:\n")
 		envLogf(env, "  gh auth refresh -h github.com -s admin:public_key,admin:ssh_signing_key\n")
 		envLogf(env, "  gh ssh-key add %s --title \"%s\"\n", p.pub, p.sshHost)
@@ -441,4 +441,12 @@ func ghSeedSSHConfig(home, hostkey string) error {
 	}
 	_, err = f.WriteString(block)
 	return err
+}
+
+// ghUploadAnswer reports whether to upload the keys now; uploadSshKeys presets the answer.
+func ghUploadAnswer(ctx context.Context, env *Env) bool {
+	if ghForceUpload(ctx, env) {
+		return true
+	}
+	return presetConfirm(env, "uploadSshKeys", "Upload SSH public keys to GitHub now (auth + signing)?") // B:633
 }

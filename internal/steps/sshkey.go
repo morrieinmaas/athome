@@ -395,8 +395,12 @@ func skPubMarkerTidy(env *Env) {
 }
 
 // skBWBackup ports B:464-496. It never fails: without an unlocked rbw it
-// prints the manual commands.
+// prints the manual commands. bwBackupSshKey=false skips it; empty or true
+// keeps the copy.
 func skBWBackup(ctx context.Context, env *Env) error {
+	if env.Cfg.Data["bwBackupSshKey"] == "false" { // answered in the form: no copy, no hint
+		return nil
+	}
 	key := skKeyPath(ctx, env)
 	item := "ssh/" + filepath.Base(key)
 	if _, err := env.Run.LookPath("rbw"); err == nil {

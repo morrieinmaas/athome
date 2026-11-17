@@ -103,7 +103,17 @@ func runUpdate(args []string, stdout, stderr io.Writer) int {
 	defer env.RunCleanup()
 	bindCancel(ctx, env, stderr)
 	ctx = withUpdateOpts(ctx, target, toGiven, o.Yes)
-	rep, err := steps.Execute(ctx, env, steps.Update())
+	var rep steps.Report
+	if useUpdateTUI(o.Yes) {
+		wire, release := progressWire(env)
+		defer release()
+		rep, err = runProgress(ctx, os.Stdin, os.Stdout, env, steps.Update(), wire)
+		if errors.Is(err, context.Canceled) {
+			return exitInterrupted
+		}
+	} else {
+		rep, err = steps.Execute(ctx, env, steps.Update())
+	}
 	if errors.Is(err, steps.ErrUpdateCancelled) {
 		return exitOK
 	}

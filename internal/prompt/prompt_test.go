@@ -160,3 +160,64 @@ func TestConfirmLeavesTypedAhead(t *testing.T) {
 		t.Errorf("unread = %q, want %q", rest, "rest\n")
 	}
 }
+
+func TestAround(t *testing.T) {
+	a, out := ask("y\n")
+	depth, wrapped := 0, 0
+	a.Around = func(f func()) { wrapped++; depth++; f(); depth-- }
+	a.in = &depthReader{r: a.in, depth: &depth, t: t}
+	if !a.Confirm("ok?", false) {
+		t.Errorf("answer lost")
+	}
+	if wrapped != 1 || !strings.Contains(out.String(), "ok?") {
+		t.Errorf("wrapped=%d out=%q", wrapped, out)
+	}
+}
+
+type depthReader struct {
+	r     io.Reader
+	depth *int
+	t     *testing.T
+}
+
+func (d *depthReader) Read(p []byte) (int, error) {
+	if *d.depth == 0 {
+		d.t.Errorf("read outside Around")
+	}
+	return d.r.Read(p)
+}
+
+// Say text must reach the terminal together with its question, inside Around,
+// not while a TUI still holds the screen.
+func TestSayIsPrintedInsideTheNextQuestionsAround(t *testing.T) {
+	a, out := ask("y\n")
+	depth := 0
+	a.Around = func(f func()) { depth++; f(); depth-- }
+	a.Say("context line\n")
+	if out.String() != "" {
+		t.Fatalf("Say wrote %q outside Around", out)
+	}
+	var seen string
+	a.Around = func(f func()) {
+		depth++
+		f()
+		seen = out.String()
+		depth--
+	}
+	a.Confirm("ok?", false)
+	if seen != "context line\nok? [y/N] " {
+		t.Errorf("output after the question = %q", seen)
+	}
+	a.Confirm("again?", false)
+	if strings.Count(out.String(), "context line") != 1 {
+		t.Errorf("Say text printed twice: %q", out)
+	}
+}
+
+func TestSayWithoutAroundWritesAtOnce(t *testing.T) {
+	a, out := ask("")
+	a.Say("hi %d\n", 1)
+	if out.String() != "hi 1\n" {
+		t.Errorf("out = %q", out)
+	}
+}

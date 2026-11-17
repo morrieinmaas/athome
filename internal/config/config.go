@@ -55,6 +55,24 @@ var answers = []struct{ key, env, def string }{
 	{"bitwardenUrl", "ATHOME_BW_BASE_URL", ""},
 }
 
+// DataEnv maps each answer key to the ATHOME_* variable that presets it.
+var DataEnv = func() map[string]string {
+	m := make(map[string]string, len(answers))
+	for _, a := range answers {
+		m[a.key] = a.env
+	}
+	return m
+}()
+
+// FileValue is the value of key in the answers file at path, or "" when the file or the key is missing.
+func FileValue(path, key string) string {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	return cfgGet(string(b), key)
+}
+
 // Load resolves answers: env over file over default (B:186-234).
 func Load(o Options) (Config, error) {
 	cfg := Config{Machine: "personal", IncludeAgents: true, Data: map[string]string{}}

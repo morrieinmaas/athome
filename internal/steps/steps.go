@@ -30,11 +30,13 @@ type Env struct {
 	Opts         Opts
 	Log          io.Writer
 	Warnings     int
-	KeyGenerated bool          // set by SSHKey when it generated this run's key; ssh-bw-backup runs only then, and github adds a note
-	DataChanged  bool          // set by chezmoi-data when it wrote chezmoi.toml; chezmoi-apply must then run (bash always re-inits after seeding)
-	depWarned    bool          // a baseline dep failure already counted as the run's one dep warning
-	Cleanup      []func()      // run in reverse order when the run ends, see RunCleanup
-	Ask          *prompt.Asker // nil means non-interactive: never prompt, never read stdin
+	KeyGenerated bool            // set by SSHKey when it generated this run's key; ssh-bw-backup runs only then, and github adds a note
+	DataChanged  bool            // set by chezmoi-data when it wrote chezmoi.toml; chezmoi-apply must then run (bash always re-inits after seeding)
+	depWarned    bool            // a baseline dep failure already counted as the run's one dep warning
+	Cleanup      []func()        // run in reverse order when the run ends, see RunCleanup
+	Ask          *prompt.Asker   // nil means non-interactive: never prompt, never read stdin
+	Events       func(Event)     // nil means no-op; Execute reports each step transition
+	Answered     map[string]bool // keys the init form answered, even with an empty value; the prompts skip them
 }
 
 type Opts struct {
@@ -43,6 +45,12 @@ type Opts struct {
 	ImportSSH   bool
 	ImportSSHBW string
 	CI          bool
+}
+
+// Event is one step transition. State is check, skip, apply, done or fail.
+type Event struct {
+	Name, State string
+	Err         error
 }
 
 type Report struct {
@@ -102,22 +110,34 @@ func Execute(ctx context.Context, env *Env, list []Step) (Report, error) {
 		if err := ctx.Err(); err != nil {
 			return rep, fmt.Errorf("step %s: %w", s.Name, err)
 		}
+		env.emit(Event{Name: s.Name, State: "check"})
 		done, err := s.Check(ctx, env)
 		if err != nil {
+			env.emit(Event{s.Name, "fail", err})
 			return rep, fmt.Errorf("step %s: check: %w", s.Name, err)
 		}
 		if done {
 			rep.Skipped = append(rep.Skipped, s.Name)
+			env.emit(Event{Name: s.Name, State: "skip"})
 			envLogf(env, "skip  %s\n", s.Name)
 			continue
 		}
 		envLogf(env, "apply %s\n", s.Name)
+		env.emit(Event{Name: s.Name, State: "apply"})
 		if err := s.Apply(ctx, env); err != nil {
+			env.emit(Event{s.Name, "fail", err})
 			return rep, fmt.Errorf("step %s: %w", s.Name, err)
 		}
 		rep.Applied = append(rep.Applied, s.Name)
+		env.emit(Event{Name: s.Name, State: "done"})
 	}
 	return rep, nil
+}
+
+func (e *Env) emit(ev Event) {
+	if e.Events != nil {
+		e.Events(ev)
+	}
 }
 
 func envLogf(env *Env, format string, a ...any) {

@@ -51,8 +51,8 @@ func runStatus(args []string, stdout, stderr io.Writer) int {
 	for _, c := range rep.Components {
 		fmt.Fprintf(stdout, "%-9s %-14s %s\n", c.Name, c.Status, detailText(c))
 	}
-	if rep.Keys.Due {
-		fmt.Fprintf(stdout, "keys: last rotated %d days ago; run athome keys rotate --laptop\n", rep.Keys.DaysSince(time.Now()))
+	if r := reminderText(rep.Keys, time.Now()); r != "" {
+		fmt.Fprintln(stdout, r)
 	}
 	return exitOK
 }
@@ -66,4 +66,17 @@ func detailText(c status.Component) string {
 		return c.Installed + " (wanted " + c.Wanted + ")"
 	}
 	return c.Installed
+}
+
+// reminderText is the rotation reminder line, "" when none is due.
+func reminderText(k status.KeysStatus, now time.Time) string {
+	if !k.Due {
+		return ""
+	}
+	return fmt.Sprintf("keys: last rotated %d days ago; run athome keys rotate --laptop", k.DaysSince(now))
+}
+
+// keysReminder is reminderText for this laptop, for the home screen.
+func keysReminder(home string, now time.Time) string {
+	return reminderText(status.Keys(home, steps.KeyHostname(), now), now)
 }

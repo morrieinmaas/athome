@@ -405,3 +405,30 @@ func TestIdempotent(t *testing.T) {
 		t.Errorf("second run skipped %v, want a b c", rep.Skipped)
 	}
 }
+
+func TestExecuteEmitsEventsInOrder(t *testing.T) {
+	var got []string
+	env := &steps.Env{Events: func(e steps.Event) {
+		s := e.Name + ":" + e.State
+		if e.Err != nil {
+			s += ":" + e.Err.Error()
+		}
+		got = append(got, s)
+	}}
+	yes := func(context.Context, *steps.Env) (bool, error) { return true, nil }
+	no := func(context.Context, *steps.Env) (bool, error) { return false, nil }
+	ok := func(context.Context, *steps.Env) error { return nil }
+	bad := func(context.Context, *steps.Env) error { return errors.New("boom") }
+	_, err := steps.Execute(context.Background(), env, []steps.Step{
+		{Name: "a", Check: yes, Apply: ok},
+		{Name: "b", Check: no, Apply: ok},
+		{Name: "c", Check: no, Apply: bad},
+	})
+	if err == nil {
+		t.Fatal("want error")
+	}
+	want := []string{"a:check", "a:skip", "b:check", "b:apply", "b:done", "c:check", "c:apply", "c:fail:boom"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("events %v, want %v", got, want)
+	}
+}

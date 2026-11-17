@@ -57,10 +57,14 @@ type initOpts struct {
 	ImportSSHBW string
 	NonInter    bool
 	Yes         bool
+	Plain       bool
 }
 
 func Main(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
+		if stdinIsTTY() && stdoutIsTTY() {
+			return runHomeScreen(stdout, stderr)
+		}
 		usage(stdout)
 		return exitOK
 	}
@@ -107,6 +111,7 @@ func initFlags(o *initOpts, out io.Writer) *flag.FlagSet {
 	fs.BoolVar(&o.NonInter, "non-interactive", false, "never prompt")
 	fs.BoolVar(&o.Yes, "y", false, "same as --non-interactive")
 	fs.BoolVar(&o.Yes, "yes", false, "same as --non-interactive")
+	fs.BoolVar(&o.Plain, "plain", false, "line prompts instead of the full-screen form")
 	fs.Usage = func() {}
 	return fs
 }
@@ -115,7 +120,7 @@ func initFlags(o *initOpts, out io.Writer) *flag.FlagSet {
 // --name=value, which bash rejects.
 var (
 	valueFlags = map[string]bool{"--ref": true, "--machine": true, "--config": true, "--import-from": true, "--import-ssh-bw": true}
-	boolFlags  = map[string]bool{"--no-agents": true, "--import-ssh": true, "--non-interactive": true, "-y": true, "--yes": true}
+	boolFlags  = map[string]bool{"--no-agents": true, "--import-ssh": true, "--non-interactive": true, "-y": true, "--yes": true, "--plain": true}
 )
 
 // checkInitArgs rejects every argument form bash's case statement does not know.
@@ -180,6 +185,9 @@ func runInit(args []string, stdout, stderr io.Writer) int {
 	env, code := newInitEnv(o, stdout, stderr)
 	if env == nil {
 		return code
+	}
+	if useTUI(o, environMap()) {
+		return runInitTUI(env, o, stdout, stderr)
 	}
 	return runInitEnv(env, stdout, stderr)
 }

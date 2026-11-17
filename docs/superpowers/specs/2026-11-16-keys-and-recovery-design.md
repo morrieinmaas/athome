@@ -209,7 +209,7 @@ Decisions:
   `keys.NewBreakGlass(scope)` generates the key with `ssh-keygen -t ed25519 -N ""` in a
   `os.MkdirTemp` directory, stores it, removes the directory and returns the public key;
   `keys.BreakGlassPub(scope)` reads the item back and derives the public key with
-  `ssh-keygen -y` from a 0600 temp file that is then removed. `machine add` (remote-machines)
+  `ssh-keygen -y` from a 0600 temp file that is then removed. A failed `rbw get` is `keys.ErrNoItem` only when `rbw list` lacks the item; a locked rbw or a failed read is an error, so a box is never reset without its break-glass key by mistake. `machine add` (remote-machines)
   composes the two.
 - **The box seam.** `keys.Box` is what rotation needs from a machine: `Name()`, `Scope()`,
   `Authorize(ctx, pub)`, `Login(ctx, keyPath)` and `Reset(ctx, managed []string)` (replace
@@ -226,9 +226,11 @@ Decisions:
   ends with `run athome keys rotate --resume once they are reachable`), 2 usage.
 - **Laptop rotation, in the spec's order.**
   1. Generate `<key>.rotate` (and `.rotate.pub`) in `~/.ssh` with
-     `ssh-keygen -t ed25519 -N "" -C <user>@<host> -f <key>.rotate`; a leftover
+     `ssh-keygen -t ed25519 -N "" -C <comment> -f <key>.rotate`, the comment kept from the old
+     public key (else `athome@<host>`); a leftover
      `.rotate` from a crashed run is replaced.
-  2. `keys.Store(ssh/<keyfile>, ...)`.
+  2. `keys.Store(ssh/<keyfile>.rotate, ...)`: a staging item, so the item under the real
+     name keeps the key that still works until GitHub accepts the new one.
   3. `gh ssh-key add <key>.rotate.pub --title <host>` and
      `gh ssh-key add <key>.rotate.pub --title <host>-sign --type signing`, then
      `Authorize` on each box.
@@ -237,8 +239,9 @@ Decisions:
      ConnectTimeout=10 -o StrictHostKeyChecking=accept-new -T git@github.com` passes when its
      output contains `successfully authenticated`; then `Login` on each box.
   5. Only then: the key files move into place (`<key>` and `<key>.pub` to `<key>.old` and
-     `<key>.old.pub`, `<key>.rotate*` to `<key>*`), the old key is removed from GitHub (each
-     id of `gh api user/keys` and `gh api user/ssh_signing_keys` whose key matches the old
+     `<key>.old.pub`, `<key>.rotate*` to `<key>*`), the staging item is copied to `ssh/<keyfile>`
+     and removed (`rbw remove`; a failed removal is a note), the old key is removed from GitHub (each
+     id of `gh api --paginate user/keys` and `gh api --paginate user/ssh_signing_keys` whose key matches the old
      blob, deleted with `gh api -X DELETE user/keys/<id>` or `user/ssh_signing_keys/<id>`),
      each box that passed step 4 is `Reset` to the managed set, and with no box left,
      `<key>.old*` are deleted. When `chezmoi` is on PATH,
@@ -247,23 +250,30 @@ Decisions:
 
   A failure in steps 1 to 4 on GitHub or Bitwarden exits 1 with the old key still the
   laptop key and still on GitHub. The progress file says how far it got, so `--resume`
-  continues and never generates a second key.
+  continues and never generates a second key. A crash after the file swap but before it was
+  recorded is recognised on resume (`<key>.pub` already holds the new key). Every run checks
+  `rbw unlocked` before any job and exits 1 if it is locked; an exclusive `flock` on
+  `rotate.lock` beside the progress file stops two rotations running at once.
 - **Progress file** `~/.local/state/athome/rotate.json`, written (0600, via a temp file and
   rename) after every step: `{"jobs": [...], "last_rotated": "<RFC 3339>"}`. A job is
   `{"kind": "laptop"|"break-glass", "scope": "", "item": "", "key": "", "old_pub": "",
-  "new_pub": "", "stored": bool, "installed": bool, "targets": {"github": "<phase>",
+  "new_pub": "", "stored": bool, "installed": bool, "promoted": bool, "targets": {"github": "<phase>",
   "box:<name>": "<phase>"}}`, phases `added`, `checked`, `removed`, `skipped`. A job is done
   when every target is `removed`; done jobs are dropped and `last_rotated` is set. A new
   rotation while a job is pending exits 1 with
   `a rotation is unfinished (<kind>); run athome keys rotate --resume`. `--resume` with no
   pending job prints `nothing to resume` and exits 0; otherwise it runs each pending job from
-  its recorded phases, retrying skipped boxes (a box still unreachable stays skipped).
+  its recorded phases, retrying skipped boxes (a box still unreachable stays skipped). A box that has left the
+  inventory is dropped from the job with a note.
 - **`--boxes`** with an empty inventory prints `no machines in the inventory: no box keys to
   rotate`. A box's own key is created on the box, so its rotation is the remote-machines
   build's; with a non-empty inventory this build exits 1 saying so.
-- **`--break-glass`** runs per scope found in the inventory: `NewBreakGlass`, then each box
-  in the scope is authorized, logged into with the new key (read back from Bitwarden into a
-  0600 temp file, removed after) and reset to the managed set. With an empty inventory it
+- **`--break-glass`** runs per scope found in the inventory: a new key stored as the staging item
+  `athome/<scope>/break-glass.rotate`, then each box in the scope is authorized, logged into
+  with the new key (read back from the staging item into a 0600 temp file, removed after) and
+  reset to the managed set. Only once every box in the scope is reset is the staging item
+  copied over `athome/<scope>/break-glass` and removed, so a skipped box stays reachable
+  with the key under the real name. With an empty inventory it
   prints `no scopes in the inventory: no break-glass keys to rotate`.
 - **`athome secrets rekey [--yes]`** keeps the vault's names stable: the old GitHub repo is
   renamed and a fresh one takes its name, so `restore` and `SECRETS_VAULT_NAME` keep working.
@@ -332,7 +342,7 @@ Decisions:
   `athome init`, so `bootstrap.sh --restore` needs no change.
 - **The 90-day reminder.** `athome status` adds a `keys` object to `--json`:
   `{"last_rotated": "<RFC 3339>"|"", "due": bool}`. The date is `last_rotated` from
-  `rotate.json`, else the laptop key file's mtime; `due` is true when it is more than 90
+  `rotate.json`, else the laptop key file's mtime, and only when a laptop key exists; `due` is true when it is more than 90
   days old. Text output adds one line after the rows only when due:
   `keys: last rotated <n> days ago; run athome keys rotate --laptop`. It never changes the
   top-level `current` or the exit code. With no laptop key, `keys` is

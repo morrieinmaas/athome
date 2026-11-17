@@ -19,12 +19,12 @@ type KeysStatus struct {
 // Keys dates the last rotation from rotate.json, else the laptop key's mtime.
 // With no laptop key there is nothing to remind about.
 func Keys(home, host string, now time.Time) KeysStatus {
+	fi, err := os.Stat(keys.LaptopKey(home, host))
+	if err != nil {
+		return KeysStatus{}
+	}
 	t, ok := keys.LastRotated(home)
 	if !ok {
-		fi, err := os.Stat(keys.LaptopKey(home, host))
-		if err != nil {
-			return KeysStatus{}
-		}
 		t = fi.ModTime()
 	}
 	return KeysStatus{LastRotated: t.UTC().Format(time.RFC3339), Due: now.Sub(t) > RotateEvery}

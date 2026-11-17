@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -78,11 +77,6 @@ func runKeys(args []string, stdout, stderr io.Writer) int {
 		err = keys.Resume(ctx, o)
 	} else {
 		err = keys.Rotate(ctx, o, k)
-	}
-	var inc *keys.IncompleteError
-	if errors.As(err, &inc) {
-		fmt.Fprintf(stderr, "athome keys rotate: %v\n", err)
-		return exitError
 	}
 	if err != nil {
 		fmt.Fprintf(stderr, "athome keys rotate: %v\n", err)

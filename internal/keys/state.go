@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"syscall"
 	"time"
 )
 
@@ -30,6 +31,7 @@ type job struct {
 	NewPub    string            `json:"new_pub"`
 	Stored    bool              `json:"stored"`
 	Installed bool              `json:"installed"`
+	Promoted  bool              `json:"promoted"`
 	Targets   map[string]string `json:"targets"`
 }
 
@@ -54,6 +56,11 @@ func loadState(home string) (*state, error) {
 	var s state
 	if err := json.Unmarshal(b, &s); err != nil {
 		return nil, fmt.Errorf("%s is not valid JSON (%v); fix or remove it", StatePath(home), err)
+	}
+	for _, j := range s.Jobs {
+		if j.Targets == nil {
+			j.Targets = map[string]string{}
+		}
 	}
 	return &s, nil
 }
@@ -82,4 +89,22 @@ func LastRotated(home string) (time.Time, bool) {
 	}
 	t, err := time.Parse(time.RFC3339, s.LastRotated)
 	return t, err == nil
+}
+
+// lockState takes an exclusive lock beside the progress file, so two rotations
+// never run at once. The returned func releases it.
+func lockState(home string) (func(), error) {
+	p := filepath.Join(filepath.Dir(StatePath(home)), "rotate.lock")
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		return nil, err
+	}
+	f, err := os.OpenFile(p, os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		f.Close()
+		return nil, errors.New("another athome keys rotate is running")
+	}
+	return func() { f.Close() }, nil
 }

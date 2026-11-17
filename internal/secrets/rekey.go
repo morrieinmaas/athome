@@ -34,6 +34,10 @@ func Rekey(ctx context.Context, o RekeyOpts) int {
 	}
 	date := now().Format("20060102")
 
+	if !o.Yes && !o.TTY {
+		o.errf("athome secrets rekey: --yes is required without a terminal\n")
+		return exitAbort
+	}
 	if code := o.preconditions(ctx); code != exitOK {
 		return code
 	}
@@ -50,10 +54,6 @@ func Rekey(ctx context.Context, o RekeyOpts) int {
 	}
 
 	if !o.Yes {
-		if !o.TTY {
-			o.errf("athome secrets rekey: --yes is required without a terminal\n")
-			return exitAbort
-		}
 		q := fmt.Sprintf("re-key %s? The old repo becomes %s/%s", slug, owner, oldName)
 		if !prompt.New(o.In, o.Out).Confirm(q, false) {
 			o.outf("athome secrets rekey: cancelled, nothing changed\n")

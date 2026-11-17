@@ -86,7 +86,13 @@ func (f *fakeBW) Run(ctx context.Context, c run.Cmd) (run.Result, error) {
 		}
 		slices.Sort(names)
 		return run.Result{Stdout: strings.Join(names, "\n") + "\n"}, nil
+	case "remove":
+		delete(f.items, c.Args[1])
+		return run.Result{}, nil
 	case "get":
+		if f.locked {
+			return run.Result{Code: 1, Stderr: "locked"}, nil
+		}
 		args := c.Args[1:]
 		field := ""
 		if len(args) >= 2 && args[0] == "--field" {

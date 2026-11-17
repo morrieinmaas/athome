@@ -52,7 +52,7 @@ func ghRemove(ctx context.Context, r run.Runner, pub string) error {
 		return nil
 	}
 	for _, endpoint := range []string{"user/keys", "user/ssh_signing_keys"} {
-		res, err := r.Run(ctx, run.Cmd{Name: "gh", Args: []string{"api", endpoint, "--jq", `.[] | "\(.id) \(.key)"`}})
+		res, err := r.Run(ctx, run.Cmd{Name: "gh", Args: []string{"api", "--paginate", endpoint, "--jq", `.[] | "\(.id) \(.key)"`}})
 		if err != nil {
 			return err
 		}

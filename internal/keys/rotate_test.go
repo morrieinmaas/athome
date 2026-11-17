@@ -101,7 +101,7 @@ func cmdLines(f *fakeBW, home string) []string {
 
 func indexOf(lines []string, prefix string) int {
 	for i, l := range lines {
-		if strings.HasPrefix(l, prefix) {
+		if l == prefix || strings.HasPrefix(l, prefix+" ") {
 			return i
 		}
 	}
@@ -111,8 +111,8 @@ func indexOf(lines []string, prefix string) int {
 func TestRotateLaptopOrder(t *testing.T) {
 	o, f, key := rotateHome(t)
 	oldPub := readPub(t, key+".pub")
-	f.On("gh", "api", "user/keys", "--jq", jqIDKey).Return(run.Result{Stdout: "7 " + oldPub + "\n8 ssh-ed25519 OTHER\n"})
-	f.On("gh", "api", "user/ssh_signing_keys", "--jq", jqIDKey).Return(run.Result{Stdout: "9 " + oldPub + "\n"})
+	f.On("gh", "api", "--paginate", "user/keys", "--jq", jqIDKey).Return(run.Result{Stdout: "7 " + oldPub + "\n8 ssh-ed25519 OTHER\n"})
+	f.On("gh", "api", "--paginate", "user/ssh_signing_keys", "--jq", jqIDKey).Return(run.Result{Stdout: "9 " + oldPub + "\n"})
 	withInventory(t)
 
 	if err := Rotate(context.Background(), o, Kinds{Laptop: true}); err != nil {
@@ -121,11 +121,13 @@ func TestRotateLaptopOrder(t *testing.T) {
 	lines := cmdLines(f, o.Home)
 	order := []string{
 		"ssh-keygen -q -t ed25519 -N  -C me@h -f ~/.ssh/h_ed25519.rotate",
-		"rbw add ssh/h_ed25519",
+		"rbw add ssh/h_ed25519.rotate",
 		"gh ssh-key add ~/.ssh/h_ed25519.rotate.pub --title h",
 		"gh ssh-key add ~/.ssh/h_ed25519.rotate.pub --title h-sign --type signing",
 		"ssh -F /dev/null -i ~/.ssh/h_ed25519.rotate",
 		"chezmoi apply ~/.config/git/allowed_signers",
+		"rbw add ssh/h_ed25519",
+		"rbw remove ssh/h_ed25519.rotate",
 		"gh api -X DELETE user/keys/7",
 		"gh api -X DELETE user/ssh_signing_keys/9",
 	}
@@ -332,7 +334,7 @@ func TestResumeOldKeyAlreadyGone(t *testing.T) {
 
 func TestRotateRemovalListFails(t *testing.T) {
 	o, f, _ := rotateHome(t)
-	f.On("gh", "api", "user/keys", "--jq", jqIDKey).Return(run.Result{Code: 1, Stderr: "HTTP 500"})
+	f.On("gh", "api", "--paginate", "user/keys", "--jq", jqIDKey).Return(run.Result{Code: 1, Stderr: "HTTP 500"})
 	withInventory(t)
 	if err := Rotate(context.Background(), o, Kinds{Laptop: true}); err == nil {
 		t.Fatal("want an error")
@@ -399,5 +401,116 @@ func TestRotateBreakGlassPerScope(t *testing.T) {
 		if len(bx.authorized) != 2 || bx.authorized[0] != laptop || pubBlob(bx.authorized[1]) != pubBlob(bg) {
 			t.Errorf("%s authorized = %v", bx.name, bx.authorized)
 		}
+	}
+}
+
+func TestRotateLockedRbwStopsBeforeAnything(t *testing.T) {
+	o, f, _ := rotateHome(t)
+	f.locked = true
+	withInventory(t)
+	if err := Rotate(context.Background(), o, Kinds{Laptop: true}); !errors.Is(err, ErrLocked) {
+		t.Fatalf("err = %v", err)
+	}
+	if indexOf(cmdLines(f, o.Home), "gh") >= 0 {
+		t.Error("ran gh with rbw locked")
+	}
+}
+
+func TestBreakGlassPubLockedIsNotMissing(t *testing.T) {
+	_, f, _ := rotateHome(t)
+	if _, err := NewBreakGlass(context.Background(), f, "work/acme"); err != nil {
+		t.Fatal(err)
+	}
+	f.locked = true
+	if _, err := BreakGlassPub(context.Background(), f, "work/acme"); errors.Is(err, ErrNoItem) || err == nil {
+		t.Errorf("locked rbw read as a missing item: %v", err)
+	}
+}
+
+func TestRotateLoginFailsKeepsRealItem(t *testing.T) {
+	o, f, key := rotateHome(t)
+	f.put("ssh/h_ed25519", SSHKeyPassword+"\nold key\n")
+	f.On("ssh", loginArgs(key+".rotate")...).Return(run.Result{Code: 255})
+	withInventory(t)
+	if err := Rotate(context.Background(), o, Kinds{Laptop: true}); err == nil {
+		t.Fatal("want an error")
+	}
+	if got := f.get("ssh/h_ed25519"); len(got) != 1 || got[0] != SSHKeyPassword+"\nold key\n" {
+		t.Errorf("real item changed before GitHub accepted the new key: %q", got)
+	}
+	if len(f.get("ssh/h_ed25519.rotate")) != 1 {
+		t.Error("new key not in the staging item")
+	}
+}
+
+func TestBreakGlassSkippedBoxKeepsOldItem(t *testing.T) {
+	o, f, _ := rotateHome(t)
+	oldPub, err := NewBreakGlass(context.Background(), f, "work/acme")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var log []string
+	a := &fakeBox{name: "a", scope: "work/acme", log: &log}
+	b := &fakeBox{name: "b", scope: "work/acme", down: true, log: &log}
+	withInventory(t, a, b)
+	if err := Rotate(context.Background(), o, Kinds{BreakGlass: true}); err == nil {
+		t.Fatal("want skipped")
+	}
+	if pub, _ := BreakGlassPub(context.Background(), f, "work/acme"); pubBlob(pub) != pubBlob(oldPub) {
+		t.Error("real item replaced while box b still has only the old key")
+	}
+	b.down = false
+	if err := Resume(context.Background(), o); err != nil {
+		t.Fatal(err)
+	}
+	pub, _ := BreakGlassPub(context.Background(), f, "work/acme")
+	if pubBlob(pub) == pubBlob(oldPub) || len(f.get("athome/work/acme/break-glass.rotate")) != 0 {
+		t.Error("new key not promoted after the last box")
+	}
+}
+
+func TestResumeAfterCrashBetweenSwapAndSave(t *testing.T) {
+	o, f, _ := rotateHome(t)
+	f.On("gh", "api", "--paginate", "user/keys", "--jq", jqIDKey).Return(run.Result{Code: 1})
+	withInventory(t)
+	Rotate(context.Background(), o, Kinds{Laptop: true}) // stops at removal, swap done
+	st, _ := loadState(o.Home)
+	st.Jobs[0].Installed = false
+	st.save(o.Home)
+	f.On("gh", "api", "--paginate", "user/keys", "--jq", jqIDKey).Return(run.Result{})
+	if err := Resume(context.Background(), o); err != nil {
+		t.Fatal(err)
+	}
+	if st, _ := loadState(o.Home); len(st.Jobs) != 0 {
+		t.Errorf("job left: %+v", st.Jobs)
+	}
+}
+
+func TestResumeNullTargetsAndGoneBox(t *testing.T) {
+	o, f, _ := rotateHome(t)
+	withInventory(t)
+	os.MkdirAll(filepath.Dir(StatePath(o.Home)), 0o755)
+	os.WriteFile(StatePath(o.Home), []byte(`{"jobs":[{"kind":"break-glass","scope":"work/x","item":"athome/work/x/break-glass","new_pub":"ssh-ed25519 AAAA","stored":true,"targets":null},
+	{"kind":"break-glass","scope":"work/y","item":"athome/work/y/break-glass","new_pub":"ssh-ed25519 BBBB","stored":true,"targets":{"box:gone":"skipped"}}]}`), 0o600)
+	f.put("athome/work/x/break-glass.rotate", SSHKeyPassword+"\nk\n")
+	f.put("athome/work/y/break-glass.rotate", SSHKeyPassword+"\nk\n")
+	if err := Resume(context.Background(), o); err != nil {
+		t.Fatal(err)
+	}
+	if st, _ := loadState(o.Home); len(st.Jobs) != 0 {
+		t.Errorf("jobs left: %+v", st.Jobs)
+	}
+}
+
+func TestRotateLocksOut(t *testing.T) {
+	o, _, _ := rotateHome(t)
+	withInventory(t)
+	unlock, err := lockState(o.Home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unlock()
+	if err := Rotate(context.Background(), o, Kinds{Laptop: true}); err == nil || !strings.Contains(err.Error(), "another athome keys rotate") {
+		t.Errorf("err = %v", err)
 	}
 }

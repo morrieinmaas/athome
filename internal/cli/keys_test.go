@@ -7,12 +7,17 @@ import (
 
 	"github.com/morrieinmaas/athome/internal/cli"
 	"github.com/morrieinmaas/athome/internal/keys"
+	"github.com/morrieinmaas/athome/internal/run/runtest"
 	"github.com/morrieinmaas/athome/internal/steps"
 )
 
 func runKeysMain(t *testing.T, args ...string) (int, string, string) {
 	t.Helper()
 	t.Setenv("HOME", t.TempDir())
+	t.Setenv("TMPDIR", t.TempDir())
+	f := runtest.NewFake()
+	f.Have("chezmoi")
+	t.Cleanup(cli.SetRunner(f))
 	var out, errw bytes.Buffer
 	code := cli.Main(append([]string{"keys"}, args...), &out, &errw)
 	return code, out.String(), errw.String()

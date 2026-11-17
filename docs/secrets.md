@@ -215,6 +215,9 @@ check a login with only the new key, and only then remove the old key everywhere
 which also drops any key someone else added. An unreachable box is skipped and listed; it
 keeps the old key, and so does the laptop (as `<key>.old`) until `--resume` reaches it.
 Progress is in `~/.local/state/athome/rotate.json`.
+The new key waits in Bitwarden as `<item>.rotate` until it works everywhere it must (GitHub
+for the laptop key, every box in the scope for a break-glass key), so the item under the real
+name always holds a key that logs in. A locked rbw stops the run before anything changes.
 
 `gh` needs the key scopes: `gh auth refresh -h github.com -s
 admin:public_key,admin:ssh_signing_key`. `athome status` reminds you once the key is more

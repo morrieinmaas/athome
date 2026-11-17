@@ -405,17 +405,29 @@ func TestDataSkipsBitwardenPromptWhenFormAnswered(t *testing.T) {
 	}
 }
 
-// An explicit hostname answer reaches chezmoi.toml and the key path without touching $HOSTNAME.
-func TestDataHonoursAnsweredHostname(t *testing.T) {
+// A hostname answer sets [data].hostname for that run; the ssh key keeps chezmoi's hostname.
+func TestDataHonoursAnsweredHostnameButNotForTheKey(t *testing.T) {
 	fx := newFixture(t)
 	t.Setenv("HOSTNAME", "envhost")
-	fx.Env.Cfg.Data = map[string]string{"githubHandle": "octo", "githubId": "1", "hostname": "answered"}
+	fx.Env.Cfg.Data = map[string]string{"githubHandle": "octo", "githubId": "1", "hostname": "box"}
 	fx.MustExec(steps.Data())
-	if got := readChezmoiData(t, chezmoiTomlPath(fx))["hostname"]; got != "answered" {
-		t.Errorf("hostname = %#v, want answered", got)
+	if got := readChezmoiData(t, chezmoiTomlPath(fx))["hostname"]; got != "box" {
+		t.Errorf("hostname = %#v, want box", got)
 	}
-	if got, want := steps.KeyPath(context.Background(), fx.Env), fx.Path(".ssh", "answered_ed25519"); got != want {
+	if got, want := steps.KeyPath(context.Background(), fx.Env), fx.Path(".ssh", testHost+"_ed25519"); got != want {
 		t.Errorf("KeyPath = %q, want %q", got, want)
+	}
+}
+
+// A later non-interactive run rewrites hostname as build 2 did, whatever chezmoi.toml holds.
+func TestDataNonInteractiveRunRewritesStoredHostname(t *testing.T) {
+	fx := newFixture(t)
+	t.Setenv("HOSTNAME", "envhost")
+	writeFile(t, chezmoiTomlPath(fx), "[data]\n  hostname = \"box\"\n", 0o600)
+	fx.Env.Cfg.Data = map[string]string{"githubHandle": "octo", "githubId": "1"}
+	fx.MustExec(steps.Data())
+	if got := readChezmoiData(t, chezmoiTomlPath(fx))["hostname"]; got != "envhost" {
+		t.Errorf("hostname = %#v, want envhost", got)
 	}
 }
 

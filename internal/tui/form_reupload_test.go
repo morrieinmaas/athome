@@ -12,7 +12,7 @@ import (
 // Choosing reupload means upload: the answer is true whatever uploadSshKeys was
 // seeded as.
 func TestFormReuploadImpliesUpload(t *testing.T) {
-	st := newFormState(Seed{Values: map[string]string{"uploadSshKeys": "false"}, KeyExists: func(string) bool { return true }})
+	st := newFormState(Seed{Values: map[string]string{"uploadSshKeys": "false"}, KeyExists: true})
 	st.ssh = "reupload"
 	if got := st.answers(); got["sshKeyAction"] != "reupload" || got["uploadSshKeys"] != "true" {
 		t.Errorf("reupload answers = %v, want uploadSshKeys=true", got)
@@ -54,7 +54,7 @@ func TestFormReuploadHidesUploadQuestion(t *testing.T) {
 		ssh      string
 		wantDone bool
 	}{{"reupload", true}, {"use", false}} {
-		st := newFormState(Seed{Values: map[string]string{"useBitwarden": "false"}, KeyExists: func(string) bool { return true }})
+		st := newFormState(Seed{Values: map[string]string{"useBitwarden": "false"}, KeyExists: true})
 		st.ssh = c.ssh
 		f := st.pages(context.Background())[2]().WithKeyMap(quitKeys)
 		f.SubmitCmd, f.CancelCmd = tea.Quit, tea.Quit

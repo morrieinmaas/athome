@@ -34,7 +34,7 @@ func full() map[string]string {
 // FormMatchesBootstrapToml: the form's answers equal config.Load on a bootstrap.toml with the same values.
 func TestFormAnswersMatchBootstrapToml(t *testing.T) {
 	vals := full()
-	st := newFormState(Seed{Values: vals, KeyExists: func(string) bool { return true }})
+	st := newFormState(Seed{Values: vals, KeyExists: true})
 	got := st.answers()
 
 	var b strings.Builder
@@ -106,7 +106,7 @@ func TestFormBwBackupAnswer(t *testing.T) {
 		}
 	}
 	withKey := func(action string) map[string]string {
-		return newFormState(Seed{Values: map[string]string{"sshKeyAction": action}, KeyExists: func(string) bool { return true }}).answers()
+		return newFormState(Seed{Values: map[string]string{"sshKeyAction": action}, KeyExists: true}).answers()
 	}
 	if got, ok := withKey("use")["bwBackupSshKey"]; ok {
 		t.Errorf("an existing key kept is not stored again: %q", got)
@@ -125,7 +125,7 @@ func TestFormSshKeyMapping(t *testing.T) {
 	if g["generateSshKey"] != "false" {
 		t.Errorf("no key, skip: %v", g)
 	}
-	g = newFormState(Seed{Values: map[string]string{}, KeyExists: func(string) bool { return true }}).answers()
+	g = newFormState(Seed{Values: map[string]string{}, KeyExists: true}).answers()
 	if g["sshKeyAction"] != "use" || g["generateSshKey"] != "" {
 		t.Errorf("key exists default: %v", g)
 	}
@@ -167,26 +167,12 @@ func TestFormDropsGithubIdWhenHandleChanges(t *testing.T) {
 	}
 }
 
-// Whether a key exists follows the hostname the form answered, not the seeded one.
-func TestFormKeyExistsFollowsAnsweredHostname(t *testing.T) {
-	seed := Seed{
-		Values:    map[string]string{"hostname": "old"},
-		KeyExists: func(h string) bool { return h == "new" },
-	}
-	st := newFormState(seed)
-	if got := st.answers(); got["generateSshKey"] != "true" || got["sshKeyAction"] != "" {
-		t.Errorf("old hostname has no key: %v", got)
-	}
+// The key is chezmoi's hostname's, so answering another hostname leaves the ssh choice alone.
+func TestFormHostnameAnswerDoesNotChangeKeyExistence(t *testing.T) {
+	st := newFormState(Seed{Values: map[string]string{"hostname": "old"}, KeyExists: true})
 	*st.v["hostname"] = "new"
-	st.syncSSH()
-	got := st.answers()
-	if got["sshKeyAction"] != "use" || got["generateSshKey"] != "" {
-		t.Errorf("new hostname has a key, want sshKeyAction=use and no generateSshKey: %v", got)
-	}
-	*st.v["hostname"] = "old"
-	st.syncSSH()
-	if got := st.answers(); got["generateSshKey"] != "true" || got["sshKeyAction"] != "" {
-		t.Errorf("back to the old hostname: %v", got)
+	if got := st.answers(); got["sshKeyAction"] != "use" || got["generateSshKey"] != "" || got["hostname"] != "new" {
+		t.Errorf("want sshKeyAction=use and hostname=new: %v", got)
 	}
 }
 

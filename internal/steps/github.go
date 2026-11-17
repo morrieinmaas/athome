@@ -118,7 +118,7 @@ func ghDecide(ctx context.Context, env *Env) ghPlan {
 	if !ghPreconditions(ctx, env, &p) {
 		return ghPlan{} // ghSkip; no half-filled paths
 	}
-	p.host = dataShortHostname(env)
+	p.host = shortHostname()
 	p.signPub = p.pub
 	if def := filepath.Join(env.Home, ".ssh", "id_ed25519.pub"); fileExists(def) {
 		p.signPub = def

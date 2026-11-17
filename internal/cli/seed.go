@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/morrieinmaas/athome/internal/config"
@@ -34,7 +33,7 @@ func buildSeed(ctx context.Context, env *steps.Env, o initOpts, environ map[stri
 	return tui.Seed{
 		Values:      vals,
 		Locked:      locked,
-		KeyExists:   keyExistsFor(ctx, env),
+		KeyExists:   keyExists(ctx, env),
 		CheckURL:    checkURL,
 		CheckHandle: func(ctx context.Context, h string) error { return checkHandle(ctx, env.Run, h) },
 	}
@@ -99,16 +98,9 @@ func seedDerivedDefaults(ctx context.Context, env *steps.Env, vals map[string]st
 	}
 }
 
-// keyExistsFor answers for the hostname the form ends up with. mergeAnswers pins
-// any hostname but the short one, so an explicit hostname names the key file
-// directly; otherwise the steps' own key path (chezmoi's hostname) decides.
-func keyExistsFor(ctx context.Context, env *steps.Env) func(string) bool {
-	return func(hostname string) bool {
-		path := filepath.Join(env.Home, ".ssh", hostname+"_ed25519")
-		if hostname == "" || hostname == steps.ShortHostname() {
-			path = steps.KeyPath(ctx, env)
-		}
-		_, err := os.Stat(path)
-		return err == nil
-	}
+// keyExists is whether the machine's ssh key exists; the key path follows
+// chezmoi's hostname, never the form's hostname answer.
+func keyExists(ctx context.Context, env *steps.Env) bool {
+	_, err := os.Stat(steps.KeyPath(ctx, env))
+	return err == nil
 }

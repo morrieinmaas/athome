@@ -117,7 +117,7 @@ func mergeAnswers(env *steps.Env, ans map[string]string) {
 			if v == "" {
 				v = steps.ShortHostname() // the form's empty hostname means this machine's name
 			}
-			env.Cfg.Data["hostname"] = v // the data step records it and flags it as the form's choice
+			env.Cfg.Data["hostname"] = v // the data step records it for this run only
 		default:
 			env.Cfg.Data[k] = v
 		}

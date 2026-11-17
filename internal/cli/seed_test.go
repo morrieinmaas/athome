@@ -55,7 +55,7 @@ func TestSeedPrecedenceAndLocked(t *testing.T) {
 	if got.Locked["personalName"] {
 		t.Errorf("a config-file field is prefilled, not locked")
 	}
-	if got.KeyExists(os.Getenv("HOSTNAME")) {
+	if got.KeyExists {
 		t.Errorf("no ssh key exists")
 	}
 }
@@ -72,7 +72,7 @@ func TestSeedKeyExistsAndNoAgentsFlag(t *testing.T) {
 		return nil, tui.ErrQuit
 	}
 	run2("init", "--no-agents")
-	if !got.KeyExists("testbox") {
+	if !got.KeyExists {
 		t.Error("KeyExists must be true when the key file exists")
 	}
 	if got.Values["meshProvider"] != "netbird" {
@@ -97,7 +97,7 @@ func TestSeedKeyExistsUsesTheStepsKeyPath(t *testing.T) {
 		return nil, tui.ErrQuit
 	}
 	run2("init")
-	if !got.KeyExists("testbox") {
+	if !got.KeyExists {
 		t.Error("KeyExists must look at the chezmoi hostname's key")
 	}
 }
@@ -161,26 +161,27 @@ func TestSeedFileSettingsBeatStored(t *testing.T) {
 	}
 }
 
-// A hostname changed in the form is checked for its own key: the ssh question
-// is answered by the form and the steps need not ask it again.
-func TestSeedKeyExistsFollowsAnsweredHostname(t *testing.T) {
+// A hostname answered in the form is written to chezmoi.toml for this run, but
+// the ssh key keeps chezmoi's hostname: the form's key question is about that key.
+func TestFormHostnameAnswerLeavesTheKeyOnChezmoisHostname(t *testing.T) {
 	home, _ := tuiSandbox(t)
+	f := runtest.NewFake()
+	f.On("chezmoi", "execute-template", "{{ .chezmoi.hostname }}").Return(run.Result{Stdout: "chez\n"})
+	newRunner = func() run.Runner { return f }
 	os.MkdirAll(filepath.Join(home, ".ssh"), 0o700)
-	os.WriteFile(filepath.Join(home, ".ssh", "other_ed25519"), []byte("k"), 0o600)
+	os.WriteFile(filepath.Join(home, ".ssh", "chez_ed25519"), []byte("k"), 0o600)
 	runForm = func(_ context.Context, _ io.Reader, _ io.Writer, s tui.Seed) (map[string]string, error) {
-		if s.KeyExists("testbox") {
-			t.Error("the seeded hostname has no key")
+		if !s.KeyExists {
+			t.Error("chezmoi's hostname has a key")
 		}
-		if !s.KeyExists("other") {
-			t.Error("the answered hostname has a key")
-		}
-		return map[string]string{"machineType": "personal", "hostname": "other", "sshKeyAction": "use"}, nil
+		return map[string]string{"machineType": "personal", "hostname": "box", "sshKeyAction": "use"}, nil
 	}
-	var action string
+	var action, keyPath string
 	var asked bool
 	runProgress = func(ctx context.Context, _ io.Reader, _ io.Writer, env *steps.Env, _ []steps.Step, _ func(func(func()))) (steps.Report, error) {
 		env.Ask = prompt.New(failReader{&asked}, io.Discard)
 		action = env.Cfg.Data["sshKeyAction"]
+		keyPath = steps.KeyPath(ctx, env)
 		return steps.Execute(ctx, env, steps.SSHKey())
 	}
 	if code, _, e := run2("init"); code != 0 {
@@ -188,6 +189,9 @@ func TestSeedKeyExistsFollowsAnsweredHostname(t *testing.T) {
 	}
 	if action != "use" || asked {
 		t.Errorf("sshKeyAction = %q, asked = %v: the steps must not ask again", action, asked)
+	}
+	if want := filepath.Join(home, ".ssh", "chez_ed25519"); keyPath != want {
+		t.Errorf("key path = %q, want %q", keyPath, want)
 	}
 }
 

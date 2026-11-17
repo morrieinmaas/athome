@@ -19,24 +19,22 @@ var ErrQuit = errors.New("form quit")
 
 // Seed is what the form starts from. Values holds the prefilled answers keyed
 // as chezmoi's [data]; Locked fields are shown but not editable and keep their value.
-// KeyExists reports whether an ssh key exists for a hostname; it is asked with
-// the hostname the form answers, and nil means no key.
+// KeyExists is whether an ssh key exists for the machine; the key is named from
+// chezmoi's hostname, never from the form's hostname answer.
 type Seed struct {
 	Values      map[string]string
 	Locked      map[string]bool
-	KeyExists   func(hostname string) bool
+	KeyExists   bool
 	CheckURL    func(context.Context, string) error
 	CheckHandle func(context.Context, string) error
 }
 
 // formState holds every answer as a string; huh fields bind to its pointers.
 type formState struct {
-	seed Seed
-	v    map[string]*string
-	ssh  string // the ssh key choice: use|generate|reupload, or generate|skip
-	// sshHasKey is the key existence ssh was last defaulted for; it is reset when
-	// the answered hostname changes it.
-	sshHasKey bool
+	seed      Seed
+	v         map[string]*string
+	ssh       string // the ssh key choice: use|generate|reupload, or generate|skip
+	sshHasKey bool   // whether a key exists; fixed by the seed
 	// submitting is true while the message being handled is an enter or tab key,
 	// so a validator can tell a submit from huh's validation on blur.
 	submitting bool
@@ -74,14 +72,9 @@ func newFormState(seed Seed) *formState {
 		}
 		s.v[k] = &val
 	}
-	s.sshHasKey = s.keyExists()
+	s.sshHasKey = seed.KeyExists
 	s.ssh = s.sshDefault()
 	return s
-}
-
-// keyExists asks the seed about the hostname as currently answered.
-func (s *formState) keyExists() bool {
-	return s.seed.KeyExists != nil && s.seed.KeyExists(*s.v["hostname"])
 }
 
 func (s *formState) sshDefault() string {
@@ -97,17 +90,8 @@ func (s *formState) sshDefault() string {
 	return "generate"
 }
 
-// syncSSH resets the ssh choice when the answered hostname changed whether a key exists.
-func (s *formState) syncSSH() {
-	if has := s.keyExists(); has != s.sshHasKey {
-		s.sshHasKey = has
-		s.ssh = s.sshDefault()
-	}
-}
-
 // answers maps the state to the Data keys the steps read.
 func (s *formState) answers() map[string]string {
-	s.syncSSH()
 	out := map[string]string{}
 	for k, p := range s.v {
 		out[k] = *p
@@ -238,7 +222,6 @@ func (s *formState) identityPage(ctx context.Context) *huh.Form {
 }
 
 func (s *formState) keysPage(ctx context.Context) *huh.Form {
-	s.syncSSH()
 	sshOpts := []string{"generate", "skip"}
 	sshTitle := "No ssh key yet: create one?"
 	if s.sshHasKey {

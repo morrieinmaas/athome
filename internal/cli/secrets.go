@@ -11,20 +11,24 @@ import (
 	"github.com/morrieinmaas/athome/internal/secrets"
 )
 
-const secretsUsage = "Usage: athome secrets backup|restore [--dry-run]\n\n  backup           mirror the local secret files into the encrypted vault and push\n  restore          clone the vault, unlock it and copy the files into place\n  restore --dry-run  show what would be written, write nothing\n"
+const secretsUsage = "Usage: athome secrets backup|restore|rekey [--dry-run|--yes]\n\n  backup           mirror the local secret files into the encrypted vault and push\n  restore          clone the vault, unlock it and copy the files into place\n  restore --dry-run  show what would be written, write nothing\n  rekey [--yes]    new vault repo with a new git-crypt key; the old repo is renamed\n"
 
 func runSecrets(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 1 && (args[0] == "-h" || args[0] == "--help") {
 		fmt.Fprint(stdout, secretsUsage)
 		return exitOK
 	}
-	var restore, dry bool
+	var restore, dry, rekey, yes bool
 	switch {
 	case len(args) == 1 && args[0] == "backup":
 	case len(args) == 1 && args[0] == "restore":
 		restore = true
 	case len(args) == 2 && args[0] == "restore" && args[1] == "--dry-run":
 		restore, dry = true, true
+	case len(args) == 1 && args[0] == "rekey":
+		rekey = true
+	case len(args) == 2 && args[0] == "rekey" && args[1] == "--yes":
+		rekey, yes = true, true
 	default:
 		fmt.Fprint(stderr, secretsUsage)
 		return exitUsage
@@ -36,6 +40,10 @@ func runSecrets(args []string, stdout, stderr io.Writer) int {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	if rekey {
+		o := secrets.FromEnv(home, newRunner(), stdout, stderr)
+		return secrets.Rekey(ctx, secrets.RekeyOpts{Opts: o, Yes: yes, TTY: stdinIsTTY(), In: os.Stdin})
+	}
 	if !restore {
 		return secrets.Backup(ctx, secrets.BackupFromEnv(home, newRunner(), stdout, stderr))
 	}

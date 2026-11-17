@@ -27,14 +27,14 @@ func secretsEnv(t *testing.T) (home string, fake *runtest.Fake) {
 func TestSecretsUsage(t *testing.T) {
 	secretsEnv(t)
 	for _, args := range [][]string{
-		{"secrets"}, {"secrets", "rekey"}, {"secrets", "backup", "x"}, {"secrets", "restore", "--wet"}, {"secrets", "restore", "--dry-run", "x"}, {"secrets", "bogus"},
+		{"secrets"}, {"secrets", "rekey", "x"}, {"secrets", "rekey", "--no"}, {"secrets", "backup", "x"}, {"secrets", "restore", "--wet"}, {"secrets", "restore", "--dry-run", "x"}, {"secrets", "bogus"},
 	} {
 		code, _, errOut := runMain(args...)
-		if code != 2 || !strings.Contains(errOut, "backup|restore") {
+		if code != 2 || !strings.Contains(errOut, "backup|restore|rekey") {
 			t.Errorf("%v: code %d, stderr %q; want 2 naming backup|restore", args, code, errOut)
 		}
 	}
-	if code, out, _ := runMain("secrets", "--help"); code != 0 || !strings.Contains(out, "backup|restore") {
+	if code, out, _ := runMain("secrets", "--help"); code != 0 || !strings.Contains(out, "backup|restore|rekey") {
 		t.Errorf("--help: code %d out %q", code, out)
 	}
 	if _, out, _ := runMain("--help"); !strings.Contains(out, "secrets") {
@@ -63,5 +63,36 @@ func TestSecretsRestoreDryRun(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(home, "a")); err == nil {
 		t.Errorf("dry run wrote")
+	}
+}
+
+func rekeyVault(t *testing.T) (home string, fake *runtest.Fake) {
+	t.Helper()
+	home, fake = secretsEnv(t)
+	fake.Have("git-crypt", "rbw")
+	t.Setenv("ATHOME_GITHUB_HANDLE", "alice")
+	os.MkdirAll(filepath.Join(home, ".local", "share", "attic", ".git"), 0o755)
+	return home, fake
+}
+
+func TestSecretsRekeyNoTerminalNeedsYes(t *testing.T) {
+	_, fake := rekeyVault(t)
+	t.Cleanup(cli.SetStdinTTY(false))
+	code, _, errOut := runMain("secrets", "rekey")
+	if code != 2 || !strings.Contains(errOut, "--yes") {
+		t.Errorf("code %d stderr %q", code, errOut)
+	}
+	for _, c := range fake.Calls() {
+		if c.Name == "gh" || (c.Name == "rbw" && (c.Args[0] == "add" || c.Args[0] == "edit")) {
+			t.Errorf("changed things: %v", c)
+		}
+	}
+}
+
+func TestSecretsRekeyNoVault(t *testing.T) {
+	secretsEnv(t)
+	code, _, errOut := runMain("secrets", "rekey", "--yes")
+	if code != 1 || !strings.Contains(errOut, "vault not found") {
+		t.Errorf("code %d stderr %q", code, errOut)
 	}
 }

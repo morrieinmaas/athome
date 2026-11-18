@@ -53,6 +53,10 @@ var answers = []struct{ key, env, def string }{
 	{"sshKeyAction", "ATHOME_SSH_KEY_ACTION", ""},
 	{"generateSshKey", "ATHOME_GENERATE_SSH_KEY", ""},
 	{"bitwardenUrl", "ATHOME_BW_BASE_URL", ""},
+	{"scope", "ATHOME_SCOPE", ""},
+	{"machineName", "ATHOME_MACHINE_NAME", ""},
+	{"timezone", "ATHOME_TIMEZONE", ""},
+	{"locale", "ATHOME_LOCALE", ""},
 }
 
 // DataEnv maps each answer key to the ATHOME_* variable that presets it.
@@ -103,6 +107,11 @@ func Load(o Options) (Config, error) {
 		return cfg, err
 	}
 	cfg.Machine, cfg.IncludeAgents = machine, includeAgents
+	if machine == "remote" {
+		if err := validateRemote(cfg.Data); err != nil {
+			return cfg, err
+		}
+	}
 	return cfg, nil
 }
 
@@ -126,10 +135,34 @@ func resolveMachineAgents(o Options, text string) (machine string, includeAgents
 			return machine, includeAgents, fmt.Errorf("%w: includeAgents must be true|false (got: %s)", ErrUsage, a)
 		}
 	}
-	if machine != "personal" && machine != "work" {
-		return machine, includeAgents, fmt.Errorf("%w: machine must be personal|work (got: %s)", ErrUsage, machine)
+	if machine != "personal" && machine != "work" && machine != "remote" {
+		return machine, includeAgents, fmt.Errorf("%w: machine must be personal|work|remote (got: %s)", ErrUsage, machine)
 	}
 	return machine, includeAgents, nil
+}
+
+var (
+	scopeRe       = regexp.MustCompile(`^(work|personal|sidebiz)/[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$`)
+	machineNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,62}$`)
+)
+
+// validateRemote checks the answers a remote box needs; the same rules the
+// machine inventory applies, so a value is safe in a path and a shell word.
+func validateRemote(d map[string]string) error {
+	scope := d["scope"]
+	ok := scopeRe.MatchString(scope)
+	for _, seg := range strings.Split(scope, "/") {
+		if seg == "." || seg == ".." {
+			ok = false
+		}
+	}
+	if !ok {
+		return fmt.Errorf("%w: scope must be work|personal|sidebiz/<path> for a remote machine (got: %q; set ATHOME_SCOPE or scope in the config file)", ErrUsage, scope)
+	}
+	if !machineNameRe.MatchString(d["machineName"]) {
+		return fmt.Errorf("%w: machineName must match %s for a remote machine (got: %q; set ATHOME_MACHINE_NAME or machineName in the config file)", ErrUsage, machineNameRe, d["machineName"])
+	}
+	return nil
 }
 
 // readAnswersFile finds the answers file: --config, else the repo's

@@ -109,7 +109,7 @@ func dataPrompt(env *Env, entries []dataEntry) bool {
 // bitwardenURLUnasked: no URL in the config or chezmoi.toml, and Bitwarden is
 // not switched off, so an interactive run asks for it.
 func bitwardenURLUnasked(env *Env) bool {
-	return !env.Answered["bitwardenUrl"] && env.Cfg.Data["bitwardenUrl"] == "" && env.Cfg.Data["useBitwarden"] != "false" && storedBitwardenURL(env) == ""
+	return env.Cfg.Machine != "remote" && !env.Answered["bitwardenUrl"] && env.Cfg.Data["bitwardenUrl"] == "" && env.Cfg.Data["useBitwarden"] != "false" && storedBitwardenURL(env) == ""
 }
 
 func storedBitwardenURL(env *Env) string {
@@ -216,6 +216,11 @@ func dataEntries(ctx context.Context, env *Env) ([]dataEntry, error) {
 			v = storedBitwardenURL(env) // an earlier answer is kept unless the form answered it
 		}
 		entries = append(entries, dataEntry{key: k, val: v})
+	}
+	if env.Cfg.Machine == "remote" {
+		for _, k := range []string{"scope", "machineName", "timezone", "locale"} {
+			entries = append(entries, dataEntry{key: k, val: d[k]})
+		}
 	}
 	entries = append(entries, dataEntry{key: "includeAgents", bool: env.Cfg.IncludeAgents, isB: true})
 	return entries, nil

@@ -253,18 +253,26 @@ func skDecide(ctx context.Context, env *Env) bool {
 		}
 		return env.Cfg.Data["sshKeyAction"] == "generate"
 	}
-	if env.Cfg.Data["generateSshKey"] == "" && env.Ask != nil {
+	if skGenerate(env) == "" && env.Ask != nil {
 		answer := "true"
 		if !env.Ask.Confirm("No ssh key for "+dataHostname(ctx, env)+": create one?", true) {
 			answer = "false"
 		}
 		skSetData(env, "generateSshKey", answer)
 	}
-	if env.Cfg.Data["generateSshKey"] == "false" {
+	if skGenerate(env) == "false" {
 		envLogln(env, "no ssh key generated: bring your own / use the agent")
 		return false
 	}
 	return true
+}
+
+// skGenerate is the generateSshKey answer; a remote box never generates one at init.
+func skGenerate(env *Env) string {
+	if env.Cfg.Machine == "remote" {
+		return "false"
+	}
+	return env.Cfg.Data["generateSshKey"]
 }
 
 func skSetData(env *Env, key, val string) {
@@ -287,10 +295,10 @@ func skKeygenCheck(ctx context.Context, env *Env) (bool, error) {
 		}
 		return true, nil
 	}
-	if env.Ask != nil && env.Cfg.Data["generateSshKey"] == "" {
+	if env.Ask != nil && skGenerate(env) == "" {
 		return false, nil // Apply asks
 	}
-	if env.Cfg.Data["generateSshKey"] == "false" {
+	if skGenerate(env) == "false" {
 		envLogln(env, "no ssh key generated: bring your own / use the agent")
 		return true, nil
 	}

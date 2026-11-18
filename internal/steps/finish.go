@@ -164,6 +164,9 @@ func secretsMarkerTidy(env *Env) {
 }
 
 func secretsRestoreDone(ctx context.Context, env *Env) (bool, error) {
+	if env.Cfg.Machine == "remote" {
+		return true, nil
+	}
 	if hasSecretsEnv(env) {
 		return true, nil
 	}
@@ -260,7 +263,7 @@ func bwSetupRunnable(env *Env) bool {
 // it is done when rbw is unlocked or registered, or when there is no script to
 // run. It never prompts.
 func bitwardenDone(ctx context.Context, env *Env) (bool, error) {
-	if env.Ask == nil || env.Cfg.Data["useBitwarden"] == "false" {
+	if env.Ask == nil || env.Cfg.Machine == "remote" || env.Cfg.Data["useBitwarden"] == "false" {
 		return true, nil
 	}
 	if env.Cfg.Data["useBitwarden"] == "" {

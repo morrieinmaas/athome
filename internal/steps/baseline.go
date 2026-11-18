@@ -196,15 +196,19 @@ func installPackages(ctx context.Context, env *Env) error {
 
 // projectDirContexts lists the dirs run_03-setup-project-dirs.sh.tmpl seeds per
 // machine type; only the done check needs them, the script does the seeding.
-func projectDirContexts(machine string) []string {
+func projectDirContexts(env *Env) []string {
+	machine := env.Cfg.Machine
 	if machine == "work" {
 		return []string{"work"}
+	}
+	if machine == "remote" {
+		return []string{env.Cfg.Data["scope"]}
 	}
 	return []string{"personal", "sidebiz"}
 }
 
 func projectDirsDone(_ context.Context, env *Env) (bool, error) {
-	for _, d := range projectDirContexts(env.Cfg.Machine) {
+	for _, d := range projectDirContexts(env) {
 		if _, err := os.Stat(filepath.Join(env.Home, d, ".envrc")); err != nil {
 			return false, nil
 		}

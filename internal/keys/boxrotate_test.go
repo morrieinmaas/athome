@@ -50,8 +50,10 @@ func (b *fakeKeyBox) PromoteKey(_ context.Context, newPub string) error {
 	return nil
 }
 
+const jqIDKeyTitle = `.[] | "\(.id) \(.key) \(.title)"`
+
 func ghListing(f *fakeBW, endpoint string, lines ...string) {
-	f.On("gh", "api", "--paginate", endpoint, "--jq", jqIDKey).Return(run.Result{Stdout: strings.Join(lines, "\n") + "\n"})
+	f.On("gh", "api", "--paginate", endpoint, "--jq", jqIDKeyTitle).Return(run.Result{Stdout: strings.Join(lines, "\n") + "\n"})
 }
 
 func ghCalls(f *fakeBW) []run.Cmd {
@@ -73,8 +75,8 @@ func TestRotateBoxesSkipsFailingBoxThenResumes(t *testing.T) {
 	withInventory(t, good, bad, plain)
 
 	f.On("gh", "auth", "token", "--hostname", "github.com", "--user", "acct").Return(run.Result{Stdout: "sekrit\n"})
-	ghListing(f, "user/keys", "11 ssh-ed25519 OLDgood", "12 ssh-ed25519 OLDbad", "13 ssh-ed25519 OTHER")
-	ghListing(f, "user/ssh_signing_keys", "21 ssh-ed25519 OLDgood", "22 ssh-ed25519 OLDbad")
+	ghListing(f, "user/keys", "11 ssh-ed25519 OLDgood athome-good", "12 ssh-ed25519 OLDbad athome-bad", "13 ssh-ed25519 OTHER athome-x")
+	ghListing(f, "user/ssh_signing_keys", "21 ssh-ed25519 OLDgood athome-good-sign", "22 ssh-ed25519 OLDbad athome-bad-sign")
 
 	err := Rotate(context.Background(), o, Kinds{Boxes: true})
 	var inc *IncompleteError
@@ -186,3 +188,65 @@ func TestRotateBoxGoneFromInventoryIsDropped(t *testing.T) {
 		t.Errorf("jobs left: %+v", st.Jobs)
 	}
 }
+
+func deletes(f *fakeBW) []string {
+	var out []string
+	for _, c := range ghCalls(f) {
+		if len(c.Args) > 2 && c.Args[1] == "-X" {
+			out = append(out, c.Args[3])
+		}
+	}
+	return out
+}
+
+func TestRotateBoxSkipsBoxClaimingLaptopKey(t *testing.T) {
+	o, f, key := rotateHome(t)
+	var log []string
+	b := &fakeKeyBox{fakeBox: fakeBox{name: "evil", scope: "work/a", log: &log}, cur: strings.TrimSpace(readPub(t, key+".pub"))}
+	withInventory(t, b)
+	ghListing(f, "user/keys", "5 "+pubBlobLine(b.cur)+" athome-evil")
+	ghListing(f, "user/ssh_signing_keys", "6 "+pubBlobLine(b.cur)+" athome-evil-sign")
+
+	if err := Rotate(context.Background(), o, Kinds{Boxes: true}); err == nil {
+		t.Fatal("want incomplete")
+	}
+	if d := deletes(f); len(d) != 0 {
+		t.Errorf("deleted %v", d)
+	}
+	if b.newKeys != 0 {
+		t.Errorf("NewKey called %d times", b.newKeys)
+	}
+}
+
+func TestRotateBoxSkipsMalformedCurrentPub(t *testing.T) {
+	for _, cur := range []string{"", "garbage", "ssh-rsa AAAA x", "ssh-ed25519 AAAA x\nssh-ed25519 BBBB y", "ssh-ed25519 A!B x"} {
+		o, f, _ := rotateHome(t)
+		var log []string
+		b := &fakeKeyBox{fakeBox: fakeBox{name: "bad", scope: "work/a", log: &log}, cur: cur}
+		withInventory(t, b)
+		if err := Rotate(context.Background(), o, Kinds{Boxes: true}); err == nil {
+			t.Errorf("%q: want incomplete", cur)
+		}
+		if len(ghCalls(f)) != 0 || b.newKeys != 0 {
+			t.Errorf("%q: gh calls %v, new keys %d", cur, ghCalls(f), b.newKeys)
+		}
+	}
+}
+
+func TestRotateBoxDeletesOnlyOwnTitles(t *testing.T) {
+	o, f, _ := rotateHome(t)
+	var log []string
+	b := &fakeKeyBox{fakeBox: fakeBox{name: "bx", scope: "work/a", log: &log}, cur: "ssh-ed25519 OLDbx bx"}
+	withInventory(t, b)
+	ghListing(f, "user/keys", "1 ssh-ed25519 OLDbx laptop", "2 ssh-ed25519 OLDbx athome-bx")
+	ghListing(f, "user/ssh_signing_keys", "3 ssh-ed25519 OLDbx athome-bx", "4 ssh-ed25519 OLDbx athome-bx-sign")
+
+	if err := Rotate(context.Background(), o, Kinds{Boxes: true}); err != nil {
+		t.Fatal(err)
+	}
+	if d := deletes(f); !slices.Equal(d, []string{"user/keys/2", "user/ssh_signing_keys/4"}) {
+		t.Errorf("deleted = %v", d)
+	}
+}
+
+func pubBlobLine(pub string) string { return strings.Fields(pub)[0] + " " + pubBlob(pub) }

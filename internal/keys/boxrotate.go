@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 
 	"github.com/morrieinmaas/athome/internal/run"
@@ -63,12 +64,17 @@ func runBox(ctx context.Context, o Options, j *job, boxes []Box, save func() err
 		j.Targets[boxSkipTarget(j.Item)] = phaseSkipped
 		return save()
 	}
+	protected := protectedBlobs(o)
 	if j.OldPub == "" {
 		pub, err := kb.CurrentPub(ctx)
 		if err != nil {
 			return skip(err)
 		}
-		j.OldPub = strings.TrimSpace(pub)
+		pub = strings.TrimSpace(pub)
+		if err := checkBoxPub("current key", pub, protected); err != nil {
+			return skip(err)
+		}
+		j.OldPub = pub
 		if err := save(); err != nil {
 			return err
 		}
@@ -79,7 +85,11 @@ func runBox(ctx context.Context, o Options, j *job, boxes []Box, save func() err
 		if err != nil {
 			return skip(err)
 		}
-		j.NewPub = strings.TrimSpace(pub)
+		pub = strings.TrimSpace(pub)
+		if err := checkBoxPub("new key", pub, protected); err != nil {
+			return skip(err)
+		}
+		j.NewPub = pub
 		if err := save(); err != nil {
 			return err
 		}
@@ -120,7 +130,10 @@ func runBox(ctx context.Context, o Options, j *job, boxes []Box, save func() err
 	}
 	if j.Targets["github"] == phaseChecked {
 		o.say("==> %s: removing the old key from GitHub", j.Item)
-		if err := ghRemove(ctx, gh, j.OldPub); err != nil {
+		if err := ghRemoveTitled(ctx, gh, j.OldPub, map[string]string{
+			"user/keys":             "athome-" + j.Item,
+			"user/ssh_signing_keys": "athome-" + j.Item + "-sign",
+		}); err != nil {
 			return err
 		}
 		j.Targets["github"] = phaseRemoved
@@ -129,6 +142,32 @@ func runBox(ctx context.Context, o Options, j *job, boxes []Box, save func() err
 		}
 	}
 	o.say("✓ %s key rotated", j.Item)
+	return nil
+}
+
+var boxPubLine = regexp.MustCompile(`^ssh-ed25519 [A-Za-z0-9+/]+=*( [^\r\n]*)?$`)
+
+// protectedBlobs are the public keys a box may never claim as its own: the
+// laptop key, whose GitHub entries a rotation must not delete.
+func protectedBlobs(o Options) map[string]bool {
+	out := map[string]bool{}
+	if b, err := os.ReadFile(LaptopKey(o.Home, o.Host) + ".pub"); err == nil {
+		if blob := pubBlob(string(b)); blob != "" {
+			out[blob] = true
+		}
+	}
+	return out
+}
+
+// checkBoxPub accepts only one "ssh-ed25519 <base64>[ comment]" line that is
+// not a protected key. A box is not trusted to name the laptop's key.
+func checkBoxPub(what, pub string, protected map[string]bool) error {
+	if !boxPubLine.MatchString(pub) {
+		return fmt.Errorf("the box's %s is not one ssh-ed25519 public key line", what)
+	}
+	if protected[pubBlob(pub)] {
+		return fmt.Errorf("the box's %s is the laptop key; refusing", what)
+	}
 	return nil
 }
 

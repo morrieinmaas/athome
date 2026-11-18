@@ -353,6 +353,20 @@ render_with_keys() {
   done
 }
 
+@test "laptop vpn script: netbird with country and url set renders what origin/main rendered" {
+  f=run_once_08-setup-vpn-client
+  for t in personal work; do
+    printf '  nordvpn_country = "Netherlands"\n  netbird_management_url = "https://nb.example"\n  mesh_provider = "netbird"\n' >>"$TMP/$t.toml"
+    for os in linux darwin; do
+      render "$t" ".chezmoiscripts/$f.sh.tmpl" "$os" >"$TMP/out"
+      if ! cmp -s "$TMP/out" "$ROOT/test/fixtures/laptop/$f.netbird.$t.$os"; then
+        echo "$f netbird differs for $t on $os" >&2
+        return 1
+      fi
+    done
+  done
+}
+
 @test "vpn client: a remote box with mesh_provider meshnet still gets netbird" {
   s=.chezmoiscripts/run_once_08-setup-vpn-client.sh.tmpl
   printf '  nordvpn_country = ""\n  netbird_management_url = ""\n  mesh_provider = "meshnet"\n' >>"$TMP/remote.toml"

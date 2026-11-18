@@ -70,11 +70,10 @@ func Rotate(ctx context.Context, o Options, k Kinds) error {
 		st.Jobs = append(st.Jobs, j)
 	}
 	if k.Boxes {
-		if len(boxes) > 0 {
-			// ponytail: box keys are created on the box, which is the remote-machines build's ssh work.
-			return errors.New("rotating box keys arrives with athome machine (the remote-machines build)")
+		if len(boxes) == 0 {
+			o.say("no machines in the inventory: no box keys to rotate")
 		}
-		o.say("no machines in the inventory: no box keys to rotate")
+		st.Jobs = append(st.Jobs, boxJobs(o, boxes)...)
 	}
 	if k.BreakGlass {
 		scopes := scopesOf(boxes)
@@ -151,6 +150,8 @@ func runJobs(ctx context.Context, o Options, st *state, boxes []Box) error {
 		switch j.Kind {
 		case kindLaptop:
 			err = runLaptop(ctx, o, j, boxes, st.Jobs, save)
+		case kindBox:
+			err = runBox(ctx, o, j, boxes, save)
 		case kindBreakGlass:
 			err = runBreakGlass(ctx, o, j, boxes, st.Jobs, save)
 		default:
@@ -180,6 +181,12 @@ func runJobs(ctx context.Context, o Options, st *state, boxes []Box) error {
 
 func skippedOf(j *job) []string {
 	var out []string
+	if j.Kind == kindBox {
+		if j.Targets["github"] != phaseRemoved || !j.Promoted {
+			out = append(out, j.Item)
+		}
+		return out
+	}
 	for t, p := range j.Targets {
 		if p != phaseRemoved {
 			out = append(out, strings.TrimPrefix(t, "box:"))

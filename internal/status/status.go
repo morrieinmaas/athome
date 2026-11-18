@@ -33,13 +33,14 @@ type Component struct {
 }
 
 type Report struct {
-	Version    string      `json:"version"`
-	Commit     string      `json:"commit"`
-	Repo       string      `json:"repo"`
-	Ref        string      `json:"ref"`
-	Current    bool        `json:"current"`
-	Components []Component `json:"components"`
-	Keys       KeysStatus  `json:"keys"`
+	Version    string         `json:"version"`
+	Commit     string         `json:"commit"`
+	Repo       string         `json:"repo"`
+	Ref        string         `json:"ref"`
+	Current    bool           `json:"current"`
+	Components []Component    `json:"components"`
+	Keys       KeysStatus     `json:"keys"`
+	Machines   MachinesStatus `json:"machines"`
 }
 
 // Collect checks every component. Version and commit are the running binary's.

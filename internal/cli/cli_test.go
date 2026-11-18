@@ -368,7 +368,7 @@ func TestEmptyMachineFlagIsUsageError(t *testing.T) {
 			sandbox(t)
 			inRepo(t)
 			code, _, errOut := runMain(args...)
-			if code != 2 || !strings.Contains(errOut, "machine must be personal|work (got: )") {
+			if code != 2 || !strings.Contains(errOut, "machine must be personal|work|remote (got: )") {
 				t.Errorf("exit %d stderr %q; want 2 with the machine message", code, errOut)
 			}
 		})

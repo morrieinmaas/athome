@@ -92,8 +92,9 @@ func TestBackup(t *testing.T) {
 		f.write(f.home_(".config", "scw", "config.yaml"), "s")
 		f.write(f.home_(".config", "stripe", "config.toml"), "t")
 		f.write(f.home_(".codeium", "windsurf", "mcp_config.json"), "{}")
+		f.write(f.home_(".config", "athome", "machines.toml"), "[machines]\n")
 		secrets.Backup(context.Background(), f.opts)
-		for _, p := range []string{".secrets/proj/.env", ".secrets/proj/.env.local", ".aws/credentials", ".config/scw/config.yaml", ".config/stripe/config.toml", ".codeium/windsurf/mcp_config.json"} {
+		for _, p := range []string{".secrets/proj/.env", ".secrets/proj/.env.local", ".aws/credentials", ".config/scw/config.yaml", ".config/stripe/config.toml", ".codeium/windsurf/mcp_config.json", ".config/athome/machines.toml"} {
 			if _, err := os.Stat(filepath.Join(f.vault, p)); err != nil {
 				t.Errorf("not mirrored: %s", p)
 			}

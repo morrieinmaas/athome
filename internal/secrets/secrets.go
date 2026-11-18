@@ -144,6 +144,7 @@ func mirrorSources(home string) []string {
 		".aws/config", ".aws/credentials",
 		".config/scw/config.yaml", ".config/stripe/config.toml",
 		".codeium/windsurf/mcp_config.json",
+		".config/athome/machines.toml",
 	} {
 		out = append(out, filepath.Join(home, rel))
 	}

@@ -51,9 +51,9 @@ fi
 sudo loginctl enable-linger "$USER" || warn "could not enable lingering for $USER"
 
 {{- $tz := "" -}}
-{{- if hasKey . "timezone" }}{{ $tz = .timezone }}{{ end }}
+{{- if and (hasKey . "timezone") (regexMatch "^[A-Za-z0-9_+./-]+$" .timezone) }}{{ $tz = .timezone }}{{ end }}
 {{- $locale := "" -}}
-{{- if hasKey . "locale" }}{{ $locale = .locale }}{{ end }}
+{{- if and (hasKey . "locale") (regexMatch "^[A-Za-z0-9_.@-]+$" .locale) }}{{ $locale = .locale }}{{ end }}
 {{ if $tz }}
 # ── timezone ─────────────────────────────────────────────────────────────────
 sudo timedatectl set-timezone {{ $tz | squote }} || warn "could not set the timezone"

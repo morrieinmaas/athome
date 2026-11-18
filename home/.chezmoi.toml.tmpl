@@ -1,6 +1,6 @@
 {{/* First-run prompts for chezmoi. Stored at ~/.config/chezmoi/chezmoi.toml after init. */ -}}
 
-{{- $machineType         := promptStringOnce . "machineType"         "Machine type (work|personal|remote — personal covers sidehustle; remote is a headless dev box set up by athome machine add)" "personal" -}}
+{{- $machineType         := promptStringOnce . "machineType"         "Machine type (work|personal — personal covers sidehustle)" "personal" -}}
 {{- $hostname            := promptStringOnce . "hostname"            "Hostname" .chezmoi.hostname -}}
 {{- $githubHandle        := promptStringOnce . "githubHandle"        "GitHub username (e.g. octocat)" "" -}}
 {{- $githubId            := promptStringOnce . "githubId"            "GitHub numeric user ID (`gh api user -q .id`; empty = plain noreply email)" "" -}}

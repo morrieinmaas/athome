@@ -102,3 +102,8 @@ nudge() {
   GROFE=1 nudge -p 2222 acme-dev uptime
   [ -z "$stderr" ]
 }
+
+@test "-B takes a value: ssh -B eth0 acme-dev still hints" {
+  GROFE=1 nudge -B eth0 acme-dev
+  [ "$stderr" = "$HINT" ]
+}

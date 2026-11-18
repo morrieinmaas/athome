@@ -89,8 +89,10 @@ repo() {
   local remote_file="$HOME/.local/state/athome/remote-projects" machine rpath
   if [[ -r $remote_file ]]; then
     IFS=$'\t' read -r machine rpath < <(awk -F'\t' -v r="$1" '$1 == r { print $2 "\t" $4; exit }' "$remote_file")
-    if [[ -n $machine && -n $rpath ]] && command -v grofe >/dev/null 2>&1; then
-      grofe -r "$machine" new-session -A -s "$1" -c "$rpath"; return
+    local grofe_bin
+    grofe_bin=${commands[grofe]:-$HOME/.local/lib/grofe/grofe}
+    if [[ -n $machine && -n $rpath && -x $grofe_bin ]]; then
+      "$grofe_bin" -r "$machine" new-session -A -s "$1" -c "$rpath"; return
     fi
   fi
   echo "repo: no project '$1' under ~/personal, ~/work, ~/sidebiz" >&2

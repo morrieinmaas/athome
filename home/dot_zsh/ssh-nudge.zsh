@@ -1,4 +1,4 @@
-# ssh-nudge.zsh — in a grofe pane, plain `ssh <machine>` gives a remote shell
+# ssh-nudge.zsh: in a grofe pane, plain `ssh <machine>` gives a remote shell
 # without reconnects or forwarding, and starting grofe there nests two
 # multiplexers. When the target is one of grofe's machines, say so once on
 # stderr. The ssh call itself always runs, with the arguments you gave.
@@ -23,7 +23,7 @@ _athome_ssh_machine() {
       c=${rest[1]}; rest=${rest[2,-1]}
       if [[ $c == T ]]; then
         notty=1
-      elif [[ $c == [bcDEeFIiJLlmOoPpQRSWw] ]]; then
+      elif [[ $c == [bBcDEeFIiJLlmOoPpQRSWw] ]]; then
         # Takes a value: the rest of this word, or else the next word.
         [[ -z $rest ]] && skip=1
         break
@@ -33,7 +33,7 @@ _athome_ssh_machine() {
   (( notty || count != 1 )) && return 1
 
   local grofe rows name target t host=${word##*@} hn th
-  grofe=$(command -v grofe) || grofe=$HOME/.local/lib/grofe/grofe
+  grofe=${commands[grofe]:-$HOME/.local/lib/grofe/grofe}
   [[ -x $grofe ]] || return 1
   rows=$("$grofe" machine ls 2>/dev/null) || return 1
   hn=$(_athome_ssh_hostname "$word")

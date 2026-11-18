@@ -140,6 +140,8 @@ gui_names() {
     render personal .chezmoiscripts/run_onchange_02-install-packages.sh.tmpl "$os" >"$TMP/p.sh"
     render work .chezmoiscripts/run_onchange_02-install-packages.sh.tmpl "$os" >"$TMP/w.sh"
     diff <(grep '^ *install_one' "$TMP/p.sh") <(grep '^ *install_one' "$TMP/w.sh")
+    # ...and both equal the install list from before the gui flags (checked-in fixture)
+    diff <(grep '^ *install_one' "$TMP/p.sh") "$ROOT/test/fixtures/install-one-$os.txt"
     # every plain or gui entry of packages.yaml's active lists appears
     [ "$(grep -c '^ *install_one' "$TMP/p.sh")" -gt 40 ]
   done
@@ -213,4 +215,11 @@ STUB
   out="$(chezmoi --source "$ROOT/home" --config "$TMP/personal.toml" execute-template --init <"$ROOT/home/.chezmoi.toml.tmpl")"
   [[ "$out" == *'scope        = ""'* ]]
   [[ "$out" == *'machineName  = ""'* ]]
+}
+
+@test "remote-box script: a timezone or locale with a quote renders no timedatectl or localectl call" {
+  printf '[data]\n  machineType = "remote"\n  timezone = "Europe/A'"'"'; id"\n  locale = "en_US.UTF-8; id"\n' >"$TMP/bad.toml"
+  render bad .chezmoiscripts/run_onchange_after_30-remote-box.sh.tmpl linux >"$TMP/box.sh"
+  bash -n "$TMP/box.sh"
+  if grep -q 'timedatectl\|localectl\|locale-gen' "$TMP/box.sh"; then return 1; fi
 }

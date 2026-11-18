@@ -572,3 +572,13 @@ AcceptEnv CANOPY_THEME"' ]
     zsh -f -c "$print_theme" _ "$ROOT/home/dot_zsh/canopy-theme.zsh"
   [ "$output" = gruvbox ]
 }
+
+@test "canopy remote: a failing set is a warning, the apply goes on and grofe is left alone" {
+  render remote .chezmoiscripts/run_after_31-canopy-remote.sh.tmpl >"$TMP/cr.sh"
+  canopy_remote_home
+  printf '#!/bin/sh\nexit 1\n' >"$TMP/home/.local/share/canopy/bin/canopy-remote"
+  run_canopy_remote "$TMP/cr.sh"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"canopy remote set failed"* ]]
+  [ ! -e "$TMP/grofe.calls" ]
+}

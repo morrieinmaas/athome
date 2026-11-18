@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+# WiFi backend: NetworkManager on its default backend, wpa_supplicant.
+#
+# athome used to switch NM to wifi.backend=iwd, only so the `impala` TUI (which
+# talks to iwd directly) would work. It cost more than it gave:
+#   - iwd recreates the wireless interface at startup and renames it
+#     (wlp61s0 -> wlan0), so profiles bound to the old name stopped
+#     autoconnecting and saved passwords looked forgotten;
+#   - after suspend, iwd's own autoconnect and NM fought: iwd started
+#     connecting, NM tore it down, and NM never started its own attempt, so
+#     Wi-Fi stayed down until reconnected by hand.
+# wpa_supplicant is what NM is built and tested around; Noctalia, GNOME, nmtui
+# and nmcli all go through NM and work the same. impala was dropped.
+#
+# This script undoes the iwd switch on machines that had it. Safety as before:
+# NetworkManager is NOT restarted here (that would drop the connection mid-apply);
+# the change lands on the next reboot or the restart printed below.
+set -euo pipefail
+
+# Headless CI/e2e (ATHOME_CI=1): systemd, GUI and hardware are absent —
+# skip cleanly so the e2e exercises the rest of the bootstrap. See test/e2e/.
+if [ -n "${ATHOME_CI:-}" ]; then echo "ATHOME_CI: skipping headless setup ($(basename "$0"))"; exit 0; fi
+
+if ! command -v nmcli >/dev/null 2>&1; then
+  echo "==> NetworkManager not installed yet — re-run after run_onchange_02 lands it"
+  exit 0
+fi
+
+changed=0
+
+# Remove the iwd backend drop-in athome used to write.
+conf=/etc/NetworkManager/conf.d/wifi_backend.conf
+if [[ -f "$conf" ]] && grep -q '^wifi\.backend=iwd' "$conf"; then
+  echo "==> NM: back to the default wpa_supplicant backend (removing $conf)"
+  sudo rm -f "$conf"
+  changed=1
+fi
+
+# iwd must not run alongside wpa_supplicant: both would try to drive the card.
+# Disable only (not --now), for the same reason NM isn't restarted.
+if systemctl is-enabled iwd >/dev/null 2>&1; then
+  echo "==> disabling iwd.service (from next boot)"
+  sudo systemctl disable iwd >/dev/null 2>&1 || true
+  changed=1
+fi
+if systemctl list-unit-files wpa_supplicant.service >/dev/null 2>&1 \
+   && ! systemctl is-enabled wpa_supplicant >/dev/null 2>&1; then
+  sudo systemctl enable wpa_supplicant >/dev/null 2>&1 || true
+fi
+
+# Unbind saved Wi-Fi profiles from an interface NAME, so a profile saved under
+# one name (wlp61s0, or wlan0 from the iwd days) applies to whichever wireless
+# device is present and its saved password is used.
+for uuid in $(nmcli -g UUID,TYPE connection show 2>/dev/null | awk -F: '$2 == "802-11-wireless" {print $1}'); do
+  ifname="$(nmcli -g connection.interface-name connection show "$uuid" 2>/dev/null)"
+  [[ -n "$ifname" ]] || continue
+  echo "==> NM: unbinding Wi-Fi profile $uuid from interface '$ifname'"
+  sudo nmcli connection modify "$uuid" connection.interface-name "" || true
+done
+
+if [[ "$changed" == 1 ]]; then
+  cat <<'EOF'
+
+==> WiFi backend reverted to wpa_supplicant. NOT activated now, to avoid dropping
+    your connection mid-apply. Activate with a reboot, or manually:
+
+      sudo systemctl stop iwd
+      sudo systemctl restart NetworkManager
+EOF
+fi

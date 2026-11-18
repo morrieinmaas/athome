@@ -66,6 +66,8 @@ The box runs `athome init` with `machineType = "remote"` and the scope:
 
 - only the scope's directory, with its `use ctx` envrc and git identity;
 - the shell, prompt, nvim, mise and every portable tool; no GUI packages and no desktop;
+  no commercial VPN either (NordVPN, ProtonVPN): those packages carry the same `gui` flag,
+  and the box always uses NetBird for its mesh, whatever the laptop uses;
 - grofe, canopy's config and the coding agents with their hooks;
 - sshd hardening (keys only, no root login), user lingering, the laptop's timezone and
   locale;

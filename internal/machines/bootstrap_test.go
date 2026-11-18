@@ -22,7 +22,7 @@ func TestBootstrapTOMLWork(t *testing.T) {
 	for _, want := range []string{
 		`machine = "remote"`, `scope = "work/acme"`, `machineName = "acme-dev"`, `githubHandle = "morrie"`, `githubId = "42"`,
 		`personalName = "Morrie"`, `workEmail = "m@acme.example"`, `workName = "Morrie A"`, `includeAgents = "true"`,
-		`meshProvider = "meshnet"`, `generateSshKey = "false"`, `useBitwarden = "false"`,
+		`meshProvider = "netbird"`, `generateSshKey = "false"`, `useBitwarden = "false"`,
 		`timezone = "Europe/Amsterdam"`, `locale = "en_US.UTF-8"`,
 	} {
 		if !strings.Contains(got, want+"\n") {
@@ -115,5 +115,16 @@ func TestBootstrapDoneComparesVersionAndAnswers(t *testing.T) {
 	w.box("acme-dev").down = true
 	if _, err := bootstrapDone(t.Context(), d, m); err == nil {
 		t.Fatal("unreachable box is not an error")
+	}
+}
+
+func TestBootstrapTOMLForcesNetbirdWhateverTheLaptopUses(t *testing.T) {
+	for _, laptop := range []any{"meshnet", "none", nil, "netbird"} {
+		data := laptopData()
+		data["meshProvider"] = laptop
+		got := BootstrapTOML(data, Machine{Name: "b", Scope: "work/acme"}, "", "")
+		if !strings.Contains(got, `meshProvider = "netbird"`+"\n") || strings.Count(got, "meshProvider") != 1 {
+			t.Errorf("laptop %v:\n%s", laptop, got)
+		}
 	}
 }

@@ -1,0 +1,210 @@
+#!/usr/bin/env bash
+# Re-runs whenever packages.yaml changes (chezmoi hashes the rendered output).
+# Source of truth: .chezmoidata/packages.yaml — installs via the right PM per OS.
+#
+# Per-package loop instead of batch: a single conflict or PKGBUILD failure
+# doesn't cascade into "everything after the bad one is missing". Slower
+# but robust. Each tool's install is idempotent (--needed / "already
+# installed" check), so re-running is cheap.
+set -euo pipefail
+
+# Hash to force re-run on change:
+
+# Tally so a SYSTEMIC failure (empty toolchain) can't pass silently. Assigned
+# via $((x+1)) not ((x++)) — the post-increment form returns the old value, so
+# `((x++))` when x is 0 returns nonzero and `set -e` would kill the script.
+INSTALL_OK=0
+INSTALL_FAIL=0
+# Names of what failed, not just how many. A per-package `!` line scrolls past
+# in a run that installs ~150 packages, and "(147 ok, 3 failed)" doesn't say
+# WHICH three — which is how a missing nordvpn-bin went unnoticed on a fresh
+# Arch box. The summary at the bottom lists them.
+INSTALL_FAILED_PKGS=""
+
+# Cached list of installed nb casks (filled once, lazily). `nb install --cask`
+# re-DOWNLOADS the app before it'll even refuse to overwrite an existing one, so
+# checking this first skips already-present casks without the slow round-trip.
+_NB_CASKS=""
+_NB_CASKS_FETCHED=0
+_nb_cask_present() {
+  if [[ "$_NB_CASKS_FETCHED" -eq 0 ]]; then
+    _NB_CASKS="$(nb list 2>/dev/null | awk '/\(cask\)/{print $1}')"
+    _NB_CASKS_FETCHED=1
+  fi
+  # nb already tracks it → installed.
+  printf '%s\n' "$_NB_CASKS" | grep -qxF "$1" && return 0
+  # Untracked but its .app artifact is already in /Applications (app installed
+  # outside nb, or left by a prior teardown that wiped nb's state). `nb info` is
+  # metadata only — NO binary download — so this still dodges the slow
+  # install-then-refuse round-trip (and the sudo-hang on .pkg casks).
+  local app
+  while IFS= read -r app; do
+    [[ -n "$app" && -e "/Applications/$app" ]] && return 0
+  done < <(nb info --cask "$1" 2>/dev/null | awk -F'app: ' '/app: /{print $2}')
+  return 1
+}
+
+# install_one <package-manager> <package> — install one package, log result.
+# Never fails the whole script: a single bad package logs and continues.
+# On failure, surface the tail of the package manager's output so the
+# user can see the actual reason (conflict, missing dep, network, etc.)
+# instead of a generic "install failed" line.
+install_one() {
+  local pm="$1" pkg="$2" label
+  local -a cmd
+  # Opt-in skip list (space/comma-separated package names). The e2e container
+  # sets ATHOME_SKIP_PACKAGES (Dockerfile) to skip pathologically slow
+  # build-from-source AUR packages under qemu emulation — e.g. nirimod-git, the
+  # only `-git` entry, whose emulated compile dominates the e2e runtime and which
+  # verify.sh never asserts. Unset on real machines, so they install everything.
+  if [[ -n "${ATHOME_SKIP_PACKAGES:-}" && " ${ATHOME_SKIP_PACKAGES//,/ } " == *" ${pkg} "* ]]; then
+    printf '  ↷ %s: %s (skipped via ATHOME_SKIP_PACKAGES)\n' "$pm" "$pkg"
+    return 0
+  fi
+  case "$pm" in
+    nb)        label=nb;     cmd=(nb install "$pkg") ;;
+    nb_cask)   label=cask;   cmd=(nb install --cask "$pkg") ;;
+    pacman)    label=pacman; cmd=(sudo pacman -S --needed --noconfirm "$pkg") ;;
+    yay)       label=yay;    cmd=(yay -S --needed --noconfirm --answerdiff None --answerclean None "$pkg") ;;
+    dnf)       label=dnf;    cmd=(sudo dnf install -y "$pkg") ;;
+    *)         printf '  ! unknown pm: %s\n' "$pm" >&2; return 0 ;;
+  esac
+  # Fast skip: a cask nb already lists is installed — don't re-run `nb install`
+  # just to have it re-download the app and refuse to overwrite (slow). Unmanaged
+  # but present apps still hit the overwrite-skip fallback below.
+  if [[ "$pm" == nb_cask ]] && _nb_cask_present "$pkg"; then
+    printf '  ✓ %s: %s (already installed)\n' "$label" "$pkg"
+    INSTALL_OK=$((INSTALL_OK + 1))
+    return 0
+  fi
+  # Already satisfied, possibly by a provider (yay-bin provides yay, *-git
+  # variants, …): `--needed` only skips the exact package, so yay would try to
+  # install `yay` over `yay-bin` and fail on the conflict.
+  if [[ "$pm" == pacman || "$pm" == yay ]] && pacman -T "$pkg" >/dev/null 2>&1; then
+    printf '  ✓ %s: %s (already satisfied)\n' "$label" "$pkg"
+    INSTALL_OK=$((INSTALL_OK + 1))
+    return 0
+  fi
+  local out
+  if out=$("${cmd[@]}" 2>&1); then
+    printf '  ✓ %s: %s\n' "$label" "$pkg"
+    INSTALL_OK=$((INSTALL_OK + 1))
+  elif [[ "$pm" == nb_cask ]] && printf '%s' "$out" | grep -q 'refusing to overwrite existing'; then
+    # The payload is already on disk (installed outside nb, or a prior run nb
+    # didn't record). nb won't clobber it — that's fine, not a failure. Skip
+    # gracefully and keep what's there instead of flagging a bogus failure.
+    # Matches the whole family of nb refusals, not just apps: it reports
+    # "refusing to overwrite existing <app|font|destination> at <path>", and
+    # font casks (font-jetbrains-mono-nerd-font) were being counted as failures.
+    printf '  ✓ %s: %s (already present — kept existing files)\n' "$label" "$pkg"
+    INSTALL_OK=$((INSTALL_OK + 1))
+  else
+    printf '  ! %s: %s — install failed (continuing)\n' "$label" "$pkg" >&2
+    printf '%s\n' "$out" | tail -8 | sed 's/^/      /' >&2
+    INSTALL_FAIL=$((INSTALL_FAIL + 1))
+    INSTALL_FAILED_PKGS="${INSTALL_FAILED_PKGS} ${pkg}"
+  fi
+}
+
+# nanobrew (`nb`) is the macOS package manager (D6). It reads Homebrew's API
+# live, so there's no index to refresh; `nb update` just self-updates nb.
+#
+# nb lives in /opt/nanobrew/prefix/bin, which is NOT on a default PATH. chezmoi
+# runs every script in its own shell, so run_once_before_01's PATH export never
+# reaches here — without re-adding it, every `install_one nb` below would fail
+# with "command not found" and the whole native toolchain (rbw, tmux, …) would
+# silently not install. Belt + braces: bootstrap also exports this before apply.
+[[ -d /opt/nanobrew/prefix/bin ]] && export PATH="/opt/nanobrew/prefix/bin:$PATH"
+if ! command -v nb >/dev/null 2>&1; then
+  msg="nb (nanobrew) not on PATH — run_once_before_01 must install it first. Native packages skipped; re-run \`chezmoi apply\` once nb is present."
+  echo "!! $msg" >&2
+  [[ -n "${ATHOME_FOLLOWUP_LOG:-}" ]] && printf '  • %s\n' "$msg" >> "$ATHOME_FOLLOWUP_LOG"
+  exit 0
+fi
+
+echo "==> nb self-update"
+# Don't swallow a failure: nb 0.1.076's updater failed on every release
+# ("could not download SHA256 checksum"), which silently pinned the machine to
+# it. Warn and carry on; the fix is a manual install from the GitHub release.
+if ! out="$(nb update 2>&1)"; then
+  msg="nb update failed: $(printf '%s' "$out" | tail -1). Install the latest nb from github.com/justrach/nanobrew/releases by hand."
+  echo "!! $msg" >&2
+  [[ -n "${ATHOME_FOLLOWUP_LOG:-}" ]] && printf '  • %s\n' "$msg" >> "$ATHOME_FOLLOWUP_LOG"
+fi
+
+echo "==> nb formulae (common + darwin)"
+install_one nb "bash"
+install_one nb "git"
+install_one nb "git-lfs"
+install_one nb "neovim"
+install_one nb "lua"
+install_one nb "luarocks"
+install_one nb "tree-sitter-cli"
+install_one nb "tmux"
+install_one nb "fzf"
+install_one nb "zoxide"
+install_one nb "uv"
+install_one nb "pre-commit"
+install_one nb "gitleaks"
+install_one nb "podman"
+install_one nb "docker-compose"
+install_one nb "syncthing"
+install_one nb "imagemagick"
+install_one nb "rbw"
+install_one nb "git-crypt"
+install_one nb "gh"
+install_one nb "coreutils"
+install_one nb "gnu-sed"
+install_one nb "gawk"
+install_one nb "findutils"
+install_one nb "pinentry-mac"
+install_one nb "bandwhich"
+install_one nb "gping"
+install_one nb "trippy"
+install_one nb "jpeg-xl"
+install_one nb "prettierd"
+install_one nb "wush"
+install_one nb "defaultbrowser"
+install_one nb "podman-tui"
+
+
+echo "==> nb casks"
+install_one nb_cask "ghostty"
+install_one nb_cask "zen"
+install_one nb_cask "librewolf"
+install_one nb_cask "protonvpn"
+install_one nb_cask "nordvpn"
+install_one nb_cask "maccy"
+install_one nb_cask "zed"
+install_one nb_cask "podman-desktop"
+install_one nb_cask "font-jetbrains-mono-nerd-font"
+
+
+echo "==> package install complete ($INSTALL_OK ok, $INSTALL_FAIL failed)"
+if (( INSTALL_FAIL > 0 )); then
+  msg="packages that did NOT install:${INSTALL_FAILED_PKGS} — retry with the package manager directly to see why, then re-run \`mise run apply\`."
+  echo "    ! $msg" >&2
+  # ATHOME_FOLLOWUP_LOG is only set when bootstrap is the caller; a standalone
+  # `mise run apply` has the stderr line above and the summary and nothing else.
+  [[ -n "${ATHOME_FOLLOWUP_LOG:-}" ]] && printf '  • %s\n' "$msg" >> "$ATHOME_FOLLOWUP_LOG"
+fi
+
+# Discoverability guard (AGENTIC-SYSTEMS: errors must be surfaceable). A few
+# failures are normal — a flaky AUR build, a renamed formula. But if EVERY
+# attempted install failed, something systemic is wrong: a broken/empty package
+# manager, no network, or (macOS) a non-writable /opt/nanobrew prefix. Don't
+# leave an empty toolchain silently. `nb install`/`yay -S --needed` both exit
+# 0 for already-installed packages, so re-runs never false-trip this.
+# We exit 0 so the rest of the apply (desktop, shell, …) still converges; the
+# loud banner + the bootstrap follow-up log are the surfacing mechanism.
+if (( INSTALL_FAIL > 0 && INSTALL_OK == 0 )); then
+  msg="ALL ${INSTALL_FAIL} package installs FAILED — toolchain is empty. Check the package manager (nanobrew/yay), network, and (macOS) /opt/nanobrew ownership, then re-run \`chezmoi apply\`."
+  {
+    echo ""
+    echo "  ############################################################"
+    echo "  ## !! ${msg}"
+    echo "  ############################################################"
+    echo ""
+  } >&2
+  [[ -n "${ATHOME_FOLLOWUP_LOG:-}" ]] && printf '  • %s\n' "$msg" >> "$ATHOME_FOLLOWUP_LOG"
+fi

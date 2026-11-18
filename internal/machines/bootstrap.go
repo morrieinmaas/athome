@@ -58,6 +58,7 @@ func tomlString(s string) string {
 // BootstrapTOML is the answers file a box's bootstrap reads, built from the
 // laptop's chezmoi data. Keys with empty values are left out, and so is a
 // timezone or locale that is not made of the characters those names use.
+// The mesh is always netbird: a box runs no NordVPN, so the laptop's meshnet would leave it without one.
 func BootstrapTOML(data map[string]any, m Machine, timezone, locale string) string {
 	str := func(k string) string {
 		v, ok := data[k]
@@ -90,7 +91,7 @@ func BootstrapTOML(data map[string]any, m Machine, timezone, locale string) stri
 	list = append(list,
 		kv{"includeAgents", str("includeAgents")},
 		kv{"agentsRepo", str("agentsRepo")},
-		kv{"meshProvider", str("meshProvider")},
+		kv{"meshProvider", "netbird"},
 		kv{"netbirdManagementUrl", str("netbirdManagementUrl")},
 		kv{"generateSshKey", "false"},
 		kv{"useBitwarden", "false"},

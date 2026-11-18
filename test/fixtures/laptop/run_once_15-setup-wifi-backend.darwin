@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# WiFi backend: NetworkManager on its default backend, wpa_supplicant.
+#
+# athome used to switch NM to wifi.backend=iwd, only so the `impala` TUI (which
+# talks to iwd directly) would work. It cost more than it gave:
+#   - iwd recreates the wireless interface at startup and renames it
+#     (wlp61s0 -> wlan0), so profiles bound to the old name stopped
+#     autoconnecting and saved passwords looked forgotten;
+#   - after suspend, iwd's own autoconnect and NM fought: iwd started
+#     connecting, NM tore it down, and NM never started its own attempt, so
+#     Wi-Fi stayed down until reconnected by hand.
+# wpa_supplicant is what NM is built and tested around; Noctalia, GNOME, nmtui
+# and nmcli all go through NM and work the same. impala was dropped.
+#
+# This script undoes the iwd switch on machines that had it. Safety as before:
+# NetworkManager is NOT restarted here (that would drop the connection mid-apply);
+# the change lands on the next reboot or the restart printed below.
+set -euo pipefail
+
+# Headless CI/e2e (ATHOME_CI=1): systemd, GUI and hardware are absent —
+# skip cleanly so the e2e exercises the rest of the bootstrap. See test/e2e/.
+if [ -n "${ATHOME_CI:-}" ]; then echo "ATHOME_CI: skipping headless setup ($(basename "$0"))"; exit 0; fi
+
+

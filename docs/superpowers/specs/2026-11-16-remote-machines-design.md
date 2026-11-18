@@ -493,7 +493,8 @@ Decisions:
   "remote"`, `scope`, `machineName`, `githubHandle`, `githubId`, `personalName`, the
   scope's context identity (`workEmail` and `workName`, or `sidebizEmail` and
   `sidebizName`; nothing more for `personal`), `includeAgents`, `agentsRepo`,
-  `meshProvider`, `netbirdManagementUrl`, `generateSshKey = "false"`,
+  `meshProvider = "netbird"` (always: a box runs no NordVPN, so the laptop's `meshnet` would leave it
+  without a mesh), `netbirdManagementUrl`, `generateSshKey = "false"`,
   `useBitwarden = "false"`, `timezone` (the laptop's `/etc/localtime` target after
   `zoneinfo/`) and `locale` (`$LANG`). Keys with empty values are left out.
 - **`machineType = "remote"`** is a third answer. `config.Load` accepts `remote` and reads
@@ -517,7 +518,9 @@ Decisions:
   `dot_config/environment.d/athome.conf.tmpl` holds the same three as `KEY=value` and is
   empty elsewhere (chezmoi then creates no file). `packages.yaml` entries that are GUI apps
   or desktop stack become `{name: x, gui: true}` maps and `run_onchange_02` skips them and
-  all `darwin.brew_casks` on remote; plain string entries are unchanged. The desktop-only
+  all `darwin.brew_casks` on remote; plain string entries are unchanged. A remote box also skips the commercial VPN (NordVPN and ProtonVPN: no package, no repo, no
+  daemon setup, no sign-in hint in `run_once_08`); the `gui` flag is reused for that, so the
+  VPN packages carry `gui: true`. The mesh (NetBird) stays. The desktop-only
   scripts (`run_once_09`, `run_once_11`, `run_once_15`, `run_once_after_20`,
   `run_once_after_23`, `run_onchange_after_24`, `run_onchange_after_25`) render empty on
   remote, and `.chezmoiignore` skips the desktop configs (niri, quickshell, noctalia, greetd,

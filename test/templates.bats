@@ -328,3 +328,37 @@ render_with_keys() {
   grep -q 'install_one yay "nordvpn-bin"' "$TMP/personal.sh"
   grep -q 'install_one dnf "nordvpn"' "$TMP/personal.sh"
 }
+
+@test "laptop scripts: personal and work render byte for byte what origin/main rendered" {
+  # test/fixtures/laptop holds each script as origin/main rendered it for a laptop on
+  # that OS (personal and work were identical). A changed rendering changes chezmoi's
+  # hash of a run_once script, so every laptop would run it again. The packages.yaml
+  # hash line of run_onchange_02 differs by design (the file got gui flags), so it is left out.
+  for t in personal work; do
+    printf '  nordvpn_country = ""\n  netbird_management_url = ""\n  mesh_provider = "meshnet"\n' >>"$TMP/$t.toml"
+  done
+  for f in run_once_08-setup-vpn-client run_once_09-setup-caps-to-ctrl run_once_11-setup-niri-noctalia \
+    run_once_15-setup-wifi-backend run_once_after_20-setup-zen run_once_after_23-enable-gpaste \
+    run_onchange_02-install-packages run_onchange_after_24-enable-canopy-tmux-service \
+    run_onchange_after_25-desktop-look; do
+    for t in personal work; do
+      for os in linux darwin; do
+        render "$t" ".chezmoiscripts/$f.sh.tmpl" "$os" | perl -ne 'print unless /^#   packages\.yaml hash = /' >"$TMP/out"
+        if ! cmp -s "$TMP/out" "$ROOT/test/fixtures/laptop/$f.$os"; then
+          echo "$f differs for $t on $os" >&2
+          return 1
+        fi
+      done
+    done
+  done
+}
+
+@test "vpn client: a remote box with mesh_provider meshnet still gets netbird" {
+  s=.chezmoiscripts/run_once_08-setup-vpn-client.sh.tmpl
+  printf '  nordvpn_country = ""\n  netbird_management_url = ""\n  mesh_provider = "meshnet"\n' >>"$TMP/remote.toml"
+  for os in linux darwin; do
+    render remote "$s" "$os" >"$TMP/vpn.$os.sh"
+    grep -q 'sudo netbird up' "$TMP/vpn.$os.sh"
+    if grep -q 'skipping NetBird' "$TMP/vpn.$os.sh"; then return 1; fi
+  done
+}

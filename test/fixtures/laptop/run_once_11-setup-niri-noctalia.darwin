@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# Linux only. Configures niri + Noctalia shell. RESPECTS whatever display
+# manager you already have (e.g. GDM from archinstall's GNOME profile) and sets
+# niri as your DEFAULT login session; only falls back to enabling greetd if NO
+# DM exists. Enables power-profiles-daemon + bluetooth.
+#
+# Packages themselves come from .chezmoidata/packages.yaml via
+# run_onchange_02 (noctalia-shell from AUR, plus deps).
+set -euo pipefail
+
+# Headless CI/e2e (ATHOME_CI=1): systemd, GUI and hardware are absent —
+# skip cleanly so the e2e exercises the rest of the bootstrap. See test/e2e/.
+if [ -n "${ATHOME_CI:-}" ]; then echo "ATHOME_CI: skipping headless setup ($(basename "$0"))"; exit 0; fi
+
+followup() {
+  if [[ -n "${ATHOME_FOLLOWUP_LOG:-}" ]]; then
+    printf '  • %s\n' "$*" >> "$ATHOME_FOLLOWUP_LOG"
+  fi
+}
+
+exit 0
+
+

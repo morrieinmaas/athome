@@ -14,9 +14,13 @@ set -euo pipefail
 # skip cleanly so the e2e exercises the rest of the bootstrap. See test/e2e/.
 if [ -n "${ATHOME_CI:-}" ]; then echo "ATHOME_CI: skipping headless setup ($(basename "$0"))"; exit 0; fi
 
+{{- $mesh := dig "mesh_provider" "netbird" . -}}
+{{- /* A remote box always runs NetBird; the laptop's meshProvider (meshnet is NordVPN) does not apply to it. */ -}}
+{{- if eq .machineType "remote" }}{{ $mesh = "netbird" }}{{ end }}
+
 {{ if eq .chezmoi.os "darwin" -}}
 # ── macOS ───────────────────────────────────────────────────────────────────
-{{ if eq (dig "mesh_provider" "netbird" .) "netbird" -}}
+{{ if eq $mesh "netbird" -}}
 # NetBird ships from the netbirdio/tap (not Homebrew core). nanobrew supports
 # third-party taps via `nb install owner/tap/formula`, so install through nb
 # (the canonical macOS PM); fall back to real brew if it's still around.
@@ -38,7 +42,7 @@ fi
 # here. NordVPN Meshnet is a feature of the NordVPN app itself (enable it in the
 # app), and it deliberately shares 100.64.0.0/10 with NetBird and Tailscale, so
 # only one mesh may run at a time. See docs/superpowers/specs/ for why.
-echo "==> mesh_provider={{ dig "mesh_provider" "netbird" . }}: skipping NetBird install"
+echo "==> mesh_provider={{ $mesh }}: skipping NetBird install"
 {{- end }}
 
 {{ if ne .machineType "remote" -}}
@@ -52,7 +56,7 @@ ls -d /Applications/ProtonVPN.app >/dev/null 2>&1 && echo "==> ProtonVPN.app pre
 # the instance is `netbird@main`); Fedora's ships a plain `netbird.service`. Try
 # the template first, fall back to the plain unit, else let `netbird up` bring
 # the daemon up itself.
-{{ if eq (dig "mesh_provider" "netbird" .) "netbird" -}}
+{{ if eq $mesh "netbird" -}}
 if command -v netbird >/dev/null 2>&1; then
   sudo systemctl enable --now netbird@main 2>/dev/null \
     || sudo systemctl enable --now netbird 2>/dev/null \
@@ -61,7 +65,7 @@ else
   echo "==> netbird not yet installed — re-run after run_onchange_02 lands it (AUR on Arch, COPR/dnf on Fedora)"
 fi
 {{- else }}
-echo "==> mesh_provider={{ dig "mesh_provider" "netbird" . }}: skipping NetBird service"
+echo "==> mesh_provider={{ $mesh }}: skipping NetBird service"
 {{- end }}
 
 {{ if ne .machineType "remote" -}}
@@ -98,7 +102,7 @@ if command -v nordvpn >/dev/null 2>&1; then
   # Self-heals machines that previously had it on (idempotent set).
   nordvpn set killswitch off      >/dev/null 2>&1 || true
   nordvpn set notify on           >/dev/null 2>&1 || true
-{{- if eq (dig "mesh_provider" "netbird" .) "meshnet" }}
+{{- if eq $mesh "meshnet" }}
 
   # meshProvider = meshnet only skipped NetBird above; nothing ever switched
   # NordVPN's Meshnet on, so the mesh pill stayed "no mesh". Needs a logged-in

@@ -24,6 +24,7 @@ set -euo pipefail
 {{-   end -}}
 {{-   $_ := set $pkgs $key $names -}}
 {{- end }}
+
 # Tally so a SYSTEMIC failure (empty toolchain) can't pass silently. Assigned
 # via $((x+1)) not ((x++)) — the post-increment form returns the old value, so
 # `((x++))` when x is 0 returns nonzero and `set -e` would kill the script.
@@ -160,7 +161,7 @@ echo "==> nb casks"
 {{ range .darwin.brew_casks -}}
 install_one nb_cask {{ . | quote }}
 {{ end }}
-{{ end }}
+{{- end }}
 
 {{- else if eq .chezmoi.os "linux" -}}
 if command -v dnf >/dev/null 2>&1 && ! command -v pacman >/dev/null 2>&1; then

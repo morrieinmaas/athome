@@ -444,6 +444,10 @@ func Add(ctx context.Context, d Deps, m Machine) error {
 	if err := m.Validate(); err != nil {
 		return err
 	}
+	// Refused only for a new machine, so an existing one named 0 can still be listed and removed.
+	if m.Name == "0" {
+		return fmt.Errorf("machine 0: name: canopy reads 0 as unset, so the box could not name itself; pick another name")
+	}
 	ms, err := Load(d.Home)
 	if err != nil {
 		return err

@@ -1,0 +1,45 @@
+{{ if eq .machineType "remote" -}}
+#!/usr/bin/env bash
+# Tell canopy which machine and scope this box is, so the status line and the
+# terminal title say `acme-dev · work/acme` in the context's colour, and an
+# attach from the laptop adopts the laptop's theme (CANOPY_THEME).
+#
+# run_after, so it runs on every apply (the bootstrap and every
+# `athome machine sync`) after run_onchange_18 has installed canopy.
+# `canopy remote set` writes the same bytes each time, so a rerun is a no-op.
+# The values are flags from chezmoi's data, not the ATHOME_* variables, which
+# this apply has only just written.
+#
+# A grofe server that is already running loads the new files with
+# `grofe reload`, and only when they changed. A real tmux server picks them up
+# at its next start.
+set -uo pipefail
+
+remote="${HOME}/.local/share/canopy/bin/canopy-remote"
+grofe="${HOME}/.local/lib/grofe/grofe"
+tmux_file="${CANOPY_STATE:-${XDG_STATE_HOME:-${HOME}/.local/state}/canopy}/25-remote.conf"
+grofe_file="${XDG_CONFIG_HOME:-${HOME}/.config}/grofe/conf.d/25-remote.toml"
+
+if [ ! -x "${remote}" ]; then
+  printf 'canopy: this canopy has no `canopy remote`, so the status line does not name the box yet\n' >&2
+  exit 0
+fi
+
+before="$(cat "${tmux_file}" "${grofe_file}" 2>/dev/null)"
+if ! "${remote}" set --machine {{ .machineName | squote }} --scope {{ .scope | squote }} --color {{ index .contextColors (index (splitList "/" .scope) 0) | squote }}; then
+  printf 'canopy: canopy remote set failed\n' >&2
+  exit 0
+fi
+after="$(cat "${tmux_file}" "${grofe_file}" 2>/dev/null)"
+
+# reload never starts a server: with none running it fails with
+# "no server running", and the files load when one starts.
+if [ "${before}" != "${after}" ] && [ -x "${grofe}" ]; then
+  if ! out="$("${grofe}" reload 2>&1)"; then
+    case "${out}" in
+      *"no server running"*) ;;
+      *) printf 'canopy: grofe reload failed (%s); the box indicator applies at the next server start\n' "${out}" >&2 ;;
+    esac
+  fi
+fi
+{{ end -}}

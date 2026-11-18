@@ -376,3 +376,209 @@ render_with_keys() {
     if grep -q 'skipping NetBird' "$TMP/vpn.$os.sh"; then return 1; fi
   done
 }
+
+# canopy_remote_home makes a HOME whose canopy-remote stub logs its arguments and
+# writes the two files from them, and whose grofe stub logs each call and answers
+# reload with $GROFE_RELOAD_OUT and $GROFE_RELOAD_CODE.
+canopy_remote_home() {
+  mkdir -p "$TMP/home/.local/share/canopy/bin" "$TMP/home/.local/lib/grofe"
+  cat >"$TMP/home/.local/share/canopy/bin/canopy-remote" <<STUB
+#!/bin/sh
+printf '%s\n' "\$*" >>"$TMP/remote.calls"
+mkdir -p "\$HOME/.local/state/canopy" "\$HOME/.config/grofe/conf.d"
+printf '%s\n' "\$*" >"\$HOME/.local/state/canopy/25-remote.conf"
+printf '%s\n' "\$*" >"\$HOME/.config/grofe/conf.d/25-remote.toml"
+STUB
+  cat >"$TMP/home/.local/lib/grofe/grofe" <<STUB
+#!/bin/sh
+printf '%s\n' "\$*" >>"$TMP/grofe.calls"
+printf '%s' "\${GROFE_RELOAD_OUT:-}" >&2
+exit "\${GROFE_RELOAD_CODE:-0}"
+STUB
+  chmod +x "$TMP/home/.local/share/canopy/bin/canopy-remote" "$TMP/home/.local/lib/grofe/grofe"
+}
+
+# run_canopy_remote <rendered script> runs it with HOME at the fixture, never the real one.
+run_canopy_remote() {
+  run env -u CANOPY_STATE -u XDG_STATE_HOME -u XDG_CONFIG_HOME HOME="$TMP/home" bash "$1"
+}
+
+@test "canopy remote: renders only on a remote machine, with no OS branch" {
+  s=.chezmoiscripts/run_after_31-canopy-remote.sh.tmpl
+  for t in personal work; do
+    [ -z "$(render "$t" "$s" | tr -d '[:space:]')" ]
+  done
+  if grep -q 'chezmoi\.os' "$ROOT/home/$s"; then return 1; fi
+  render remote "$s" >"$TMP/cr.sh"
+  bash -n "$TMP/cr.sh"
+  shellcheck -S warning -x "$TMP/cr.sh" 2>/dev/null || ! command -v shellcheck >/dev/null
+}
+
+@test "remote-box script: a failing sshd -t puts back the drop-in that was there" {
+  render remote .chezmoiscripts/run_onchange_after_30-remote-box.sh.tmpl linux >"$TMP/box.sh"
+  mkdir "$TMP/home" "$TMP/stubs"
+  # sudo cat answers with an old drop-in; sshd -t fails on the new one and passes
+  # on the old one (or always fails with SSHD_FAIL); tee logs what it writes.
+  cat >"$TMP/stubs/sudo" <<STUB
+#!/bin/sh
+case "\$1" in
+  sshd) n=\$((\$(cat "$TMP/sshd.n" 2>/dev/null || echo 0) + 1)); echo \$n >"$TMP/sshd.n"
+    [ -z "\${SSHD_FAIL:-}" ] && [ \$n -ge 2 ] ;;
+  mkdir) exit 0 ;;
+  cat) printf 'PermitRootLogin no\n'; exit 0 ;;
+  tee) { printf 'tee:'; cat; } >>"$TMP/calls"; exit 0 ;;
+  *) printf '%s\n' "\$*" >>"$TMP/calls"; exit 0 ;;
+esac
+STUB
+  chmod +x "$TMP/stubs/sudo"
+  printf '#!/bin/sh\nexit 0\n' >"$TMP/stubs/systemctl"
+  chmod +x "$TMP/stubs/systemctl"
+  HOME="$TMP/home" PATH="$TMP/stubs:$PATH" run bash "$TMP/box.sh"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"put the previous one back"* ]]
+  # the new drop-in, then the old one written back last
+  [ "$(grep -c '^tee:' "$TMP/calls")" = 2 ]
+  [ "$(grep '^tee:' "$TMP/calls" | tail -n 1)" = 'tee:PermitRootLogin no' ]
+  if grep -q '^rm -f' "$TMP/calls"; then return 1; fi
+  # an old drop-in that fails too is removed, never left in place
+  rm -f "$TMP/calls" "$TMP/sshd.n"
+  HOME="$TMP/home" PATH="$TMP/stubs:$PATH" SSHD_FAIL=1 run bash "$TMP/box.sh"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"removed it again"* ]]
+  grep -q '^rm -f /etc/ssh/sshd_config.d/10-athome.conf' "$TMP/calls"
+}
+
+@test "canopy-theme.zsh: a pane inside grofe or tmux follows this machine's theme even over ssh" {
+  command -v zsh >/dev/null || skip "zsh not installed"
+  mkdir -p "$TMP/home/.config/themes"
+  printf 'gruvbox\n' >"$TMP/home/.config/themes/active"
+  for mux in TMUX=/tmp/x,1,0 GROFE=1; do
+    run env HOME="$TMP/home" SSH_CONNECTION="10.0.0.1 1 10.0.0.2 22" CANOPY_THEME=everforest "$mux" \
+      zsh -f -c 'source "$1"; for f in $precmd_functions; do $f; done; print -r -- "$CANOPY_THEME"' _ "$ROOT/home/dot_zsh/canopy-theme.zsh"
+    [ "$output" = gruvbox ]
+  done
+}
+
+@test "canopy remote: set gets machine, scope and the context colour, then a running grofe reloads" {
+  render remote .chezmoiscripts/run_after_31-canopy-remote.sh.tmpl >"$TMP/cr.sh"
+  canopy_remote_home
+  run_canopy_remote "$TMP/cr.sh"
+  [ "$status" -eq 0 ]
+  [ "$(cat "$TMP/remote.calls")" = "set --machine acme-dev --scope work/acme --color yellow" ]
+  [ "$(cat "$TMP/grofe.calls")" = "reload" ]
+}
+
+@test "canopy remote: a second apply with the same values sets again but does not reload" {
+  render remote .chezmoiscripts/run_after_31-canopy-remote.sh.tmpl >"$TMP/cr.sh"
+  canopy_remote_home
+  run_canopy_remote "$TMP/cr.sh"
+  run_canopy_remote "$TMP/cr.sh"
+  [ "$status" -eq 0 ]
+  [ "$(wc -l <"$TMP/remote.calls" | tr -d ' ')" = 2 ]
+  [ "$(cat "$TMP/grofe.calls")" = "reload" ]
+}
+
+@test "canopy remote: no grofe server running is silent, another reload failure is a warning" {
+  render remote .chezmoiscripts/run_after_31-canopy-remote.sh.tmpl >"$TMP/cr.sh"
+  canopy_remote_home
+  GROFE_RELOAD_CODE=1 GROFE_RELOAD_OUT="grofe: no server running on /tmp/x" run_canopy_remote "$TMP/cr.sh"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  rm "$TMP/home/.local/state/canopy/25-remote.conf"
+  GROFE_RELOAD_CODE=1 GROFE_RELOAD_OUT="bad config" run_canopy_remote "$TMP/cr.sh"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"grofe reload failed (bad config)"* ]]
+}
+
+@test "canopy remote: a canopy without canopy remote, or without grofe, still passes" {
+  render remote .chezmoiscripts/run_after_31-canopy-remote.sh.tmpl >"$TMP/cr.sh"
+  mkdir "$TMP/home"
+  run_canopy_remote "$TMP/cr.sh"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"no \`canopy remote\`"* ]]
+  canopy_remote_home
+  rm "$TMP/home/.local/lib/grofe/grofe"
+  run_canopy_remote "$TMP/cr.sh"
+  [ "$status" -eq 0 ]
+  [ -s "$TMP/remote.calls" ]
+  [ ! -e "$TMP/grofe.calls" ]
+}
+
+@test "canopy remote: a sidebiz box gets magenta" {
+  printf '[data]\n  machineType = "remote"\n  machineName = "box"\n  scope = "sidebiz/x"\n' >"$TMP/sb.toml"
+  render sb .chezmoiscripts/run_after_31-canopy-remote.sh.tmpl >"$TMP/cr.sh"
+  canopy_remote_home
+  run_canopy_remote "$TMP/cr.sh"
+  [ "$(cat "$TMP/remote.calls")" = "set --machine box --scope sidebiz/x --color magenta" ]
+}
+
+@test "remote-box script: sshd accepts CANOPY_THEME and no other variable" {
+  render remote .chezmoiscripts/run_onchange_after_30-remote-box.sh.tmpl linux >"$TMP/box.sh"
+  want="$(awk '/^want="/{f=1} f{print} f&&/"$/&&!/^want="$/{exit}' "$TMP/box.sh")"
+  [ "$want" = 'want="PasswordAuthentication no
+KbdInteractiveAuthentication no
+PermitRootLogin no
+AcceptEnv CANOPY_THEME"' ]
+}
+
+@test "zshrc: every machine type sources canopy-theme.zsh" {
+  for t in personal work remote; do
+    render "$t" dot_zshrc.tmpl | grep -q 'ssh-nudge.zsh canopy-theme.zsh; do'
+  done
+}
+
+@test "canopy-theme.zsh: each prompt exports the active theme's name, and nothing without one" {
+  command -v zsh >/dev/null || skip "zsh not installed"
+  mkdir -p "$TMP/home/.config/themes"
+  run env -u CANOPY_THEME -u SSH_CONNECTION HOME="$TMP/home" zsh -f -c '
+    source "$1"
+    for f in $precmd_functions; do $f; done
+    print -r -- "unset:${CANOPY_THEME-none}"
+    print everforest >~/.config/themes/active
+    for f in $precmd_functions; do $f; done
+    print -r -- "set:$CANOPY_THEME"
+    print gruvbox >~/.config/themes/active
+    for f in $precmd_functions; do $f; done
+    print -r -- "set:$CANOPY_THEME"
+    rm ~/.config/themes/active
+    for f in $precmd_functions; do $f; done
+    print -r -- "kept:$CANOPY_THEME"
+  ' _ "$ROOT/home/dot_zsh/canopy-theme.zsh"
+  [ "$status" -eq 0 ]
+  [ "$output" = $'unset:none\nset:everforest\nset:gruvbox\nkept:gruvbox' ]
+}
+
+@test "theme: a remote machine keeps the theme command and the themes dir" {
+  mkdir -p "$TMP/home" "$TMP/dest"
+  for t in remote personal; do
+    HOME="$TMP/home" chezmoi --source "$ROOT/home" --config "$TMP/$t.toml" --destination "$TMP/dest" \
+      --persistent-state "$TMP/state.boltdb" managed --include files >"$TMP/managed.$t"
+    for f in .local/bin/theme .config/themes/registry.sh .config/themes/apply-tmux.sh; do
+      grep -qx "$f" "$TMP/managed.$t"
+    done
+  done
+}
+
+@test "canopy-theme.zsh: an ssh login keeps the CANOPY_THEME the laptop sent" {
+  command -v zsh >/dev/null || skip "zsh not installed"
+  mkdir -p "$TMP/home/.config/themes"
+  print_theme='source "$1"; for f in $precmd_functions; do $f; done; print -r -- "$CANOPY_THEME"'
+  printf 'gruvbox\n' >"$TMP/home/.config/themes/active"
+  run env HOME="$TMP/home" SSH_CONNECTION="10.0.0.1 1 10.0.0.2 22" CANOPY_THEME=everforest \
+    zsh -f -c "$print_theme" _ "$ROOT/home/dot_zsh/canopy-theme.zsh"
+  [ "$output" = everforest ]
+  # over ssh without one sent, this machine's own theme is exported
+  run env -u CANOPY_THEME HOME="$TMP/home" SSH_CONNECTION="10.0.0.1 1 10.0.0.2 22" \
+    zsh -f -c "$print_theme" _ "$ROOT/home/dot_zsh/canopy-theme.zsh"
+  [ "$output" = gruvbox ]
+}
+
+@test "canopy remote: a failing set is a warning, the apply goes on and grofe is left alone" {
+  render remote .chezmoiscripts/run_after_31-canopy-remote.sh.tmpl >"$TMP/cr.sh"
+  canopy_remote_home
+  printf '#!/bin/sh\nexit 1\n' >"$TMP/home/.local/share/canopy/bin/canopy-remote"
+  run_canopy_remote "$TMP/cr.sh"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"canopy remote set failed"* ]]
+  [ ! -e "$TMP/grofe.calls" ]
+}

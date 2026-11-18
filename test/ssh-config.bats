@@ -23,6 +23,7 @@ ssh_g() { HOME="$FAKE_HOME" ssh -G -F "$FAKE_HOME/.ssh/config" "$1"; }
   [[ "$output" == *$'\nhostkeyalias acme-dev\n'* ]]
   echo "$output" | grep -q '^identityfile .*/.ssh/laptop_ed25519$'
   echo "$output" | grep -q '^userknownhostsfile .*/.ssh/athome/known_hosts$'
+  echo "$output" | grep -qx "sendenv CANOPY_THEME"
 }
 
 @test "a machine with a jump and forward_agent" {

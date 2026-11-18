@@ -118,7 +118,7 @@ case "$OSTYPE" in
   *)       os_aliases=                   ;;
 esac
 
-for f in exports.zsh git-aliases.zsh aliases.zsh $os_aliases functions.zsh completions.zsh ssh-nudge.zsh; do
+for f in exports.zsh git-aliases.zsh aliases.zsh $os_aliases functions.zsh completions.zsh ssh-nudge.zsh canopy-theme.zsh; do
   [[ -f "$HOME/.zsh/$f" ]] && source "$HOME/.zsh/$f"
 done
 unset os_aliases

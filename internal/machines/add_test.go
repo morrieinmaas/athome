@@ -164,6 +164,19 @@ func TestAddRefusesPendingWithOtherValues(t *testing.T) {
 	}
 }
 
+func TestAddRefusesNameZero(t *testing.T) {
+	w, d, _ := newWorld(t)
+	m := newAdd()
+	m.Name = "0"
+	err := Add(context.Background(), d, m)
+	if err == nil || !strings.Contains(err.Error(), "canopy reads 0 as unset") {
+		t.Fatalf("err = %v", err)
+	}
+	if n := len(w.logCopy()); n != 0 {
+		t.Errorf("ran %d commands", n)
+	}
+}
+
 func TestAddValidateRefusals(t *testing.T) {
 	t.Run("git repositories in the scope run no command", func(t *testing.T) {
 		w, d, _ := newWorld(t)
@@ -438,5 +451,18 @@ func TestParseHostProbeIgnoresBanners(t *testing.T) {
 		if _, _, ok := parseHostProbe(bad); ok {
 			t.Errorf("%q parsed", bad)
 		}
+	}
+}
+
+func TestInventoryWithNameZeroStillLoads(t *testing.T) {
+	home := t.TempDir()
+	m := acme()
+	m.Name = "0"
+	if err := Save(home, []Machine{m}); err != nil {
+		t.Fatal(err)
+	}
+	ms, err := Load(home)
+	if err != nil || len(ms) != 1 || ms[0].Name != "0" {
+		t.Fatalf("Load = %v, %v", ms, err)
 	}
 }

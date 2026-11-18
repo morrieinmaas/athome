@@ -7,6 +7,7 @@ Host acme-dev
     IdentityFile ~/.ssh/laptop_ed25519
     IdentitiesOnly yes
     ForwardAgent no
+    SendEnv CANOPY_THEME
     HostKeyAlias acme-dev
     UserKnownHostsFile ~/.ssh/athome/known_hosts
     StrictHostKeyChecking yes
@@ -22,6 +23,7 @@ Host acme-gpu
     IdentityFile ~/.ssh/laptop_ed25519
     IdentitiesOnly yes
     ForwardAgent yes
+    SendEnv CANOPY_THEME
     HostKeyAlias acme-gpu
     UserKnownHostsFile ~/.ssh/athome/known_hosts
     StrictHostKeyChecking yes

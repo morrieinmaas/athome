@@ -16,7 +16,7 @@ type HomeInfo struct {
 	KeysReminder                                         string // shown when set: rotation is due
 }
 
-var homeChoices = []string{"init", "update", "quit"}
+var homeChoices = []string{"init", "update", "machines", "quit"}
 
 type homeModel struct {
 	info   HomeInfo
@@ -69,7 +69,7 @@ func (m *homeModel) View() string {
 	return b.String()
 }
 
-// RunHome shows the home screen and returns "init" or "quit".
+// RunHome shows the home screen and returns "init", "update", "machines" or "quit".
 func RunHome(in io.Reader, out io.Writer, info HomeInfo) (string, error) {
 	m := &homeModel{info: info}
 	if _, err := runProgram(context.Background(), m, tea.WithInput(in), tea.WithOutput(out)); err != nil {

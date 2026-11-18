@@ -216,6 +216,11 @@ func runHomeScreen(stdout, stderr io.Writer) int {
 		return runInit(nil, stdout, stderr)
 	case "update":
 		return runUpdate(nil, stdout, stderr)
+	case "machines":
+		if code, back := runMachinesScreen(stdout, stderr); !back {
+			return code
+		}
+		return runHomeScreen(stdout, stderr)
 	}
 	return exitOK
 }

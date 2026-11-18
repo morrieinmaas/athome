@@ -453,3 +453,16 @@ func TestParseHostProbeIgnoresBanners(t *testing.T) {
 		}
 	}
 }
+
+func TestInventoryWithNameZeroStillLoads(t *testing.T) {
+	home := t.TempDir()
+	m := acme()
+	m.Name = "0"
+	if err := Save(home, []Machine{m}); err != nil {
+		t.Fatal(err)
+	}
+	ms, err := Load(home)
+	if err != nil || len(ms) != 1 || ms[0].Name != "0" {
+		t.Fatalf("Load = %v, %v", ms, err)
+	}
+}

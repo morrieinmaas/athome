@@ -540,9 +540,12 @@ AcceptEnv CANOPY_THEME"' ]
     print gruvbox >~/.config/themes/active
     for f in $precmd_functions; do $f; done
     print -r -- "set:$CANOPY_THEME"
+    rm ~/.config/themes/active
+    for f in $precmd_functions; do $f; done
+    print -r -- "kept:$CANOPY_THEME"
   ' _ "$ROOT/home/dot_zsh/canopy-theme.zsh"
   [ "$status" -eq 0 ]
-  [ "$output" = $'unset:none\nset:everforest\nset:gruvbox' ]
+  [ "$output" = $'unset:none\nset:everforest\nset:gruvbox\nkept:gruvbox' ]
 }
 
 @test "theme: a remote machine keeps the theme command and the themes dir" {

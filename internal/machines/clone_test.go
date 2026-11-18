@@ -241,3 +241,12 @@ func TestCloneAndKeyScriptsOnDisk(t *testing.T) {
 		t.Errorf("key mode %v", fi.Mode().Perm())
 	}
 }
+
+// scope/worktrees is the worktree layout, so no repo may take that name.
+func TestCloneRefusesTheWorktreesName(t *testing.T) {
+	for _, in := range []string{"acme/worktrees", "git@github.com:acme/worktrees.git", "https://github.com/acme/worktrees"} {
+		if _, _, err := parseRepo(in); err == nil || !errors.As(err, new(UsageError)) {
+			t.Errorf("%q accepted or not a usage error: %v", in, err)
+		}
+	}
+}

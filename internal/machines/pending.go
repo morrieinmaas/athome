@@ -37,6 +37,9 @@ func LoadPending(home, name string) (*Machine, error) {
 		return nil, fmt.Errorf("%s: %w", p, err)
 	}
 	m.Name = name
+	if m.Port == 0 {
+		m.Port = defaultPort
+	}
 	return &m, nil
 }
 

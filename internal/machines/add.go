@@ -372,6 +372,9 @@ func sameEntry(a, b Machine) bool {
 // Add runs machine add's steps. A rerun with the same values resumes: every
 // step whose check passes is skipped.
 func Add(ctx context.Context, d Deps, m Machine) error {
+	if m.Port == 0 {
+		m.Port = defaultPort
+	}
 	if err := m.Validate(); err != nil {
 		return err
 	}

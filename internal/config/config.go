@@ -143,7 +143,7 @@ func resolveMachineAgents(o Options, text string) (machine string, includeAgents
 
 var (
 	scopeRe       = regexp.MustCompile(`^(work|personal|sidebiz)/[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$`)
-	machineNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,62}$`)
+	machineNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,62}$`)
 	timezoneRe    = regexp.MustCompile(`^[A-Za-z0-9_+./-]+$`)
 	localeRe      = regexp.MustCompile(`^[A-Za-z0-9_.@-]+$`)
 )
@@ -161,8 +161,8 @@ func validateRemote(d map[string]string) error {
 	if !ok {
 		return fmt.Errorf("%w: scope must be work|personal|sidebiz/<path> for a remote machine (got: %q; set ATHOME_SCOPE or scope in the config file)", ErrUsage, scope)
 	}
-	if !machineNameRe.MatchString(d["machineName"]) {
-		return fmt.Errorf("%w: machineName must match %s for a remote machine (got: %q; set ATHOME_MACHINE_NAME or machineName in the config file)", ErrUsage, machineNameRe, d["machineName"])
+	if !machineNameRe.MatchString(d["machineName"]) || d["machineName"] == "local" {
+		return fmt.Errorf("%w: machineName must match %s and not be local for a remote machine (got: %q; set ATHOME_MACHINE_NAME or machineName in the config file)", ErrUsage, machineNameRe, d["machineName"])
 	}
 	if tz := d["timezone"]; tz != "" && !timezoneRe.MatchString(tz) {
 		return fmt.Errorf("%w: timezone must match %s (got: %q)", ErrUsage, timezoneRe, tz)

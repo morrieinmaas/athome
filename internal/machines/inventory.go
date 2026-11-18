@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -31,6 +32,9 @@ type Machine struct {
 	Home          string   `toml:"home"`
 	Hostname      string   `toml:"hostname"`
 }
+
+// defaultPort is the ssh port a machine without one gets.
+const defaultPort = 22
 
 var (
 	nameRe     = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,62}$`)
@@ -69,7 +73,12 @@ func (m Machine) Validate() error {
 	if m.Jump != "" && !jumpRe.MatchString(m.Jump) {
 		return bad("jump", fmt.Sprintf("%q must be [user@]host[:port], starting with a letter or digit", m.Jump))
 	}
-	if m.Port < 0 || m.Port > 65535 {
+	if _, p, ok := strings.Cut(m.Jump, ":"); ok {
+		if n, _ := strconv.Atoi(p); n < 1 || n > 65535 {
+			return bad("jump", fmt.Sprintf("%q has a port outside 1 to 65535", m.Jump))
+		}
+	}
+	if m.Port < 1 || m.Port > 65535 {
 		return bad("port", fmt.Sprintf("%d must be 1 to 65535", m.Port))
 	}
 	if !athomeRe.MatchString(m.Athome) {
@@ -105,7 +114,7 @@ func (m Machine) Context() string {
 
 func (m Machine) port() int {
 	if m.Port == 0 {
-		return 22
+		return defaultPort
 	}
 	return m.Port
 }
@@ -136,6 +145,9 @@ func Load(home string) ([]Machine, error) {
 	for _, n := range names {
 		m := f.Machines[n]
 		m.Name = n
+		if m.Port == 0 {
+			m.Port = defaultPort
+		}
 		if err := m.Validate(); err != nil {
 			return nil, err
 		}

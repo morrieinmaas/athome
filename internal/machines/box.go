@@ -156,7 +156,7 @@ func (b *Box) NewKey(ctx context.Context) (string, error) {
 // own, so the check trusts nothing on first use.
 const checkGitHubScript = prepareSSH + `kh="$HOME/.ssh/athome_github_known_hosts"
 cat > "$kh" && chmod 600 "$kh" || exit 1
-ssh -i "$HOME/.ssh/$1_ed25519$2" -o IdentitiesOnly=yes -o BatchMode=yes -o UserKnownHostsFile="$kh" -o StrictHostKeyChecking=yes -T git@github.com`
+ssh -F /dev/null -i "$HOME/.ssh/$1_ed25519$2" -o IdentitiesOnly=yes -o BatchMode=yes -o UserKnownHostsFile="$kh" -o StrictHostKeyChecking=yes -T git@github.com`
 
 // CheckGitHub proves from the box that the key (or the .rotate key) logs in to GitHub.
 // GitHub's success banner comes with exit 1, so the output decides.

@@ -15,6 +15,7 @@ var (
 )
 
 // parseRepo accepts owner/name, a git@github.com: URL or an https://github.com/ URL.
+// The name "worktrees" is refused: scope/worktrees holds the worktree layout.
 func parseRepo(s string) (url, name string, err error) {
 	var owner string
 	if m := ownerNameRe.FindStringSubmatch(s); m != nil {
@@ -24,7 +25,7 @@ func parseRepo(s string) (url, name string, err error) {
 	} else if m := httpsURLRe.FindStringSubmatch(s); m != nil {
 		owner, name = m[1], m[2]
 	}
-	if owner == "" || name == "" || name == "." || name == ".." || owner == "." || owner == ".." {
+	if owner == "" || name == "" || name == "." || name == ".." || name == "worktrees" || owner == "." || owner == ".." {
 		return "", "", UsageError(fmt.Sprintf("%q is not owner/name, git@github.com:owner/name.git or https://github.com/owner/name", s))
 	}
 	return "git@github.com:" + owner + "/" + name + ".git", name, nil

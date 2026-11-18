@@ -604,3 +604,78 @@ func TestPromoteScriptResumesAfterAnInterruption(t *testing.T) {
 		}
 	})
 }
+
+// The box's own ~/.ssh/config must not widen the check: -F /dev/null drops it,
+// so only the one -i key is offered.
+func TestCheckGitHubScriptOffersOnlyTheGivenKey(t *testing.T) {
+	home := t.TempDir()
+	bin := t.TempDir()
+	stub := "#!/bin/sh\necho \"$@\" > \"$HOME/ssh.args\"\nexit 1\n"
+	if err := os.WriteFile(filepath.Join(bin, "ssh"), []byte(stub), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	shRun(t, home, checkGitHubScript, githubKnownHosts, "dev", "")
+	b, _ := os.ReadFile(filepath.Join(home, "ssh.args"))
+	args := string(b)
+	for _, want := range []string{"-F /dev/null", "-o IdentitiesOnly=yes", "-o BatchMode=yes", "-o StrictHostKeyChecking=yes", "-o UserKnownHostsFile="} {
+		if !strings.Contains(args, want) {
+			t.Errorf("ssh args lack %q: %s", want, args)
+		}
+	}
+	if n := strings.Count(args, "-i "); n != 1 {
+		t.Errorf("%d identity files offered: %s", n, args)
+	}
+}
+
+func TestValidatePortAndJumpPortRanges(t *testing.T) {
+	for _, port := range []int{0, -1, 65536, 70000} {
+		m := acme()
+		m.Port = port
+		if err := m.Validate(); err == nil || !strings.Contains(err.Error(), "port") {
+			t.Errorf("port %d: %v", port, err)
+		}
+	}
+	for _, port := range []int{1, 22, 65535} {
+		m := acme()
+		m.Port = port
+		if err := m.Validate(); err != nil {
+			t.Errorf("port %d: %v", port, err)
+		}
+	}
+	for _, jump := range []string{"bastion:0", "bastion:00", "ops@bastion:65536", "bastion:99999"} {
+		m := acme()
+		m.Jump = jump
+		if err := m.Validate(); err == nil || !strings.Contains(err.Error(), "jump") {
+			t.Errorf("jump %q: %v", jump, err)
+		}
+	}
+	for _, jump := range []string{"bastion:1", "bastion:65535", "ops@bastion:22"} {
+		m := acme()
+		m.Jump = jump
+		if err := m.Validate(); err != nil {
+			t.Errorf("jump %q: %v", jump, err)
+		}
+	}
+}
+
+// A machine built from flags without --port gets port 22 before validation, and
+// an inventory entry without a port reads as 22.
+func TestPortDefaultsToTwentyTwoBeforeValidation(t *testing.T) {
+	_, d, _ := newWorld(t)
+	m := newAdd()
+	m.Port = 0
+	if err := Add(context.Background(), d, m); err != nil {
+		t.Fatal(err)
+	}
+	ms, err := Load(d.Home)
+	if err != nil || len(ms) != 1 || ms[0].Port != 22 {
+		t.Fatalf("%v %v", ms, err)
+	}
+	if err := os.WriteFile(Path(d.Home), []byte("[machines.old]\nscope = \"work/acme\"\ntarget = \"h\"\nuser = \"dev\"\nathome = \"v0.4.0\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if ms, err := Load(d.Home); err != nil || len(ms) != 1 || ms[0].Port != 22 {
+		t.Fatalf("%v %v", ms, err)
+	}
+}

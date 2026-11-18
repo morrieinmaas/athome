@@ -14,7 +14,7 @@ import (
 )
 
 func acme() Machine {
-	return Machine{Name: "acme-dev", Scope: "work/acme", Target: "dev.acme.example", User: "dev", Athome: "v0.4.0", Repos: []string{"api"}, Home: "/home/dev", Hostname: "dev"}
+	return Machine{Name: "acme-dev", Scope: "work/acme", Target: "dev.acme.example", User: "dev", Port: 22, Athome: "v0.4.0", Repos: []string{"api"}, Home: "/home/dev", Hostname: "dev"}
 }
 
 func gpu() Machine {

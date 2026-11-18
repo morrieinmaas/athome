@@ -9,7 +9,7 @@ import (
 )
 
 func newAdd() Machine {
-	return Machine{Name: "acme-dev", Scope: "work/acme", Target: "dev.acme.example", User: "dev", Athome: "v0.4.0"}
+	return Machine{Name: "acme-dev", Scope: "work/acme", Target: "dev.acme.example", User: "dev", Port: 22, Athome: "v0.4.0"}
 }
 
 // inOrder reports whether want appears in log as a subsequence, matching by prefix.

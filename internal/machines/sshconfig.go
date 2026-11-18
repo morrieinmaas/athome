@@ -59,6 +59,10 @@ func block(m Machine, laptopKeyFile string, login bool) string {
 	} else {
 		line("ForwardAgent no")
 	}
+	if !login {
+		// canopy on the box follows the laptop's theme on attach; sshd there accepts only this name.
+		line("SendEnv CANOPY_THEME")
+	}
 	line("HostKeyAlias %s", m.Name)
 	line("UserKnownHostsFile ~/.ssh/athome/known_hosts")
 	line("StrictHostKeyChecking yes")

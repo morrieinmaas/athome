@@ -19,10 +19,14 @@ fi
 warn() { echo "!! remote box: $*" >&2; }
 
 # ── sshd: key-only logins, no root ───────────────────────────────────────────
+# AcceptEnv CANOPY_THEME: the laptop sends its theme name (SendEnv in its
+# generated ssh config), so a real tmux attached over plain ssh can follow it;
+# canopy checks the value before using it. grofe -r carries it without this.
 dropin=/etc/ssh/sshd_config.d/10-athome.conf
 want="PasswordAuthentication no
 KbdInteractiveAuthentication no
-PermitRootLogin no"
+PermitRootLogin no
+AcceptEnv CANOPY_THEME"
 
 if [ "$(sudo cat "$dropin" 2>/dev/null)" != "$want" ]; then
   if sudo mkdir -p /etc/ssh/sshd_config.d && printf '%s\n' "$want" | sudo tee "$dropin" >/dev/null; then

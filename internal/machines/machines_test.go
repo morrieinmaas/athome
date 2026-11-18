@@ -289,7 +289,7 @@ func TestLoginCheck(t *testing.T) {
 	if len(c.Args) != 10 || c.Args[0] != "-F" || c.Args[2] != "-i" || c.Args[3] != "/k/key" || c.Args[8] != "acme-gpu" || c.Args[9] != "true" {
 		t.Fatalf("%v", c.Args)
 	}
-	for _, bad := range []string{"IdentityFile", "ControlMaster", "ControlPersist", "ProxyJump"} {
+	for _, bad := range []string{"IdentityFile", "ControlMaster", "ControlPersist", "ProxyJump", "SendEnv"} {
 		if strings.Contains(cfg, bad) {
 			t.Errorf("config has %s:\n%s", bad, cfg)
 		}

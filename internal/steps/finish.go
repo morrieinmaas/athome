@@ -20,8 +20,8 @@ func Finish() []Step {
 		{Name: "source-dir-pin", Check: sourceDirPinned, Apply: pinSourceDir},
 		{Name: "git-hooks", Check: hooksDone, Apply: installHooks},
 		{Name: "secrets-dir", Check: secretsDirDone, Apply: makeSecretsDir},
-		{Name: "bitwarden-setup", Check: bitwardenDone, Apply: bitwardenSetup},
-		{Name: "secrets-restore", Check: secretsRestoreDone, Apply: restoreSecrets},
+		skipOnRemote(Step{Name: "bitwarden-setup", Check: bitwardenDone, Apply: bitwardenSetup}),
+		skipOnRemote(Step{Name: "secrets-restore", Check: secretsRestoreDone, Apply: restoreSecrets}),
 		{Name: "checkout-main", Check: notDetached, Apply: checkoutMain},
 	}
 }

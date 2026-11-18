@@ -24,3 +24,18 @@ type Box interface {
 // the inventory reader, there are none, so rotation reaches GitHub and
 // Bitwarden only.
 var Inventory = func(home string) ([]Box, error) { return nil, nil }
+
+// KeyBox is a Box that also holds an ssh key athome rotates: ~/.ssh/<hostname>_ed25519
+// on the box, with a staging copy beside it while a rotation runs.
+type KeyBox interface {
+	Box
+	// GitHubAccount is the gh account the box's key is registered under, "" for the default.
+	GitHubAccount() string
+	CurrentPub(ctx context.Context) (string, error)
+	// NewKey creates or reuses <key>.rotate on the box and returns its public key.
+	NewKey(ctx context.Context) (string, error)
+	// CheckGitHub proves github.com accepts the box's .rotate key (rotating) or its current key.
+	CheckGitHub(ctx context.Context, rotating bool) error
+	// PromoteKey moves .rotate over the key; a no-op when that is already done.
+	PromoteKey(ctx context.Context, newPub string) error
+}

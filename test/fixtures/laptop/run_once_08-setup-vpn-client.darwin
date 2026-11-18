@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# VPN clients. Two independent concerns:
+#   1. Mesh VPN (NetBird client): NetBird Cloud free tier today (SSO sign-in),
+#      self-hosted NetBird management server later — same binary, different
+#      --management-url flag. The choice is captured in chezmoi data so the
+#      printed sign-in command is always correct. Replaces Tailscale/Headscale.
+#   2. Commercial privacy VPN (NordVPN / ProtonVPN): public-IP egress.
+#      NordVPN auto-connect runs via nordvpnd (systemd), enabled here
+#      once the user is logged in. Re-running after `nordvpn login` is
+#      what flips it on (script is idempotent).
+set -euo pipefail
+
+# Headless CI/e2e (ATHOME_CI=1): systemd, GUI and hardware are absent —
+# skip cleanly so the e2e exercises the rest of the bootstrap. See test/e2e/.
+if [ -n "${ATHOME_CI:-}" ]; then echo "ATHOME_CI: skipping headless setup ($(basename "$0"))"; exit 0; fi
+
+# ── macOS ───────────────────────────────────────────────────────────────────
+
+# mesh_provider is not "netbird" on this machine, so no mesh client is installed
+# here. NordVPN Meshnet is a feature of the NordVPN app itself (enable it in the
+# app), and it deliberately shares 100.64.0.0/10 with NetBird and Tailscale, so
+# only one mesh may run at a time. See docs/superpowers/specs/ for why.
+echo "==> mesh_provider=meshnet: skipping NetBird install"
+
+ls -d /Applications/NordVPN.app   >/dev/null 2>&1 && echo "==> NordVPN.app present"   || true
+ls -d /Applications/ProtonVPN.app >/dev/null 2>&1 && echo "==> ProtonVPN.app present" || true
+
+cat <<'EOF'
+
+==> VPN clients ready. Sign in when you have credentials:
+
+  # ── Mesh (NetBird) ────────────────────────────────────────────────────────
+EOF
+echo "  sudo netbird up                           # NetBird Cloud (app.netbird.io, SSO)"
+echo "  # Unattended / headless? Use a setup key from the dashboard:"
+echo "  #   sudo netbird up --setup-key <KEY>"
+echo "  # Later, to migrate to a self-hosted NetBird server:"
+echo "  #   sudo netbird up --management-url https://<netbird-host> --setup-key <KEY>"
+echo "  # See docs/netbird-cloud.md for details + the self-host exit."
+
+cat <<'EOF'
+
+  # ── Commercial (NordVPN) ────────────────────────────────────────────────
+  # Once stashed in Bitwarden (rbw):
+  #   rbw get nordvpn-username
+  #   rbw get nordvpn-password
+  # Then login + chezmoi apply enables autoconnect automatically:
+  nordvpn login --username "$(rbw get nordvpn-username)" \
+                --password "$(rbw get nordvpn-password)"
+  chezmoi apply        # re-runs this script → nordvpn set autoconnect on
+EOF

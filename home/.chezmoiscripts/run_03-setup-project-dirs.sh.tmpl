@@ -10,6 +10,9 @@
 # Work machines (machineType = "work") get:
 #   ~/work/        .envrc → `use ctx work`
 #
+# Remote machines (machineType = "remote") get only their scope:
+#   ~/<scope>/    .envrc → `use ctx <first segment of scope>`
+#
 # Why no ~/Code anchor: a single tree per context makes wrong-credential
 # accidents structurally hard. "Cloned a sidebiz repo into ~/Code/
 # <handle>/ then committed with the personal email" can't happen
@@ -49,4 +52,6 @@ seed_envrc "$HOME/personal" personal
 seed_envrc "$HOME/sidebiz"  sidebiz
 {{- else if eq .machineType "work" -}}
 seed_envrc "$HOME/work"     work
+{{- else if eq .machineType "remote" -}}
+seed_envrc "$HOME/{{ .scope }}" {{ index (splitList "/" .scope) 0 }}
 {{- end }}

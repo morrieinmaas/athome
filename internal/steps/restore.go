@@ -24,12 +24,12 @@ func RestoreAll() []Step {
 }
 
 func restoreSteps() []Step {
-	return []Step{
+	return skipAllOnRemote([]Step{
 		{Name: "restore-bitwarden", Check: restoreBWCheck, Apply: restoreBWApply},
 		{Name: "restore-gh", Check: restoreGHCheck, Apply: restoreGHApply},
 		{Name: "restore-ssh-key", Check: restoreKeyCheck, Apply: restoreKeyApply},
 		{Name: "restore-secrets", Check: restoreSecretsCheck, Apply: restoreSecretsApply},
-	}
+	})
 }
 
 func restoreBWCheck(ctx context.Context, env *Env) (bool, error) {

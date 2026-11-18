@@ -1,0 +1,6 @@
+# One ANSI colour per context. The prompt and canopy's status line use the same
+# names, so they always match; the terminal palette decides the actual shade.
+[contextColors]
+    work     = "yellow"
+    personal = "green"
+    sidebiz  = "magenta"

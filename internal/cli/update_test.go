@@ -218,3 +218,49 @@ func TestUpdateCancelledAtPrompt(t *testing.T) {
 		t.Error("apply ran after cancel")
 	}
 }
+
+// remoteBox marks the sandbox home as a remote box, whose athome the laptop pins.
+func remoteBox(t *testing.T) {
+	t.Helper()
+	chez := filepath.Join(os.Getenv("HOME"), ".config", "chezmoi")
+	if err := os.MkdirAll(chez, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(chez, "chezmoi.toml"), []byte("[data]\n  machineType = \"remote\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestUpdateOnBoxStaysOnPinnedTag(t *testing.T) {
+	repo, f := updateFixture(t, "1.4.0", "v1.4.0\nv1.5.0\n")
+	remoteBox(t)
+	execed := false
+	t.Cleanup(cli.SetUpdateExec(func(string, []string) error { execed = true; return nil }))
+	code, _, stderr := runMain("update", "--yes")
+	if code != 0 {
+		t.Fatalf("code %d stderr %q", code, stderr)
+	}
+	if execed || called(f, "git", "-C", repo, "fetch", "--quiet", "--tags", "--force", "origin") {
+		t.Errorf("box moved or fetched: execed %v, calls %v", execed, f.Calls())
+	}
+	for _, c := range f.Calls() {
+		if strings.Contains(strings.Join(c.Args, " "), "v1.5.0") {
+			t.Errorf("call mentions the newer tag: %v", c)
+		}
+	}
+	if !called(f, "chezmoi", "apply") {
+		t.Error("apply did not run")
+	}
+}
+
+func TestUpdateOnBoxRefusesOtherTag(t *testing.T) {
+	_, f := updateFixture(t, "1.4.0", "v1.4.0\nv1.5.0\n")
+	remoteBox(t)
+	code, _, stderr := runMain("update", "--to", "1.5.0", "--yes")
+	if code != 1 || !strings.Contains(stderr, "pinned to v1.4.0") {
+		t.Fatalf("code %d stderr %q", code, stderr)
+	}
+	if len(f.Calls()) != 0 {
+		t.Errorf("ran %v", f.Calls())
+	}
+}

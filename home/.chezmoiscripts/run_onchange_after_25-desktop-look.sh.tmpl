@@ -1,3 +1,4 @@
+{{ if ne .machineType "remote" -}}
 {{ if eq .chezmoi.os "linux" -}}
 #!/usr/bin/env bash
 # Desktop look for niri + Noctalia (GNOME picks the same settings up): icon and
@@ -50,4 +51,5 @@ if command -v gsettings >/dev/null 2>&1 && [[ -n "${DBUS_SESSION_BUS_ADDRESS:-}"
 else
   echo "!! no desktop session: run \`chezmoi apply\` again from niri or GNOME to set icons and cursor"
 fi
+{{ end -}}
 {{ end -}}

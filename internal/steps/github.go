@@ -41,7 +41,7 @@ func GitHub() []Step {
 		}
 		return *plan
 	}
-	return []Step{{
+	return skipAllOnRemote([]Step{{
 		Name: "github-keys",
 		Check: func(ctx context.Context, env *Env) (bool, error) {
 			return ghCheck(ctx, env, decide(ctx, env))
@@ -56,7 +56,7 @@ func GitHub() []Step {
 			}
 			return nil
 		},
-	}}
+	}})
 }
 
 // ghCheck reports whether the github-keys step has nothing left to apply.

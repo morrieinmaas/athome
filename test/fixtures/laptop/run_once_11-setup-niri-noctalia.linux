@@ -1,0 +1,144 @@
+#!/usr/bin/env bash
+# Linux only. Configures niri + Noctalia shell. RESPECTS whatever display
+# manager you already have (e.g. GDM from archinstall's GNOME profile) and sets
+# niri as your DEFAULT login session; only falls back to enabling greetd if NO
+# DM exists. Enables power-profiles-daemon + bluetooth.
+#
+# Packages themselves come from .chezmoidata/packages.yaml via
+# run_onchange_02 (noctalia-shell from AUR, plus deps).
+set -euo pipefail
+
+# Headless CI/e2e (ATHOME_CI=1): systemd, GUI and hardware are absent —
+# skip cleanly so the e2e exercises the rest of the bootstrap. See test/e2e/.
+if [ -n "${ATHOME_CI:-}" ]; then echo "ATHOME_CI: skipping headless setup ($(basename "$0"))"; exit 0; fi
+
+followup() {
+  if [[ -n "${ATHOME_FOLLOWUP_LOG:-}" ]]; then
+    printf '  • %s\n' "$*" >> "$ATHOME_FOLLOWUP_LOG"
+  fi
+}
+
+
+
+# Noctalia v5 post-install. The binary is `noctalia`; the v4 one was
+# `noctalia-shell` and is a DIFFERENT, Quickshell-based program that upstream
+# no longer maintains. They can coexist, which is exactly why this checks for
+# the v5 name specifically rather than either.
+#
+# Settings live at ~/.local/state/noctalia/settings.toml and athome ships a
+# starter with create_ semantics, so chezmoi writes it once and then never
+# again. That matters because Noctalia rewrites the file itself from its own
+# UI; overwriting it on every apply would throw away your changes.
+if command -v noctalia >/dev/null 2>&1; then
+  echo "✓ noctalia v5 present ($(noctalia --version 2>/dev/null || echo unversioned))"
+  mkdir -p "$HOME/.local/state/noctalia"
+else
+  echo "!! 'noctalia' binary not found after package install"
+  if command -v dnf >/dev/null 2>&1 && ! command -v pacman >/dev/null 2>&1; then
+    followup "noctalia not on PATH, check the dnf install:"
+    followup "    dnf list installed noctalia"
+    followup "    sudo dnf install -y noctalia          # F44+ ships it in the default repos"
+    followup "    # on F43 or older: sudo dnf copr enable LionHeartP/noctalia-git"
+  else
+    followup "noctalia not on PATH, check the install:"
+    followup "    pacman -Q noctalia                    # it is in [extra], not the AUR"
+    followup "    sudo pacman -S noctalia               # if missing"
+  fi
+fi
+
+# Display manager: respect whatever's already configured. We ONLY enable
+# greetd if NO DM is currently enabled — we don't replace a working one.
+#
+# Reasoning:
+#   • If you picked `ly` / `lightdm` / `sddm` / etc. during archinstall and
+#     it works, this script has no business swapping it. Greetd was a
+#     personal preference; not a requirement of the niri+Noctalia stack.
+#   • If NOTHING is configured (boot lands in TTY login) → enable greetd
+#     as a sensible default so you actually get a graphical login.
+#   • Re-run: already-enabled DM (any) → idempotent no-op.
+#
+# `display-manager.service` is the canonical systemd alias for whichever
+# greeter is "active". An EXISTING symlink means a DM is configured.
+current_dm=""
+if [[ -L /etc/systemd/system/display-manager.service ]]; then
+  current_dm="$(basename "$(readlink /etc/systemd/system/display-manager.service)" .service)"
+fi
+
+if [[ -n "$current_dm" ]] && systemctl is-enabled "$current_dm" 2>/dev/null | grep -q enabled; then
+  echo "✓ display manager already configured: $current_dm — leaving it alone"
+  echo "  (to switch to GDM: sudo systemctl disable $current_dm && sudo systemctl enable gdm)"
+elif command -v gdm >/dev/null 2>&1 || [[ -f /usr/lib/systemd/system/gdm.service ]]; then
+  # GDM preferred over greetd. It is the only greeter here that offers a SESSION
+  # PICKER, which is the whole point of keeping GNOME as a fallback: niri is the
+  # default (set below via AccountsService) and GNOME is one click away in the
+  # gear menu. tuigreet can launch a session but has no per-user default, so the
+  # niri-default half of that arrangement simply does not exist under greetd.
+  echo "==> no display manager configured, enabling gdm"
+  sudo systemctl enable gdm
+  current_dm=gdm   # so the AccountsService step below runs on this same pass
+  followup "Display manager set to GDM. Reboot to land in niri; GNOME is selectable at the login gear"
+else
+  echo "==> no display manager configured and gdm not installed, enabling greetd"
+  sudo systemctl enable greetd
+  followup "Display manager changed to greetd — reboot to land in the niri session via tuigreet"
+fi
+
+# If GDM is the active DM (installed above, or already present from e.g.
+# archinstall's GNOME profile), make
+# niri the DEFAULT login session — GNOME stays one click away in the GDM gear
+# menu. GDM reads the per-user default from AccountsService. Only acts once niri
+# is actually installed (its wayland session file exists).
+if [[ "$current_dm" == gdm ]] && [[ -f /usr/share/wayland-sessions/niri.desktop ]]; then
+  af="/var/lib/AccountsService/users/$USER"
+  if ! sudo grep -qs '^Session=niri$' "$af" 2>/dev/null; then
+    if sudo test -f "$af"; then
+      sudo sed -i '/^X\?Session=/d' "$af"          # drop any existing default
+      sudo sed -i '/^\[User\]/a Session=niri' "$af" # set niri, keep other keys
+    else
+      printf '[User]\nSession=niri\nSystemAccount=false\n' | sudo tee "$af" >/dev/null
+    fi
+    echo "==> default GDM session → niri (GNOME still selectable at the login gear)"
+    followup "GDM defaults to niri at next login; pick GNOME from the gear menu anytime"
+  fi
+fi
+
+# /etc/greetd/config.toml is sudo-only, hence this step
+src="$HOME/.config/greetd/config.toml"
+if [[ -f "$src" ]]; then
+  sudo install -D -m 0644 "$src" /etc/greetd/config.toml
+fi
+
+# Greeter needs the user in the `greeter` group on some installs
+if getent group greeter >/dev/null 2>&1; then
+  if ! id -nG "$USER" | grep -qw greeter; then
+    sudo usermod -aG greeter "$USER"
+    followup "Added $USER to 'greeter' group — log out + back in for it to take effect"
+  fi
+fi
+
+# Wallpaper directory — Noctalia's in-shell Settings → Wallpaper panel
+# handles picking + persisting (state in ~/.config/noctalia/). Drop any
+# image into ~/Pictures/Wallpapers/ and pick via the Noctalia UI.
+mkdir -p "$HOME/Pictures/Wallpapers"
+
+# power-profiles-daemon: Noctalia exposes a Performance/Balanced/Saver
+# selector that uses this daemon as the backend. Enable it.
+if command -v powerprofilesctl >/dev/null 2>&1 \
+   || systemctl list-unit-files power-profiles-daemon.service >/dev/null 2>&1; then
+  if ! systemctl is-enabled power-profiles-daemon.service 2>/dev/null | grep -q enabled; then
+    echo "==> enabling power-profiles-daemon"
+    sudo systemctl enable --now power-profiles-daemon.service
+  fi
+fi
+
+# bluetooth: enable bluez's daemon so Noctalia bluetooth panel + system tray
+# adapter check work. Disabled by default on a fresh install even when the
+# package is present. bluez ships bluetoothctl on both Arch + Fedora.
+if command -v bluetoothctl >/dev/null 2>&1; then
+  if ! systemctl is-enabled bluetooth.service 2>/dev/null | grep -q enabled; then
+    echo "==> enabling bluetooth.service"
+    sudo systemctl enable --now bluetooth.service
+  fi
+fi
+
+echo "==> niri + noctalia + display-manager configured"

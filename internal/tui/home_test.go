@@ -48,6 +48,7 @@ func TestHomeNotSetUpQuit(t *testing.T) {
 		teatest.WithDuration(5*time.Second))
 	tm.Type("j")
 	tm.Type("j")
+	tm.Type("j")
 	tm.Send(tea.KeyMsg{Type: tea.KeyEnter})
 	if got := tm.FinalModel(t, teatest.WithFinalTimeout(5*time.Second)).(*homeModel).choice; got != "quit" {
 		t.Errorf("choice = %q, want quit", got)

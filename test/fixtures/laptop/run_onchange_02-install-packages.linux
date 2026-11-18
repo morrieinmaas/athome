@@ -1,0 +1,346 @@
+#!/usr/bin/env bash
+# Re-runs whenever packages.yaml changes (chezmoi hashes the rendered output).
+# Source of truth: .chezmoidata/packages.yaml — installs via the right PM per OS.
+#
+# Per-package loop instead of batch: a single conflict or PKGBUILD failure
+# doesn't cascade into "everything after the bad one is missing". Slower
+# but robust. Each tool's install is idempotent (--needed / "already
+# installed" check), so re-running is cheap.
+set -euo pipefail
+
+# Hash to force re-run on change:
+
+# Tally so a SYSTEMIC failure (empty toolchain) can't pass silently. Assigned
+# via $((x+1)) not ((x++)) — the post-increment form returns the old value, so
+# `((x++))` when x is 0 returns nonzero and `set -e` would kill the script.
+INSTALL_OK=0
+INSTALL_FAIL=0
+# Names of what failed, not just how many. A per-package `!` line scrolls past
+# in a run that installs ~150 packages, and "(147 ok, 3 failed)" doesn't say
+# WHICH three — which is how a missing nordvpn-bin went unnoticed on a fresh
+# Arch box. The summary at the bottom lists them.
+INSTALL_FAILED_PKGS=""
+
+# Cached list of installed nb casks (filled once, lazily). `nb install --cask`
+# re-DOWNLOADS the app before it'll even refuse to overwrite an existing one, so
+# checking this first skips already-present casks without the slow round-trip.
+_NB_CASKS=""
+_NB_CASKS_FETCHED=0
+_nb_cask_present() {
+  if [[ "$_NB_CASKS_FETCHED" -eq 0 ]]; then
+    _NB_CASKS="$(nb list 2>/dev/null | awk '/\(cask\)/{print $1}')"
+    _NB_CASKS_FETCHED=1
+  fi
+  # nb already tracks it → installed.
+  printf '%s\n' "$_NB_CASKS" | grep -qxF "$1" && return 0
+  # Untracked but its .app artifact is already in /Applications (app installed
+  # outside nb, or left by a prior teardown that wiped nb's state). `nb info` is
+  # metadata only — NO binary download — so this still dodges the slow
+  # install-then-refuse round-trip (and the sudo-hang on .pkg casks).
+  local app
+  while IFS= read -r app; do
+    [[ -n "$app" && -e "/Applications/$app" ]] && return 0
+  done < <(nb info --cask "$1" 2>/dev/null | awk -F'app: ' '/app: /{print $2}')
+  return 1
+}
+
+# install_one <package-manager> <package> — install one package, log result.
+# Never fails the whole script: a single bad package logs and continues.
+# On failure, surface the tail of the package manager's output so the
+# user can see the actual reason (conflict, missing dep, network, etc.)
+# instead of a generic "install failed" line.
+install_one() {
+  local pm="$1" pkg="$2" label
+  local -a cmd
+  # Opt-in skip list (space/comma-separated package names). The e2e container
+  # sets ATHOME_SKIP_PACKAGES (Dockerfile) to skip pathologically slow
+  # build-from-source AUR packages under qemu emulation — e.g. nirimod-git, the
+  # only `-git` entry, whose emulated compile dominates the e2e runtime and which
+  # verify.sh never asserts. Unset on real machines, so they install everything.
+  if [[ -n "${ATHOME_SKIP_PACKAGES:-}" && " ${ATHOME_SKIP_PACKAGES//,/ } " == *" ${pkg} "* ]]; then
+    printf '  ↷ %s: %s (skipped via ATHOME_SKIP_PACKAGES)\n' "$pm" "$pkg"
+    return 0
+  fi
+  case "$pm" in
+    nb)        label=nb;     cmd=(nb install "$pkg") ;;
+    nb_cask)   label=cask;   cmd=(nb install --cask "$pkg") ;;
+    pacman)    label=pacman; cmd=(sudo pacman -S --needed --noconfirm "$pkg") ;;
+    yay)       label=yay;    cmd=(yay -S --needed --noconfirm --answerdiff None --answerclean None "$pkg") ;;
+    dnf)       label=dnf;    cmd=(sudo dnf install -y "$pkg") ;;
+    *)         printf '  ! unknown pm: %s\n' "$pm" >&2; return 0 ;;
+  esac
+  # Fast skip: a cask nb already lists is installed — don't re-run `nb install`
+  # just to have it re-download the app and refuse to overwrite (slow). Unmanaged
+  # but present apps still hit the overwrite-skip fallback below.
+  if [[ "$pm" == nb_cask ]] && _nb_cask_present "$pkg"; then
+    printf '  ✓ %s: %s (already installed)\n' "$label" "$pkg"
+    INSTALL_OK=$((INSTALL_OK + 1))
+    return 0
+  fi
+  # Already satisfied, possibly by a provider (yay-bin provides yay, *-git
+  # variants, …): `--needed` only skips the exact package, so yay would try to
+  # install `yay` over `yay-bin` and fail on the conflict.
+  if [[ "$pm" == pacman || "$pm" == yay ]] && pacman -T "$pkg" >/dev/null 2>&1; then
+    printf '  ✓ %s: %s (already satisfied)\n' "$label" "$pkg"
+    INSTALL_OK=$((INSTALL_OK + 1))
+    return 0
+  fi
+  local out
+  if out=$("${cmd[@]}" 2>&1); then
+    printf '  ✓ %s: %s\n' "$label" "$pkg"
+    INSTALL_OK=$((INSTALL_OK + 1))
+  elif [[ "$pm" == nb_cask ]] && printf '%s' "$out" | grep -q 'refusing to overwrite existing'; then
+    # The payload is already on disk (installed outside nb, or a prior run nb
+    # didn't record). nb won't clobber it — that's fine, not a failure. Skip
+    # gracefully and keep what's there instead of flagging a bogus failure.
+    # Matches the whole family of nb refusals, not just apps: it reports
+    # "refusing to overwrite existing <app|font|destination> at <path>", and
+    # font casks (font-jetbrains-mono-nerd-font) were being counted as failures.
+    printf '  ✓ %s: %s (already present — kept existing files)\n' "$label" "$pkg"
+    INSTALL_OK=$((INSTALL_OK + 1))
+  else
+    printf '  ! %s: %s — install failed (continuing)\n' "$label" "$pkg" >&2
+    printf '%s\n' "$out" | tail -8 | sed 's/^/      /' >&2
+    INSTALL_FAIL=$((INSTALL_FAIL + 1))
+    INSTALL_FAILED_PKGS="${INSTALL_FAILED_PKGS} ${pkg}"
+  fi
+}
+
+if command -v dnf >/dev/null 2>&1 && ! command -v pacman >/dev/null 2>&1; then
+  # ── Fedora: dnf + COPR. Portable tooling is mise's job (config.toml); this is
+  #    only the native/GUI/desktop residue. fedora.dnf is SELF-CONTAINED (Fedora
+  #    names differ from Arch), so we do NOT layer `common` on top here.
+  echo "==> dnf: refresh + upgrade"
+  sudo dnf -y upgrade --refresh || true
+  sudo dnf -y install dnf-plugins-core >/dev/null 2>&1 || true   # provides `dnf copr`
+  echo "==> dnf copr enable yalter/niri"; sudo dnf -y copr enable "yalter/niri" || true
+  echo "==> dnf copr enable scottames/ghostty"; sudo dnf -y copr enable "scottames/ghostty" || true
+  echo "==> dnf copr enable sneexy/zen-browser"; sudo dnf -y copr enable "sneexy/zen-browser" || true
+  echo "==> dnf copr enable pgdev/zed"; sudo dnf -y copr enable "pgdev/zed" || true
+  echo "==> dnf copr enable che/nerd-fonts"; sudo dnf -y copr enable "che/nerd-fonts" || true
+  echo "==> dnf copr enable jsbillings/netbird"; sudo dnf -y copr enable "jsbillings/netbird" || true
+  # NordVPN is not a COPR — it ships its own yum repo, enabled by a release RPM
+  # (the same one https://downloads.nordcdn.com/apps/linux/install.sh installs).
+  # Hardcoded rather than added as a `fedora.repos` data key: it is the only
+  # third-party non-COPR repo we need, and one entry doesn't earn a mechanism.
+  # Must run BEFORE the dnf loop below, which installs nordvpn + nordvpn-gui.
+  if ! dnf repolist 2>/dev/null | grep -q '^nordvpn'; then
+    echo "==> dnf: enabling the NordVPN repo"
+    sudo dnf -y install \
+      https://repo.nordvpn.com/yum/nordvpn/centos/noarch/Packages/n/nordvpn-release-1.0.0-1.noarch.rpm \
+      || echo "  ! NordVPN repo setup failed — nordvpn/nordvpn-gui below will be skipped" >&2
+  fi
+  echo "==> dnf: packages (fedora.dnf)"
+  install_one dnf "@development-tools"
+  install_one dnf "gh"
+  install_one dnf "git"
+  install_one dnf "git-lfs"
+  install_one dnf "zsh"
+  install_one dnf "openssh-clients"
+  install_one dnf "openssh-server"
+  install_one dnf "pinentry"
+  install_one dnf "neovim"
+  install_one dnf "lua"
+  install_one dnf "luarocks"
+  install_one dnf "tmux"
+  install_one dnf "fzf"
+  install_one dnf "zoxide"
+  install_one dnf "xonsh"
+  install_one dnf "podman"
+  install_one dnf "podman-docker"
+  install_one dnf "podman-tui"
+  install_one dnf "docker-compose-plugin"
+  install_one dnf "syncthing"
+  install_one dnf "ImageMagick"
+  install_one dnf "libjxl"
+  install_one dnf "git-crypt"
+  install_one dnf "gitleaks"
+  install_one dnf "rbw"
+  install_one dnf "uv"
+  install_one dnf "niri"
+  install_one dnf "noctalia"
+  install_one dnf "ghostty"
+  install_one dnf "zen-browser"
+  install_one dnf "zed"
+  install_one dnf "greetd"
+  install_one dnf "tuigreet"
+  install_one dnf "nerd-fonts-jetbrains-mono"
+  install_one dnf "NetworkManager"
+  install_one dnf "fastfetch"
+  install_one dnf "google-noto-emoji-fonts"
+  install_one dnf "papirus-icon-theme"
+  install_one dnf "adw-gtk3-theme"
+  install_one dnf "qt6ct"
+  install_one dnf "qt5ct"
+  install_one dnf "rsms-inter-fonts"
+  install_one dnf "wl-clipboard"
+  install_one dnf "gpaste"
+  install_one dnf "gnome-shell-extension-gpaste"
+  install_one dnf "wlsunset"
+  install_one dnf "power-profiles-daemon"
+  install_one dnf "ddcutil"
+  install_one dnf "bluez"
+  install_one dnf "bluez-tools"
+  install_one dnf "brightnessctl"
+  install_one dnf "xdg-desktop-portal"
+  install_one dnf "xdg-desktop-portal-gtk"
+  install_one dnf "xdg-desktop-portal-wlr"
+  install_one dnf "qt6-qtimageformats"
+  install_one dnf "evolution-data-server"
+  install_one dnf "nautilus"
+  install_one dnf "gnome-shell"
+  install_one dnf "gnome-session"
+  install_one dnf "gnome-control-center"
+  install_one dnf "gnome-extensions-app"
+  install_one dnf "gnome-keyring"
+  install_one dnf "gdm"
+  install_one dnf "mutter"
+  install_one dnf "fuse-overlayfs"
+  install_one dnf "slirp4netns"
+  install_one dnf "aardvark-dns"
+  install_one dnf "netavark"
+  install_one dnf "netbird"
+  install_one dnf "netbird-ui"
+  install_one dnf "nordvpn"
+  install_one dnf "nordvpn-gui"
+  
+else
+  # ── Arch: yay/pacman. Refresh + upgrade through yay if available — covers
+  #    repo + AUR in one pass. Falls back to pacman if yay isn't built yet
+  #    (very first run before run_once_before_01 lands yay).
+  if command -v yay >/dev/null 2>&1; then
+    echo "==> yay: refresh + system upgrade (repo + AUR)"
+    yay -Syu --noconfirm --answerdiff None --answerclean None
+  else
+    echo "==> pacman: refresh + system upgrade (yay not yet installed)"
+    sudo pacman -Syu --noconfirm
+  fi
+
+  if ! command -v yay >/dev/null 2>&1; then
+    echo "!! yay missing — re-run after the bootstrap script's run_once_before_01"
+    echo "   has built it. linux.pacman + linux.aur installs both go through yay,"
+    echo "   so without it we can't install anything."
+    exit 1
+  fi
+
+  # Every Arch package goes through yay — uniform path. yay delegates to
+  # pacman for official-repo entries and handles AUR itself; the pacman/aur
+  # split in packages.yaml is an organizational hint, not a behavioral switch.
+  echo "==> yay: official-repo packages (common + linux.pacman)"
+  install_one yay "bash"
+  install_one yay "git"
+  install_one yay "git-lfs"
+  install_one yay "neovim"
+  install_one yay "lua"
+  install_one yay "luarocks"
+  install_one yay "tree-sitter-cli"
+  install_one yay "tmux"
+  install_one yay "fzf"
+  install_one yay "zoxide"
+  install_one yay "uv"
+  install_one yay "pre-commit"
+  install_one yay "gitleaks"
+  install_one yay "podman"
+  install_one yay "docker-compose"
+  install_one yay "syncthing"
+  install_one yay "imagemagick"
+  install_one yay "rbw"
+  install_one yay "git-crypt"
+  install_one yay "base-devel"
+  install_one yay "github-cli"
+  install_one yay "zsh"
+  install_one yay "openssh"
+  install_one yay "zed"
+  install_one yay "ghostty"
+  install_one yay "librewolf"
+  install_one yay "niri"
+  install_one yay "greetd"
+  install_one yay "greetd-tuigreet"
+  install_one yay "fastfetch"
+  install_one yay "xonsh"
+  install_one yay "gnome-shell-extensions"
+  install_one yay "pinentry"
+  install_one yay "libjxl"
+  install_one yay "networkmanager"
+  install_one yay "wl-clipboard"
+  install_one yay "ttf-jetbrains-mono-nerd"
+  install_one yay "noto-fonts-emoji"
+  install_one yay "papirus-icon-theme"
+  install_one yay "adw-gtk-theme"
+  install_one yay "qt6ct"
+  install_one yay "qt5ct"
+  install_one yay "inter-font"
+  install_one yay "gnome-shell"
+  install_one yay "gnome-session"
+  install_one yay "gnome-control-center"
+  install_one yay "mutter"
+  install_one yay "gnome-keyring"
+  install_one yay "gdm"
+  install_one yay "nautilus"
+  install_one yay "gpaste"
+  install_one yay "wlsunset"
+  install_one yay "evolution-data-server"
+  install_one yay "ddcutil"
+  install_one yay "power-profiles-daemon"
+  install_one yay "noctalia"
+  install_one yay "qt6-imageformats"
+  install_one yay "bluez"
+  install_one yay "bluez-utils"
+  install_one yay "xdg-desktop-portal"
+  install_one yay "xdg-desktop-portal-gtk"
+  install_one yay "xdg-desktop-portal-wlr"
+  install_one yay "brightnessctl"
+  install_one yay "fuse-overlayfs"
+  install_one yay "slirp4netns"
+  install_one yay "aardvark-dns"
+  install_one yay "netavark"
+  install_one yay "go-tools"
+  
+
+  echo "==> yay: AUR packages (linux.aur)"
+  install_one yay "yay"
+  install_one yay "netbird"
+  install_one yay "opencode-bin"
+  install_one yay "zen-browser-bin"
+  install_one yay "nirimod-git"
+  install_one yay "matugen-bin"
+  install_one yay "bibata-cursor-theme-bin"
+  install_one yay "nordvpn-bin"
+  install_one yay "nordvpn-gui-bin"
+  install_one yay "bandwhich"
+  install_one yay "gping"
+  install_one yay "trippy"
+  install_one yay "prettierd"
+  install_one yay "wush-bin"
+  install_one yay "podman-tui"
+  
+fi
+
+echo "==> package install complete ($INSTALL_OK ok, $INSTALL_FAIL failed)"
+if (( INSTALL_FAIL > 0 )); then
+  msg="packages that did NOT install:${INSTALL_FAILED_PKGS} — retry with the package manager directly to see why, then re-run \`mise run apply\`."
+  echo "    ! $msg" >&2
+  # ATHOME_FOLLOWUP_LOG is only set when bootstrap is the caller; a standalone
+  # `mise run apply` has the stderr line above and the summary and nothing else.
+  [[ -n "${ATHOME_FOLLOWUP_LOG:-}" ]] && printf '  • %s\n' "$msg" >> "$ATHOME_FOLLOWUP_LOG"
+fi
+
+# Discoverability guard (AGENTIC-SYSTEMS: errors must be surfaceable). A few
+# failures are normal — a flaky AUR build, a renamed formula. But if EVERY
+# attempted install failed, something systemic is wrong: a broken/empty package
+# manager, no network, or (macOS) a non-writable /opt/nanobrew prefix. Don't
+# leave an empty toolchain silently. `nb install`/`yay -S --needed` both exit
+# 0 for already-installed packages, so re-runs never false-trip this.
+# We exit 0 so the rest of the apply (desktop, shell, …) still converges; the
+# loud banner + the bootstrap follow-up log are the surfacing mechanism.
+if (( INSTALL_FAIL > 0 && INSTALL_OK == 0 )); then
+  msg="ALL ${INSTALL_FAIL} package installs FAILED — toolchain is empty. Check the package manager (nanobrew/yay), network, and (macOS) /opt/nanobrew ownership, then re-run \`chezmoi apply\`."
+  {
+    echo ""
+    echo "  ############################################################"
+    echo "  ## !! ${msg}"
+    echo "  ############################################################"
+    echo ""
+  } >&2
+  [[ -n "${ATHOME_FOLLOWUP_LOG:-}" ]] && printf '  • %s\n' "$msg" >> "$ATHOME_FOLLOWUP_LOG"
+fi

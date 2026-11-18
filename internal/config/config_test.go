@@ -252,7 +252,7 @@ func TestBadValues(t *testing.T) {
 		want string
 	}{
 		{"machine flag", config.Options{Machine: "laptop", Home: dir}, "laptop"},
-		{"empty machine flag", config.Options{MachineSet: true, Home: dir}, "machine must be personal|work (got: )"},
+		{"empty machine flag", config.Options{MachineSet: true, Home: dir}, "machine must be personal|work|remote (got: )"},
 		{"machine in file", config.Options{ConfigPath: badMachine, Home: dir}, "laptop"},
 		{"includeAgents in file", config.Options{ConfigPath: badAgents, Home: dir}, "maybe"},
 		{"unreadable config", config.Options{ConfigPath: filepath.Join(dir, "missing.toml"), Home: dir}, "missing.toml"},
@@ -344,5 +344,82 @@ func TestNonUTF8Answer(t *testing.T) {
 				t.Errorf("error %q does not name %q", err, c.want)
 			}
 		})
+	}
+}
+
+func TestRemoteMachine(t *testing.T) {
+	load := func(t *testing.T, file string, env map[string]string) (config.Config, error) {
+		t.Helper()
+		dir := t.TempDir()
+		p := writeFile(t, filepath.Join(dir, "a.toml"), file)
+		return config.Load(config.Options{ConfigPath: p, Home: dir, Env: env})
+	}
+	ok := "machine = \"remote\"\nscope = \"work/acme\"\nmachineName = \"acme-dev\"\n"
+
+	t.Run("accepted with scope and name", func(t *testing.T) {
+		c, err := load(t, ok, nil)
+		if err != nil || c.Machine != "remote" || c.Data["scope"] != "work/acme" || c.Data["machineName"] != "acme-dev" {
+			t.Fatalf("got %+v, %v", c, err)
+		}
+	})
+	t.Run("env over file", func(t *testing.T) {
+		c, err := load(t, ok, map[string]string{"ATHOME_SCOPE": "sidebiz/x/y", "ATHOME_TIMEZONE": "Europe/Amsterdam", "ATHOME_LOCALE": "en_US.UTF-8"})
+		if err != nil || c.Data["scope"] != "sidebiz/x/y" || c.Data["timezone"] != "Europe/Amsterdam" || c.Data["locale"] != "en_US.UTF-8" {
+			t.Fatalf("got %+v, %v", c.Data, err)
+		}
+	})
+	for name, file := range map[string]string{
+		"no scope":       "machine = \"remote\"\nmachineName = \"a\"\n",
+		"bare context":   "machine = \"remote\"\nscope = \"work\"\nmachineName = \"a\"\n",
+		"dotdot":         "machine = \"remote\"\nscope = \"work/../x\"\nmachineName = \"a\"\n",
+		"dot segment":    "machine = \"remote\"\nscope = \"work/./x\"\nmachineName = \"a\"\n",
+		"bad context":    "machine = \"remote\"\nscope = \"home/x\"\nmachineName = \"a\"\n",
+		"space":          "machine = \"remote\"\nscope = \"work/a b\"\nmachineName = \"a\"\n",
+		"no machineName": "machine = \"remote\"\nscope = \"work/a\"\n",
+		"upper name":     "machine = \"remote\"\nscope = \"work/a\"\nmachineName = \"Box\"\n",
+		"leading dash":   "machine = \"remote\"\nscope = \"work/a\"\nmachineName = \"-x\"\n",
+		"dotted name":    "machine = \"remote\"\nscope = \"work/a\"\nmachineName = \"a.b\"\n",
+		"local name":     "machine = \"remote\"\nscope = \"work/a\"\nmachineName = \"local\"\n",
+		"trailing slash": "machine = \"remote\"\nscope = \"work/a/\"\nmachineName = \"a\"\n",
+	} {
+		t.Run("refused: "+name, func(t *testing.T) {
+			if _, err := load(t, file, nil); !errors.Is(err, config.ErrUsage) {
+				t.Fatalf("err = %v, want ErrUsage", err)
+			}
+		})
+	}
+	t.Run("personal and work need none", func(t *testing.T) {
+		for _, m := range []string{"personal", "work"} {
+			if _, err := load(t, "machine = \""+m+"\"\n", nil); err != nil {
+				t.Errorf("%s: %v", m, err)
+			}
+		}
+	})
+	t.Run("message names remote", func(t *testing.T) {
+		_, err := load(t, "machine = \"bogus\"\n", nil)
+		if err == nil || !strings.Contains(err.Error(), "machine must be personal|work|remote") {
+			t.Fatalf("err = %v", err)
+		}
+	})
+}
+
+func TestRemoteTimezoneLocaleValidated(t *testing.T) {
+	dir := t.TempDir()
+	p := writeFile(t, filepath.Join(dir, "a.toml"), "machine = \"remote\"\nscope = \"work/acme\"\nmachineName = \"a\"\n")
+	for name, env := range map[string]map[string]string{
+		"timezone shell": {"ATHOME_TIMEZONE": "UTC; rm -rf /"},
+		"timezone quote": {"ATHOME_TIMEZONE": "Europe/A'ms"},
+		"locale shell":   {"ATHOME_LOCALE": "en_US$(id)"},
+		"locale space":   {"ATHOME_LOCALE": "en US"},
+	} {
+		_, err := config.Load(config.Options{ConfigPath: p, Home: dir, Env: env})
+		key := strings.Fields(name)[0]
+		if !errors.Is(err, config.ErrUsage) || !strings.Contains(err.Error(), key) {
+			t.Errorf("%s: err = %v, want ErrUsage naming %s", name, err, key)
+		}
+	}
+	env := map[string]string{"ATHOME_TIMEZONE": "America/Port-au-Prince", "ATHOME_LOCALE": "sr_RS@latin"}
+	if _, err := config.Load(config.Options{ConfigPath: p, Home: dir, Env: env}); err != nil {
+		t.Errorf("valid values refused: %v", err)
 	}
 }

@@ -333,3 +333,434 @@ adds a lingering check to it upstream in grofe.
 
 None. grofe's ssh-remote spec already defines `grofe -r <host> [command...]` and
 `grofe machine add/ls/rm`; check the flags against the merged PR before building.
+
+## Build
+
+Goal: the whole laptop side of this spec and the box side that athome's own templates can
+express ship in one build: the inventory and its validation, the generated ssh config and
+pinned host keys, `athome machine add|sync|rm|ls` and `athome project clone`, the
+`machineType = "remote"` answer through config, init and the chezmoi templates (scope
+directory, headless packages, no Bitwarden, no init-generated key, `ATHOME_*` variables,
+the remote prompt, sshd hardening, lingering, the restore unit), the ssh nudge, remote
+projects in `repo`, and the box-side seams the keys build left: the inventory reader, an
+ssh-backed `keys.Box`, box-key rotation and real `authorized_keys` edits, with a CI drill
+against a real sshd container. grofe is reached only through its CLI as merged in
+termage/grofe#52: `grofe machine add <name> <ssh-target>`, `grofe machine ls` (columns
+name, target, session, transport, enabled; no header), `grofe machine rm <name>`, and
+`grofe -r <host> [command...]`.
+
+Decisions:
+
+- **New package `internal/machines`**, reaching every tool through `run.Runner`. It may
+  import `internal/keys`, `internal/secrets` and `internal/steps`; `internal/keys` never
+  imports it. The cli sets `keys.Inventory` to a closure over `machines.KeysInventory(home, runner, host)` before a keys command runs; with machines in the inventory it fails with the `Include` message below when `~/.ssh/config` lacks the line.
+- **Inventory** `~/.config/athome/machines.toml`, the spec's table plus two fields athome
+  fills in itself at `machine add`: `home` (the box's `$HOME`, read over ssh) and
+  `hostname` (the box's short hostname, which names its key `~/.ssh/<hostname>_ed25519`).
+  Written 0600 through a temp file and rename, its directory 0700. A missing file is an
+  empty inventory. Every command that reads it validates every entry and exits 1 naming
+  the machine and field on the first error:
+  - name: `^[a-z0-9][a-z0-9_-]{0,62}$` (no dots, so a name never shadows a real host such
+    as `github.com` in the ssh config), and not `local` (grofe's own name);
+  - scope: `work/`, `personal/` or `sidebiz/`, then one or more path segments of
+    `[A-Za-z0-9._-]`, none `.` or `..`;
+  - target: `^[A-Za-z0-9][A-Za-z0-9.-]*$` (a host or mesh name, an IPv4 address);
+  - user: `^[a-z_][a-z0-9_.-]*$`, required, not `root` (the bootstrap turns off root
+    login); jump: empty or `[user@]host[:port]` starting with `[A-Za-z0-9]`;
+    port: 1 to 65535, default 22;
+  - athome: `^v[0-9]+\.[0-9]+\.[0-9]+$`; github_account: empty or `^[A-Za-z0-9-]+$`;
+  - repos: each `^[A-Za-z0-9._-]+$`, not `.` or `..`, no duplicates;
+  - home: empty or an absolute path of `[A-Za-z0-9._/-]`; hostname: empty or
+    `^[A-Za-z0-9-]+$`.
+
+  These sets are what keeps a value from reaching an ssh config line or a remote shell
+  as anything but itself; every remote command still single-quotes its arguments. A
+  machine cannot hold two scopes because an entry has one `scope` key; TOML rejects a
+  duplicated key. Two machines may share a scope.
+- **Local scope check.** `machine add` refuses a scope whose `~/<scope>` holds a `.git`
+  at any depth up to 4 (`~/work/acme/r/.git` counts, the walk does not descend into a
+  `.git`): `~/<scope> holds git repositories (<first path>); a scope is local or remote,
+  never both`. `athome status` runs the same check per inventory scope and adds a
+  `machines` object to `--json`, `{"count": n, "warnings": ["..."]}`, and one text line per
+  warning after the rows; it never changes `current` or the exit code.
+- **Generated ssh config.** athome writes `~/.ssh/athome/config` (0600, directory 0700)
+  from the inventory plus any pending add, after every change; `private_config.tmpl` gains
+  `Include athome/config` beside `Include config.local`. This replaces "rendered by
+  chezmoi": `machine add` must reach the box through its alias before the inventory entry
+  exists (it is written last), so the file cannot wait for an apply. One block per machine,
+  in name order:
+
+  ```
+  Host acme-dev
+      HostName dev.acme.example
+      User dev
+      Port 22
+      ProxyJump j            # only when jump is set
+      IdentityFile ~/.ssh/<laptop key file>
+      IdentitiesOnly yes
+      ForwardAgent no        # yes when forward_agent
+      HostKeyAlias acme-dev
+      UserKnownHostsFile ~/.ssh/athome/known_hosts
+      StrictHostKeyChecking yes
+      ControlMaster auto
+      ControlPath ~/.ssh/athome/cm-%C
+      ControlPersist 10m
+  ```
+
+  The laptop key file is `keys.LaptopKey`'s base name. `HostKeyAlias` keys the pinned host
+  key by machine name, so `machine rm` can remove it with `ssh-keygen -R <name>`. Every
+  athome command that connects first checks that `~/.ssh/config` contains the line
+  `Include athome/config` and otherwise exits 1 with `~/.ssh/config does not include
+  athome/config; run chezmoi apply ~/.ssh/config`. It then rewrites the generated config
+  (`sync`, `project clone`, `machine rm` and `KeysInventory` do), so a deleted or stale
+  file cannot let ssh resolve the bare name outside its pinned `HostKeyAlias` block. A
+  pending entry that does not parse or validate is skipped in the config with a note, and
+  `machine rm --force` removes it by name.
+- **ssh from athome.** A non-interactive call is
+  `ssh -o BatchMode=yes <name> sh -c '<script>' athome '<arg>'...` (arguments
+  single-quoted; data goes on stdin, never in arguments); an interactive one is
+  `ssh -t <name> ...` with `Interactive`. A login check (`Box.Login`) uses a temp config
+  written from the same block without `IdentityFile`, `ControlMaster` and `ControlPath`
+  (`ControlPath none`), and with a jump as `ProxyCommand ssh -W [%h]:%p [-p <port>] [-l <user>] <host>`, run as
+  `ssh -F <tmp> -i <key> -o IdentitiesOnly=yes -o BatchMode=yes <name> true`, so neither
+  the laptop key nor a shared master connection can make it pass.
+- **Pending adds** live in `~/.local/state/athome/machines/<name>.toml` (the entry with
+  everything known so far, 0600) from step 2 on, so a rerun resumes with the same values
+  and `machine rm --force` knows the target. A rerun with different flags for a pending
+  name exits 1 with `machine add <name> is pending with other values; finish it with the
+  same flags or run athome machine rm <name> --force`. The pending file is removed when the
+  inventory entry is written.
+- **`athome machine add <name> --scope s --target t [--user u] [--jump j] [--port p]
+  [--github-account a] [--forward-agent] [--athome <tag>]`.** `--user` defaults to the
+  laptop's `$USER`; `--athome` to `v<running version>`, and a running version that is not
+  `X.Y.Z` exits 2 asking for `--athome`; `--github-account` to the account `gh` is
+  logged in as (`gh api user --jq .login`), resolved once and stored in the entry. On a terminal a missing `--scope` or `--target` is asked as a line prompt
+  (and as the TUI form, below); without one it exits 2 naming the flag. A name already in
+  the inventory exits 1 (`machine <name> already exists`). `--forward-agent` prints
+  `warning: root on <name> can use your laptop key while you are attached`. The steps run
+  through `steps.Execute`, each a `steps.Step` whose check runs before its apply, in this
+  order (the box key moves before the bootstrap, because the bootstrap's chezmoi apply
+  renders the signing config and `allowed_signers` from whichever key file exists then,
+  and the box's first push needs the key registered):
+  1. `machine-validate`: the entry, the local scope check, the `Include` line, rbw
+     unlocked (`keys.ErrLocked`'s message otherwise, since step 4 needs the break-glass
+     key). Check: none.
+  2. `machine-host-key`: done when `ssh-keygen -F <name> -f ~/.ssh/athome/known_hosts`
+     finds it and the pending entry has `home` and `hostname`. Apply writes the pending
+     entry and the ssh config, then runs
+     `ssh -o StrictHostKeyChecking=accept-new -o BatchMode=yes <name> sh -c 'printf "%s\n" "$HOME"; uname -n'`,
+     pins whatever key the box offers (trust on first use, the fingerprint printed with
+     `ssh-keygen -l -F <name> -f <known_hosts>`), and stores `home` and the part of
+     `uname -n` before the first dot as `hostname`.
+  3. `machine-box-key`: done when the box has `~/.ssh/<hostname>_ed25519.pub` and its
+     blob is on GitHub as an authentication and a signing key (`gh api --paginate
+     user/keys` and `user/ssh_signing_keys`). Apply creates the key on the box when absent
+     (`ssh-keygen -q -t ed25519 -N '' -C athome@<name> -f ~/.ssh/<hostname>_ed25519`),
+     reads its public key, adds the missing ones with
+     `gh ssh-key add <tmp.pub> --title athome-<name>` and
+     `--title athome-<name>-sign --type signing`, then checks from the box with
+     `ssh -F /dev/null -i ~/.ssh/<hostname>_ed25519 -o IdentitiesOnly=yes -o BatchMode=yes -o UserKnownHostsFile=~/.ssh/athome_github_known_hosts -o StrictHostKeyChecking=yes -T git@github.com`
+     (`-F /dev/null`, so the box's own config cannot offer another key), against
+     `~/.ssh/athome_github_known_hosts` on the box, which athome writes from
+     GitHub's published host keys, so github.com is never trusted on first use (passes
+     when the output contains `successfully authenticated`). Every `gh` call gets
+     `GH_TOKEN` from `gh auth token --hostname github.com --user <account>`.
+  4. `machine-break-glass`: done when the scope's break-glass public key is in the box's
+     `~/.ssh/authorized_keys`. Apply reads it with `keys.BreakGlassPub`, creates it with
+     `keys.NewBreakGlass` on `keys.ErrNoItem`, and authorizes it (`Box.Authorize`).
+  5. `machine-bootstrap`: done when the box's `~/.local/bin/athome version` reports the
+     pinned version and `~/.config/athome/bootstrap.toml` equals the one generated now.
+     Apply sends `bootstrap.toml` on stdin to `~/.config/athome/bootstrap.toml` (0600),
+     clones `https://github.com/morrieinmaas/athome` at the tag to
+     `~/.local/share/athome` (or fetches the tag and checks it out detached), then runs
+     `ssh -t <name> sh -c 'cd ~/.local/share/athome && ATHOME_VERSION=<tag> ./scripts/bootstrap.sh --config ~/.config/athome/bootstrap.toml'`
+     interactively, so sudo can prompt once.
+  6. `machine-gh-login`: done when `gh auth status` exits 0 on the box. Apply runs
+     `ssh -t <name> gh auth login --hostname github.com --git-protocol ssh --skip-ssh-key --web`.
+  7. `machine-grofe`: done when the first column of `grofe machine ls` has the name. Apply
+     runs `grofe machine add <name> <name>`. grofe is `grofe` on PATH, else
+     `~/.local/lib/grofe/grofe`; with neither, the step prints
+     `grofe not installed: run grofe machine add <name> <name> once it is` and passes.
+  8. `machine-inventory`: writes the entry, removes the pending file, rewrites the ssh
+     config and the remote projects file, then runs `athome secrets backup` in process; a
+     failed backup is a warning naming `athome secrets backup`. Check: none.
+
+  A failed step exits 1 with `athome machine add: <step>: <error>`, then lists what
+  exists so far (`left behind: pinned host key, GitHub keys athome-<name>[-sign],
+  break-glass authorization`, from the steps that passed) and
+  `rerun the same command to resume, or remove it with athome machine rm <name> --force`.
+- **`bootstrap.toml` for a box** is built from the laptop's chezmoi data: `machine =
+  "remote"`, `scope`, `machineName`, `githubHandle`, `githubId`, `personalName`, the
+  scope's context identity (`workEmail` and `workName`, or `sidebizEmail` and
+  `sidebizName`; nothing more for `personal`), `includeAgents`, `agentsRepo`,
+  `meshProvider = "netbird"` (always: a box runs no NordVPN, so the laptop's `meshnet` would leave it
+  without a mesh), `netbirdManagementUrl`, `generateSshKey = "false"`,
+  `useBitwarden = "false"`, `timezone` (the laptop's `/etc/localtime` target after
+  `zoneinfo/`) and `locale` (`$LANG`). Keys with empty values are left out.
+- **`machineType = "remote"`** is a third answer. `config.Load` accepts `remote` and reads
+  `scope`, `machineName`, `timezone` and `locale` (env `ATHOME_SCOPE`, `ATHOME_MACHINE_NAME`,
+  `ATHOME_TIMEZONE`, `ATHOME_LOCALE`); `remote` without a valid scope or machine name exits
+  2. Only on a remote machine does the data step write those four keys into chezmoi's
+  `[data]`, so laptops see no change. On remote, the steps force what the box must never
+  do whatever the answers say: `bitwarden` is done without running `bw-setup`, the
+  `secrets-restore` step is done without asking, `generateSshKey` is `false` (no
+  `ssh-keygen` and no GitHub upload by init), and the baseline's project-dir check expects
+  `~/<scope>/.envrc`. The init form's machine type choice stays `personal | work`: remote
+  is only ever answered by a `bootstrap.toml` from the laptop.
+- **Templates.** `.chezmoi.toml.tmpl` carries `scope`, `machineName`, `timezone` and
+  `locale` from existing data (empty when absent, never prompted). `run_03` seeds only
+  `~/<scope>` with `use ctx <context>` on remote. New `.chezmoidata/contextColors.toml`
+  holds the spec's table. `dot_config/starship.toml` becomes `starship.toml.tmpl`; on
+  remote the `$hostname` module in `format` is replaced by
+  `[<machineName> · <scope>](bold <colour>)`, and for `personal` and `work` it renders
+  byte for byte as today. `dot_zshenv` becomes `dot_zshenv.tmpl` and on remote exports
+  `ATHOME_MACHINE`, `ATHOME_SCOPE` and `ATHOME_CONTEXT_COLOR`; new
+  `dot_config/environment.d/athome.conf.tmpl` holds the same three as `KEY=value` and is
+  empty elsewhere (chezmoi then creates no file). `packages.yaml` entries that are GUI apps
+  or desktop stack become `{name: x, gui: true}` maps and `run_onchange_02` skips them and
+  all `darwin.brew_casks` on remote; plain string entries are unchanged. A remote box also skips the commercial VPN (NordVPN and ProtonVPN: no package, no repo, no
+  daemon setup, no sign-in hint in `run_once_08`); the `gui` flag is reused for that, so the
+  VPN packages carry `gui: true`. The mesh (NetBird) stays. The desktop-only
+  scripts (`run_once_09`, `run_once_11`, `run_once_15`, `run_once_after_20`,
+  `run_once_after_23`, `run_onchange_after_24`, `run_onchange_after_25`) render empty on
+  remote, and `.chezmoiignore` skips the desktop configs (niri, quickshell, noctalia, greetd,
+  autostart, qt5ct, qt6ct, the canopy-tmux unit, `Pictures`) there. New
+  `run_onchange_after_30-remote-box.sh.tmpl` (remote Linux only, skipped under
+  `ATHOME_CI`) writes `/etc/ssh/sshd_config.d/10-athome.conf` (`PasswordAuthentication
+  no`, `KbdInteractiveAuthentication no`, `PermitRootLogin no`), checks `sshd -t` before
+  reloading `sshd`, runs `loginctl enable-linger $USER`, sets the timezone and locale when
+  given, and enables new `dot_config/systemd/user/grofe-restore.service.tmpl`
+  (`Type=forking`, `ExecStart=%h/.local/lib/grofe/grofe start-server --restore`,
+  `WantedBy=default.target`; empty on non-remote).
+- **`athome machine sync [<name> | --all]`** reruns step 5 for each named machine
+  (bootstrap.toml regenerated from the current answers, the pinned tag checked out) and
+  then copies `.env` files for the machine's `repos` (below). One name runs interactively
+  with `ssh -t`. `--all` runs every machine in parallel without a terminal (`ssh -T`,
+  bootstrap with `--non-interactive`), each box's output to
+  `~/.local/state/athome/sync-<name>.log`, then one line per box, `✓ <name>` or
+  `✗ <name>: <error> (log: <path>)`; an unreachable box is one of those lines. Exit 0 when
+  all passed, 1 otherwise. No argument, or both a name and `--all`, exits 2.
+- **`.env` copies** (clone and sync) take `~/.secrets/<repo>/.env*` except `.env.example`
+  and send each on stdin to
+  `sh -c 'umask 077; mkdir -p "$HOME/.secrets/$1" && cat > "$HOME/.secrets/$1/$2"'`.
+  Only repos in the machine's `repos` list are copied.
+- **`athome machine rm <name> [--force]`**: first, on GitHub, the authentication key titled
+  `athome-<name>` and the signing key titled `athome-<name>-sign`
+  (`gh api -X DELETE user/keys/<id>`, `user/ssh_signing_keys/<id>`), so an unreachable or
+  breached box never stops the revocation; then on the box `gh auth logout --hostname
+  github.com` and removal of the scope's break-glass key from `authorized_keys` (never run
+  with no entry and no pending file, or without the `Include` line, so athome never
+  connects to a host it did not configure: plain `rm` then exits 1 after the revocation,
+  `--force` notes it and goes on); then
+  `grofe machine rm <name>` when listed, `ssh-keygen -R <name> -f ~/.ssh/athome/known_hosts`,
+  the inventory entry and pending file, the rewritten ssh config and remote projects file,
+  and `athome secrets backup` when the inventory changed. Without `--force` an unknown name
+  exits 1 and any failing step stops the run with exit 1 before the inventory changes.
+  With `--force` it works from the inventory entry, else the pending file, else the name
+  alone, and each failing step is a note; the exit is 0.
+- **`athome machine ls`** prints `fmt.Sprintf("%-16s %-20s %-28s %s", name, scope,
+  user@target[:port], <n> repos)` per machine in name order, or `no machines` and exit 0.
+- **`athome project clone <repo> [--machine <name>]`.** `<repo>` is `owner/name` (cloned
+  as `git@github.com:owner/name.git`) or a `git@github.com:owner/name.git` or
+  `https://github.com/owner/name(.git)` URL (`owner/name.git` is accepted too); anything
+  else, and the name `worktrees` (the worktree directory), exits 2. The clone runs with
+  `GIT_SSH_COMMAND` pinned to `~/.ssh/athome_github_known_hosts`, and on remote the box's
+  `Host github.com` block reads that file too (`UserKnownHostsFile ~/.ssh/known_hosts
+  ~/.ssh/athome_github_known_hosts`, `StrictHostKeyChecking yes`), so no git over ssh on
+  the box trusts github.com on first use. Without `--machine`
+  the inventory must hold exactly one machine; otherwise exit 2 naming them. On the box:
+  `mkdir -p <home>/<scope>/worktrees`, `git clone <url> <home>/<scope>/<name>` unless
+  `<name>/.git` exists, `mise trust` and `mise install` (`~/.local/bin/mise`) in it when it
+  has a `mise.toml`, `.mise.toml` or `.tool-versions`; then the `.env` copies, the repo
+  added to `repos`, the inventory saved and backed up.
+- **Remote projects.** Every inventory write also writes
+  `~/.local/state/athome/remote-projects` (0600), one tab-separated line per repo:
+  `<repo>  <machine>  <scope>  <home>/<scope>/<repo>`. `machines.ProjectCommand` gives
+  `grofe -r <machine> new-session -A -s <repo> -c <home>/<scope>/<repo>`. The `repo`
+  zsh function falls back to that file when no local project matches and runs the same
+  grofe command.
+- **The ssh nudge** is `home/dot_zsh/ssh-nudge.zsh`, sourced by `dot_zshrc.tmpl`: an
+  `ssh` function that, when `$GROFE` is set, the arguments hold no `-T` and exactly one
+  non-option word (options that take a value skip it), and that word, or its `ssh -G`
+  hostname, matches the name, target or target's `ssh -G` hostname of a row of
+  `grofe machine ls`, prints `grofe: for reconnects and forwarding, use grofe -r <machine>`
+  to stderr. It then runs `command ssh "$@"` in every case.
+- **Boxes for `athome keys`.** `machines.KeysInventory(home, runner, host)` returns one ssh `Box` per
+  inventory machine. `Authorize(pub)` appends the key when its blob is absent; `Reset(keys)`
+  writes exactly those keys through `authorized_keys.athome` and a rename; both send keys
+  on stdin, check each is one `ssh-ed25519 <base64>[ comment]` line, and keep the file
+  0600 in a 0700 `~/.ssh`. `Login(key)` is the login check above. While `<laptop key>.old`
+  exists every other call adds `-i <key>.old`. The box also implements `keys.KeyBox`
+  for box-key rotation: `NewKey` (create or reuse `~/.ssh/<hostname>_ed25519.rotate` on the
+  box, return its public key), `CheckGitHub(rotating bool)` (the github.com check above
+  with the `.rotate` key or the current one), `PromoteKey` (move `.rotate` over the key on
+  the box; a no-op when `.rotate` is gone and the key's public key is the new one) and
+  `CurrentPub`.
+- **`athome keys rotate --boxes`** with machines adds one job per box, kind `box`, `item`
+  the machine name: new key on the box (`NewKey`), both `gh ssh-key add` calls titled
+  `athome-<name>` and `athome-<name>-sign` (target `github` `added`), `CheckGitHub(true)`
+  (`checked`), `PromoteKey`, then the old blob's GitHub keys deleted as for the laptop key
+  (`removed`, `promoted`). Any failure on the box skips that box's job with the error;
+  `--resume` continues it from its phase. A box that left the inventory is dropped with a
+  note. With an empty inventory the existing note stays.
+- **Secrets backup** mirrors `.config/athome/machines.toml`; restore brings it back like
+  every other mirrored file.
+- **TUI.** The home menu gains `machines` (between `update` and `quit`). It opens a list of
+  the inventory (`machine ls` lines) with `add`, `sync`, `sync all`, `remove` and `back`.
+  `add` is a form (name, scope, target, user, port, jump, GitHub account, forward agent),
+  validated with the inventory's rules, and runs `machine add` with those values on the
+  terminal once the view has exited (its bootstrap and `gh auth login` need the terminal
+  through `ssh -t`, which the progress view would hold); `remove` asks `remove <name>? This revokes its GitHub keys` (default no).
+- **`athome update` on a box.** A box stays on the tag the laptop pinned at `machine add`;
+  only `athome machine sync` from the laptop moves it. When `machineType` is `remote`,
+  `athome update` does not fetch tags or look for a newer release: its target is the
+  release the box runs (`pinnedTarget`, from the running version), the rest of the update
+  (`chezmoi apply` and the steps after the self-update) runs as on a laptop. `--to` with
+  another tag exits 1 saying the box is pinned to its tag by the laptop and that the pin is
+  changed there, then `athome machine sync` run. A box whose athome is not a release (a dev
+  build) exits 1 naming `athome machine sync`.
+- **`athome` usage** gains `machine   manage remote dev machines (add|sync|rm|ls)` and
+  `project   clone a project onto a remote machine (clone)`.
+
+Acceptance criteria:
+
+1. `machines.Load` rejects, with the machine and field named: a scope `home/acme`, a scope
+   `work`, a scope `work/../x`, a target with a space, a user `-oProxyCommand=x`, a port
+   70000, a repo `../x`; it accepts the spec's example; two machines sharing a scope load.
+2. `machine add` of a scope whose `~/<scope>` holds `r/.git` exits 1 with `holds git
+   repositories` and runs no command; `athome status --json` with such a scope has
+   `machines.warnings` naming it and the exit is 0.
+3. The generated `~/.ssh/athome/config` for the example, with and without a jump and with
+   `forward_agent`, equals the block above; `ssh -G -F <home>/.ssh/config acme-dev`
+   (bats, no network) reports the hostname, user, port, `identityfile`, `hostkeyalias` and
+   `userknownhostsfile`.
+4. `machine add` against a fake runner runs its eight steps in order and records, in this
+   order: the host key `ssh -o StrictHostKeyChecking=accept-new`, the box `ssh-keygen`, both
+   `gh ssh-key add` calls, the box github.com check, the break-glass `authorized_keys`
+   append, the `bootstrap.toml` upload, the interactive bootstrap, the interactive
+   `gh auth login`, `grofe machine add acme-dev acme-dev`, and finally `machines.toml` holds
+   the entry with `home` and `hostname`, the pending file is gone and the backup ran.
+5. `machine add` failing at each step in turn exits 1 naming the step, writes no inventory
+   entry, lists what was left behind; rerunning with the same flags skips every step that
+   passed (no second `ssh-keygen`, no second `gh ssh-key add`) and ends in the same state
+   as criterion 4.
+6. The generated `bootstrap.toml` for a `work/acme` machine has `machine = "remote"`,
+   `scope`, `machineName`, the work identity, `generateSshKey = "false"` and
+   `useBitwarden = "false"`, and no `sidebizEmail`.
+7. `athome init --config` with `machine = "remote"` and a scope runs no `bw-setup`,
+   `rbw register`, `rbw login` or `ssh-keygen -t`, writes `scope` and `machineName` to
+   chezmoi's data, and its project-dir check expects `~/<scope>/.envrc`; `remote` without
+   a scope exits 2. For `personal` and `work` the data step writes the same keys as before.
+8. `chezmoi execute-template` of `starship.toml.tmpl` with `machineType = "remote"`,
+   `machineName = "acme-dev"`, `scope = "work/acme"` contains
+   `[acme-dev · work/acme](bold yellow)` and no `$hostname` in `format`; for `personal` and
+   `work` it equals the old `starship.toml`. `run_03` on remote seeds `~/work/acme/.envrc`
+   with `use ctx work` and nothing else. `dot_zshenv.tmpl` on remote exports the three
+   variables, elsewhere renders as the old `dot_zshenv`. `run_onchange_02` on remote has no
+   `gui: true` entry and no cask; elsewhere it installs every name it did before.
+9. `machine sync acme-dev` reruns the upload and bootstrap and copies `.env` files only for
+   repos in `repos`; `sync --all` with one reachable and one failing box prints `✓` and `✗`
+   lines, writes both logs and exits 1; `sync` with no argument exits 2.
+10. `machine rm acme-dev` records the box `gh auth logout`, the break-glass removal, the
+    GitHub deletes of exactly the ids titled `athome-acme-dev` and `athome-acme-dev-sign`,
+    `grofe machine rm acme-dev`, `ssh-keygen -R acme-dev`, and leaves no entry, no block in
+    the ssh config and no pending file. After a partial add, `rm --force` removes the same
+    things from the pending file and exits 0 even when the box is unreachable; plain `rm` of
+    an unknown name exits 1.
+11. `project clone acme/api` records the clone into `<home>/work/acme/api`, the worktrees
+    dir, `mise install` when the fake box reports a `mise.toml`, one upload per `.env*` file
+    except `.env.example`, and `repos = ["api"]`; the remote projects file has
+    `api  acme-dev  work/acme  /home/dev/work/acme/api`; `ProjectCommand` is
+    `grofe -r acme-dev new-session -A -s api -c /home/dev/work/acme/api`, and no path in it
+    starts with the laptop's home.
+12. The ssh-backed `Box` sends `Authorize` and `Reset` keys on stdin only, refuses a key
+    with a newline or an option prefix, and `Login` uses `-F <tmp>` without the laptop key
+    and with `ControlPath none`. Against a real sshd container (CI job `sshd`): Authorize
+    lets a new key in, Reset leaves exactly the managed keys (a hand-added one is refused),
+    and after `athome keys rotate --laptop` with fake `gh` and `rbw` the old laptop key no
+    longer logs in while the new one and the break-glass key do.
+13. `athome keys rotate --boxes` with two fake `KeyBox`es, one failing `CheckGitHub`,
+    registers and promotes the good box's new key, deletes only its old blob's ids, skips
+    the other with its old key still current and exits 1 with the `--resume` hint;
+    `--resume` with it passing finishes it with one `NewKey` call per box over both runs.
+14. The ssh nudge (bats, stub `ssh` and `grofe`): `GROFE=1 ssh acme-dev` prints the hint
+    and runs ssh; without `GROFE`, with `-T`, with a remote command, and for a host not in
+    `grofe machine ls` it prints nothing; every case runs ssh with the same arguments.
+15. `athome secrets backup` mirrors `~/.config/athome/machines.toml` when present.
+16. The TUI home lists `machines`; the machines view lists the inventory; the add form
+    rejects a bad scope with the inventory's message; `remove` asks before running.
+17. `athome` usage lists `machine` and `project`; `athome machine bogus` and
+    `athome project` exit 2.
+18. On a box (`machineType = "remote"`, running `1.4.0`) `athome update --yes` with `v1.5.0`
+    on origin runs no `git fetch`, no call mentions `v1.5.0`, does not replace the binary
+    and runs `chezmoi apply`; `athome update --to 1.5.0 --yes` exits 1 with `pinned to
+    v1.4.0` and runs no command.
+
+Edge cases: an inventory file that does not parse (exit 1 naming the file); a missing
+`~/.ssh/config` include line; `--athome` with a dev build; a rerun of `add` with other
+flags for a pending name; a box whose `uname -n` has dots; the break-glass item missing
+(created) or rbw locked (step 1 fails, nothing done); `gh ssh-key add` failing with the
+scope hint as for the laptop key; a box already holding the key file (reused, not
+regenerated); grofe absent; `grofe machine add` reporting the name exists (the check
+already passed, so it is not run); `sync --all` with an empty inventory (`no machines`,
+exit 0); `project clone` of a repo already on the box (no second clone, the `.env` copies
+and the record still happen); a repo name already in `repos` (not duplicated); `rm` of the
+last machine in a scope (the break-glass item stays in Bitwarden); `rm --force` with no
+pending file and no entry (removes by name only: GitHub titles, grofe, known_hosts);
+`~/.ssh/athome` missing (created 0700).
+
+Test list (unit unless marked):
+
+- machines inventory: criterion 1, round trip keeping order and the cached fields, the
+  file 0600 and its directory 0700, a missing file is empty, a corrupt one names the file.
+- machines local scope: `~/work/acme/r/.git` refused, `~/work/acme/r` without `.git`
+  accepted, no `~/work/acme` accepted, a `.git` at depth 5 ignored.
+- machines ssh config: golden blocks (criterion 3), name order, pending entries included,
+  the include-line check message.
+- machines add (stateful fake box runner): criterion 4 ordered calls; criterion 5 for each
+  of steps 2 to 8; the pending-with-other-values refusal; `--forward-agent` warning; the
+  github_account `GH_TOKEN`; grofe absent passes with the note.
+- machines bootstrap.toml: criterion 6 for `work/acme`, `sidebiz/x` and `personal/y`.
+- machines sync: criterion 9; one box interactive with `ssh -t`.
+- machines rm: criterion 10, including the GitHub listing with a third unrelated key that
+  is never deleted.
+- machines clone: criterion 11; owner/name, ssh and https forms; a bad form exits 2;
+  `--machine` omitted with two machines exits 2.
+- machines box: criterion 12's argument and stdin checks against the fake runner; the
+  `.old` key used while it exists.
+- sshd drill (integration, `ATHOME_SSHD_ADDR` set by the CI job, skipped otherwise):
+  criterion 12's container part.
+- keys box rotation: criterion 13.
+- config: `remote` accepted with a scope, refused without; `ATHOME_SCOPE` over the file.
+- steps remote: criterion 7 against the fake runner.
+- templates (bats, `test/templates.bats`, chezmoi installed in the bats job): criterion 8.
+- ssh config (bats, `test/ssh-config.bats`): criterion 3's `ssh -G`.
+- ssh nudge (bats, `test/ssh-nudge.bats`): criterion 14.
+- secrets backup: criterion 15.
+- status: criterion 2's warning.
+- tui: criterion 16.
+- cli: criterion 17; `machine add` without `--scope` and no terminal exits 2.
+- cli update on a box: criterion 18 (`TestUpdateOnBoxStaysOnPinnedTag`,
+  `TestUpdateOnBoxRefusesOtherTag` in `internal/cli/update_test.go`).
+
+Out of scope for this build: the full box drill in a systemd container (bootstrap over ssh,
+lingering, the reboot restore) stays a manual check before a release, listed in
+`docs/remote-machines.md`, because a headless bootstrap of a whole distro inside CI's
+sshd container doubles the e2e job; the sshd job covers keys and `authorized_keys`.
+Mesh enrolment on the box (`netbird up` needs the user's SSO; the remote doc names it as a
+manual step). canopy's `remote set` and `CANOPY_THEME` (canopy's spec and M5). Listing
+remote projects in tmux-sessionx (canopy's remote-awareness spec); this build covers the
+`repo` function. `sync --all` at the end of `athome update`. The lingering check in grofe's
+`reboot-check` (upstream in grofe). Bumping the grofe pin to the release with
+`machine` and `-r` (done once grofe releases). A second laptop: the inventory is mirrored, but the
+pinned host keys and that laptop's authorization on the boxes are not (documented in
+`docs/remote-machines.md`).
+
+Docs (same PR): new `docs/remote-machines.md` (the scope model, prerequisites: a box with
+your laptop key authorized, git, curl and sudo; `machine add|sync|rm|ls`, `project clone`,
+moving a scope to a box, reboots, the manual box drill, the accepted GitHub risk linking
+`docs/secrets.md`); `docs/spatial-model.md` (scopes, remote scopes have no local
+directory); `docs/how-it-works.md` (`machineType = "remote"`, headless packages, the
+generated ssh config); `docs/customizing.md` (`contextColors`, the remote prompt, `gui:
+true`); `docs/commands.md` (`machine`, `project`, `keys rotate --boxes`); `docs/secrets.md`
+(box keys and `--boxes` now real); `README.md` (one line linking the new page).

@@ -84,6 +84,17 @@ repo() {
       cd "$match"; return
     fi
   done
+  # No local project: a remote one (written by athome machine add / project clone),
+  # tab-separated <repo> <machine> <scope> <path>. Attach to its grofe session on the box.
+  local remote_file="$HOME/.local/state/athome/remote-projects" machine rpath
+  if [[ -r $remote_file ]]; then
+    IFS=$'\t' read -r machine rpath < <(awk -F'\t' -v r="$1" '$1 == r { print $2 "\t" $4; exit }' "$remote_file")
+    local grofe_bin
+    grofe_bin=${commands[grofe]:-$HOME/.local/lib/grofe/grofe}
+    if [[ -n $machine && -n $rpath && -x $grofe_bin ]]; then
+      "$grofe_bin" -r "$machine" new-session -A -s "$1" -c "$rpath"; return
+    fi
+  fi
   echo "repo: no project '$1' under ~/personal, ~/work, ~/sidebiz" >&2
   return 1
 }

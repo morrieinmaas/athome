@@ -207,6 +207,18 @@ Continuum auto-saves every 5 min and on reboot resurrects everything —
 all your windows, panes, scroll history, the nvim file you had open.
 Sessions are durable in a way VSCode workspaces aren't.
 
+### Projects that live on a remote box
+
+Projects live in one context tree each (`~/work`, `~/personal`, `~/sidebiz`). A **scope**
+is a slice of one tree, such as `work/acme`, and a scope can live on a
+[remote dev machine](remote-machines.md) instead of the laptop. On the box it sits at the
+same path, `~/work/acme/<repo>`. On the laptop a remote scope has no directory at all, so a
+`personal` laptop with no `~/work` can still work on `work/acme`.
+
+`repo api` finds a remote project too and attaches to its session on the box with
+`grofe -r <machine> new-session -A -s api -c <box path>`. Inside it, sessions, nvim and the
+keys are the same as on the laptop.
+
 ### Closing nvim and coming back to the same buffers
 
 Two ways, depending on what you want:

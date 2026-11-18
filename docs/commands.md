@@ -173,7 +173,7 @@ new key, then remove the old key everywhere. See [rotation](secrets.md#rotation)
 | Flag | What it rotates |
 | --- | --- |
 | `--laptop` | This laptop's key (`~/.ssh/id_ed25519` if present, else `~/.ssh/<host>_ed25519`) and its Bitwarden item `ssh/<file>`. |
-| `--boxes` | Each box's own key (arrives with `athome machine`; with no machines it prints a note). |
+| `--boxes` | Each box's own key, created on the box and registered on GitHub as `athome-<name>` and `athome-<name>-sign` (with no machines it prints a note). |
 | `--break-glass` | Each scope's break-glass key, `athome/<context>/<scope>/break-glass`. |
 | `--all` | All three, in that order. |
 | `--resume` | Finishes the pending rotation in `~/.local/state/athome/rotate.json`, retrying skipped boxes. Takes no other flag. |
@@ -181,6 +181,45 @@ new key, then remove the old key everywhere. See [rotation](secrets.md#rotation)
 A new rotation while one is pending exits 1 and asks for `--resume`. Exit codes: 0 done;
 1 a failure, or boxes skipped (listed, with the `--resume` hint); 2 a usage error, including
 no flag.
+
+## athome machine
+
+```
+athome machine add <name> --scope <ctx>/<path> --target <host> [--user u] [--jump j] [--port p]
+                  [--github-account a] [--forward-agent] [--athome <tag>]
+athome machine sync [<name> | --all]
+athome machine rm <name> [--force]
+athome machine ls
+```
+
+Manages [remote dev machines](remote-machines.md); the inventory is
+`~/.config/athome/machines.toml`, mirrored into the secrets vault.
+
+- `add` runs eight resumable steps: validate, pin the host key, create and register the box
+  key, authorize the scope's break-glass key, bootstrap the box, `gh auth login` on it,
+  `grofe machine add`, then write the inventory and back it up. Rerun the same command after
+  a failure. `--user` defaults to `$USER`, `--athome` to this binary's version (a dev build
+  needs `--athome`). On a terminal a missing `--scope` or `--target` is asked for.
+- `sync` reruns the bootstrap with the current answers and copies the `.env` files of the
+  machine's repos. `--all` runs every machine in parallel without a terminal and logs each to
+  `~/.local/state/athome/sync-<name>.log`.
+- `rm` revokes the box's GitHub keys, logs `gh` out on the box, removes the break-glass
+  authorization, the grofe entry, the pinned host key, the ssh block and the entry. `--force`
+  works after a partial `add` and turns each failing step into a note.
+- `ls` lists name, scope, `user@target[:port]` and the number of repos.
+
+Exit codes: 0 done; 1 a failure (`sync --all`: any box failed); 2 a usage error.
+
+## athome project
+
+```
+athome project clone <owner/name | GitHub URL> [--machine <name>]
+```
+
+Clones the repo into the machine's scope on the box, creates the `worktrees` directory beside
+it, runs `mise install` when it has a mise config, copies `~/.secrets/<repo>/.env*` (not
+`.env.example`) to the box and records the repo in the inventory. `--machine` is needed when
+there is more than one machine. Exit codes: 0 done; 1 a failure; 2 a usage error.
 
 ## athome version
 
@@ -208,6 +247,11 @@ five are current.
 `--json` also has `"keys": {"last_rotated", "due"}`: the last finished rotation, else the
 laptop key's age. When it is more than 90 days old, the text output adds
 `keys: last rotated <n> days ago; run athome keys rotate --laptop`. It never changes
+`current` or the exit code.
+
+`--json` also has `"machines": {"count", "warnings"}` for the
+[remote machines](remote-machines.md) inventory. A remote scope whose `~/<scope>` holds a git
+repository is a warning, printed in the text output as `machines: <warning>`; neither changes
 `current` or the exit code.
 
 Exit codes: 0 whenever the report printed, whatever it says; 1 when the repo is not

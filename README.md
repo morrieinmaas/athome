@@ -21,6 +21,8 @@ afterwards. Built on [chezmoi](https://www.chezmoi.io/) and
   plain GNOME kept as a fallback session.
 - **Guard rails:** a global git hook runs gitleaks on every commit in every
   repo.
+- **Remote dev machines:** a client's ssh box set up with the same shell, tools and
+  agents, one scope per box; see [docs/remote-machines.md](docs/remote-machines.md).
 
 ## Before you start
 
@@ -138,6 +140,7 @@ athome teardown --all --execute   # do it, then run bootstrap again
 - [How it works](docs/how-it-works.md): identities, SSH and signing, secrets,
   the desktop, repo layout, why these tools
 - [Secrets](docs/secrets.md): Bitwarden and rbw setup
+- [Remote machines](docs/remote-machines.md): `athome machine` and `athome project clone`
 - [Customizing](docs/customizing.md): adding packages and settings, handling drift
 - [Themes](docs/theme-switching.md), [tmux and Neovim for VS Code users](docs/spatial-model.md),
   [NetBird](docs/netbird-cloud.md), [Neovim plugin pins](docs/nvim-pack-lock-workflow.md)

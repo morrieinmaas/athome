@@ -53,6 +53,10 @@ var answers = []struct{ key, env, def string }{
 	{"sshKeyAction", "ATHOME_SSH_KEY_ACTION", ""},
 	{"generateSshKey", "ATHOME_GENERATE_SSH_KEY", ""},
 	{"bitwardenUrl", "ATHOME_BW_BASE_URL", ""},
+	{"scope", "ATHOME_SCOPE", ""},
+	{"machineName", "ATHOME_MACHINE_NAME", ""},
+	{"timezone", "ATHOME_TIMEZONE", ""},
+	{"locale", "ATHOME_LOCALE", ""},
 }
 
 // DataEnv maps each answer key to the ATHOME_* variable that presets it.
@@ -103,6 +107,11 @@ func Load(o Options) (Config, error) {
 		return cfg, err
 	}
 	cfg.Machine, cfg.IncludeAgents = machine, includeAgents
+	if machine == "remote" {
+		if err := validateRemote(cfg.Data); err != nil {
+			return cfg, err
+		}
+	}
 	return cfg, nil
 }
 
@@ -126,10 +135,43 @@ func resolveMachineAgents(o Options, text string) (machine string, includeAgents
 			return machine, includeAgents, fmt.Errorf("%w: includeAgents must be true|false (got: %s)", ErrUsage, a)
 		}
 	}
-	if machine != "personal" && machine != "work" {
-		return machine, includeAgents, fmt.Errorf("%w: machine must be personal|work (got: %s)", ErrUsage, machine)
+	if machine != "personal" && machine != "work" && machine != "remote" {
+		return machine, includeAgents, fmt.Errorf("%w: machine must be personal|work|remote (got: %s)", ErrUsage, machine)
 	}
 	return machine, includeAgents, nil
+}
+
+// The patterns a remote machine's answers and the machine inventory share.
+var (
+	ScopeRe       = regexp.MustCompile(`^(work|personal|sidebiz)/[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$`)
+	MachineNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,62}$`)
+	TimezoneRe    = regexp.MustCompile(`^[A-Za-z0-9_+./-]+$`)
+	LocaleRe      = regexp.MustCompile(`^[A-Za-z0-9_.@-]+$`)
+)
+
+// validateRemote checks the answers a remote box needs; the same rules the
+// machine inventory applies, so a value is safe in a path and a shell word.
+func validateRemote(d map[string]string) error {
+	scope := d["scope"]
+	ok := ScopeRe.MatchString(scope)
+	for _, seg := range strings.Split(scope, "/") {
+		if seg == "." || seg == ".." {
+			ok = false
+		}
+	}
+	if !ok {
+		return fmt.Errorf("%w: scope must be work|personal|sidebiz/<path> for a remote machine (got: %q; set ATHOME_SCOPE or scope in the config file)", ErrUsage, scope)
+	}
+	if !MachineNameRe.MatchString(d["machineName"]) || d["machineName"] == "local" {
+		return fmt.Errorf("%w: machineName must match %s and not be local for a remote machine (got: %q; set ATHOME_MACHINE_NAME or machineName in the config file)", ErrUsage, MachineNameRe, d["machineName"])
+	}
+	if tz := d["timezone"]; tz != "" && !TimezoneRe.MatchString(tz) {
+		return fmt.Errorf("%w: timezone must match %s (got: %q)", ErrUsage, TimezoneRe, tz)
+	}
+	if loc := d["locale"]; loc != "" && !LocaleRe.MatchString(loc) {
+		return fmt.Errorf("%w: locale must match %s (got: %q)", ErrUsage, LocaleRe, loc)
+	}
+	return nil
 }
 
 // readAnswersFile finds the answers file: --config, else the repo's

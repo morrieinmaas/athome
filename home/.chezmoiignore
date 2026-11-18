@@ -18,3 +18,16 @@ Library/**
 .config/qt5ct/**
 .config/qt6ct/**
 {{- end }}
+
+{{- /* A remote box is headless: no compositor, shell, greeter or desktop autostart. */}}
+{{- if eq .machineType "remote" }}
+.config/niri/**
+.config/quickshell/**
+.config/noctalia/**
+.config/greetd/**
+.config/autostart/**
+.config/qt5ct/**
+.config/qt6ct/**
+.config/systemd/user/canopy-tmux.service
+Pictures/**
+{{- end }}

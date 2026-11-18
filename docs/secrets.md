@@ -188,7 +188,9 @@ Short version: `./scripts/bootstrap.sh --restore` on the new laptop, then
 | git-crypt key | Bitwarden, `git-crypt/attic-key` |
 | Laptop ssh key | the laptop (`~/.ssh/id_ed25519` if present, else `~/.ssh/<host>_ed25519`), plus Bitwarden `ssh/<that file name>`, refreshed in place on every rotation |
 | Break-glass key, one per scope | Bitwarden only, `athome/<context>/<scope>/break-glass` |
-| `.env` files | the git-crypt vault (`~/.local/share/attic`) |
+| `.env` files and the machine inventory (`~/.config/athome/machines.toml`) | the git-crypt vault (`~/.local/share/attic`) |
+| A box's own key | that box only, `~/.ssh/<box hostname>_ed25519`, created there and never copied off |
+| A box's `.env` files | that box, only for the repos in its `repos` list |
 
 Bitwarden items are login items: the password is `ssh-key-backup` (or the base64 git-crypt
 key), the notes hold the private key. athome edits an existing item with `rbw edit` and
@@ -196,14 +198,16 @@ never adds a second item with the same name, because two items with one name mak
 `rbw get` fail. If you already have duplicates, athome stops and asks you to delete the
 extras.
 
-Break-glass keys are for remote boxes, which arrive with `athome machine`. Until then the
-inventory is empty and rotation reaches GitHub and Bitwarden only.
+Break-glass keys are for [remote boxes](remote-machines.md): `athome machine add` creates the
+scope's key on its first box and authorizes it on every box in the scope. With no machines
+in the inventory, rotation reaches GitHub and Bitwarden only.
 
 ### Rotation
 
 ```bash
 athome keys rotate --laptop       # this laptop's key
 athome keys rotate --break-glass  # each scope's break-glass key
+athome keys rotate --boxes        # each box's own key, created on the box
 athome keys rotate --all          # laptop, box keys and break-glass keys
 athome keys rotate --resume       # finish a run that skipped boxes or stopped midway
 ```

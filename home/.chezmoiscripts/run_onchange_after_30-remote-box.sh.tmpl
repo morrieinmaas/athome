@@ -1,0 +1,76 @@
+{{ if and (eq .machineType "remote") (eq .chezmoi.os "linux") -}}
+#!/usr/bin/env bash
+# Remote box setup that needs root or systemd: sshd hardening, lingering (so the
+# grofe server and its sessions survive logout), timezone, locale, and the
+# grofe-restore user unit. Failures are warnings; the rest of the apply goes on.
+# The one hard rule: a drop-in that fails `sshd -t` is removed again, so a bad
+# file can never lock you out at the next sshd restart.
+#
+# Skipped under ATHOME_CI (container drills have no sudo, no systemd).
+#
+# unit hash = {{ include "dot_config/systemd/user/grofe-restore.service.tmpl" | sha256sum }}
+set -uo pipefail
+
+if [ -n "${ATHOME_CI:-}" ]; then
+  echo "==> remote box setup skipped (ATHOME_CI)"
+  exit 0
+fi
+
+warn() { echo "!! remote box: $*" >&2; }
+
+# ── sshd: key-only logins, no root ───────────────────────────────────────────
+dropin=/etc/ssh/sshd_config.d/10-athome.conf
+want="PasswordAuthentication no
+KbdInteractiveAuthentication no
+PermitRootLogin no"
+
+if [ "$(sudo cat "$dropin" 2>/dev/null)" != "$want" ]; then
+  if sudo mkdir -p /etc/ssh/sshd_config.d && printf '%s\n' "$want" | sudo tee "$dropin" >/dev/null; then
+    if sudo sshd -t; then
+      if systemctl is-active --quiet sshd; then
+        sudo systemctl reload sshd || warn "could not reload sshd"
+      elif systemctl is-active --quiet ssh; then
+        sudo systemctl reload ssh || warn "could not reload ssh"
+      else
+        warn "no running sshd or ssh unit to reload; the drop-in applies at its next start"
+      fi
+      echo "==> sshd hardened ($dropin)"
+    else
+      sudo rm -f "$dropin"
+      warn "sshd -t rejected $dropin; removed it again, sshd left as it was"
+    fi
+  else
+    warn "could not write $dropin"
+  fi
+fi
+if ! sudo grep -qsE '^[[:space:]]*Include[[:space:]].*sshd_config\.d' /etc/ssh/sshd_config; then
+  warn "/etc/ssh/sshd_config has no Include for sshd_config.d; the hardening drop-in is not read"
+fi
+
+# ── lingering: user services run without a login ─────────────────────────────
+sudo loginctl enable-linger "$USER" || warn "could not enable lingering for $USER"
+
+{{- $tz := "" -}}
+{{- if and (hasKey . "timezone") (regexMatch "^[A-Za-z0-9_+./-]+$" .timezone) }}{{ $tz = .timezone }}{{ end }}
+{{- $locale := "" -}}
+{{- if and (hasKey . "locale") (regexMatch "^[A-Za-z0-9_.@-]+$" .locale) }}{{ $locale = .locale }}{{ end }}
+{{ if $tz }}
+# ── timezone ─────────────────────────────────────────────────────────────────
+sudo timedatectl set-timezone {{ $tz | squote }} || warn "could not set the timezone"
+{{- end }}
+{{ if $locale }}
+# ── locale ───────────────────────────────────────────────────────────────────
+# Arch only generates the locales listed in /etc/locale.gen. The locale goes to perl
+# through the environment: spliced into the regex, an @ would interpolate.
+if command -v locale-gen >/dev/null 2>&1 && [ -f /etc/locale.gen ]; then
+  sudo env L={{ $locale | squote }} perl -pi -e 's/^#\s*(\Q$ENV{L}\E[ .])/$1/' /etc/locale.gen \
+    && sudo locale-gen >/dev/null || warn "could not generate the locale"
+fi
+sudo localectl set-locale "LANG="{{ $locale | squote }} || warn "could not set the locale"
+{{- end }}
+
+# ── grofe-restore: bring sessions back after a reboot ────────────────────────
+systemctl --user daemon-reload \
+  && systemctl --user enable grofe-restore.service \
+  || warn "could not enable grofe-restore.service (no user systemd bus?)"
+{{ end -}}

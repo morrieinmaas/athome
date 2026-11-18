@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/morrieinmaas/athome/internal/machines"
 	"github.com/morrieinmaas/athome/internal/status"
 	"github.com/morrieinmaas/athome/internal/steps"
 )
@@ -42,6 +43,8 @@ func runStatus(args []string, stdout, stderr io.Writer) int {
 	}
 	rep := status.Collect(context.Background(), newRunner(), Version, Commit, home, repo)
 	rep.Keys = status.Keys(home, steps.KeyHostname(), time.Now())
+	ms, merr := machines.Load(home)
+	rep.Machines = status.MachinesFrom(len(ms), machines.ScopeWarnings(home, ms), merr)
 	if *asJSON {
 		b, _ := json.Marshal(rep)
 		fmt.Fprintf(stdout, "%s\n", b)
@@ -50,6 +53,9 @@ func runStatus(args []string, stdout, stderr io.Writer) int {
 	fmt.Fprintf(stdout, "athome %s (%s), repo %s at %s\n", rep.Version, rep.Commit, rep.Repo, rep.Ref)
 	for _, c := range rep.Components {
 		fmt.Fprintf(stdout, "%-9s %-14s %s\n", c.Name, c.Status, detailText(c))
+	}
+	for _, w := range rep.Machines.Warnings {
+		fmt.Fprintf(stdout, "machines: %s\n", w)
 	}
 	if r := reminderText(rep.Keys, time.Now()); r != "" {
 		fmt.Fprintln(stdout, r)

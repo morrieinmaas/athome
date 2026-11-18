@@ -63,7 +63,7 @@ darwin:
     - jpeg-xl                        # modern image format (library)
     - prettierd                      # persistent prettier daemon (JS/TS/JSON/MD/YAML) — npm-backed
     - wush                           # P2P file transfer + ad-hoc SSH (coder/wush)
-    - defaultbrowser                 # CLI to set the default browser — run_once_after_20 flips it to Zen (Linux uses xdg-settings instead)
+    - {name: defaultbrowser, gui: true}                 # CLI to set the default browser — run_once_after_20 flips it to Zen (Linux uses xdg-settings instead)
     - podman-tui                     # podman/containers TUI (containers/podman-tui). NATIVE, not mise: its GitHub releases are amd64-only (darwin_amd64/linux_amd64, no arm64), so on Apple Silicon ubi/mise can't fetch a matching build, which is why it stays native rather than a mise [tools] entry. brew formula (mac) covers arm64; Arch via AUR, Fedora via dnf (both below). No theme/keybind config exists — its sole config file (~/.config/podman-tui/podman-tui.json) only stores podman connections, which it auto-discovers from podman's own connection list, so we intentionally ship none.
     # `bw` (bitwarden-cli) retired to on-demand (D3): rbw is the primary client.
     # Install only if an admin task rbw can't do comes up: `nb install bitwarden-cli`.
@@ -101,15 +101,20 @@ linux:
     - github-cli                     # GitHub CLI (`gh`) — NATIVE, not mise: bootstrap needs it early + mise reads `gh auth token` to dodge the anon rate limit (see darwin note). Fedora/macOS: gh.
     - zsh                            # macOS ships zsh; Arch needs it explicitly
     - openssh
-    - zed                            # Zed editor (GUI; in extra). macOS: `zed` cask. Config under dot_config/zed/.
-    - ghostty
-    - librewolf                      # privacy-hardened Firefox fork (moved from AUR librewolf-bin into extra)
-    - niri
-    - greetd
-    - greetd-tuigreet
+    - {name: zed, gui: true}                            # Zed editor (GUI; in extra). macOS: `zed` cask. Config under dot_config/zed/.
+    - {name: ghostty, gui: true}
+
+    - {name: librewolf, gui: true}                      # privacy-hardened Firefox fork (moved from AUR librewolf-bin into extra)
+    - {name: niri, gui: true}
+
+    - {name: greetd, gui: true}
+
+    - {name: greetd-tuigreet, gui: true}
+
     - fastfetch
     - xonsh
-    - gnome-shell-extensions
+    - {name: gnome-shell-extensions, gui: true}
+
     - pinentry                       # pinentry prompt — required by rbw (Bitwarden master-password entry)
     - libjxl                         # equivalent of brew's jpeg-xl
     - networkmanager                 # Noctalia's NetworkService.qml shells out to nmcli; relying on archinstall to install NM is fragile
@@ -119,18 +124,21 @@ linux:
     # agent (was polkit-gnome), wallpaper daemon (was swww-daemon-as-
     # primary). Don't reinstall those — they fight Noctalia over Wayland
     # protocols / D-Bus names / org.freedesktop.* services.
-    - wl-clipboard                   # generic Wayland clipboard CLI; Noctalia uses it under the hood for some actions
-    - ttf-jetbrains-mono-nerd        # ghostty font + Nerd glyphs for the tmux pill bar
-    - noto-fonts-emoji               # color emoji (the tmux pet etc.) — macOS ships Apple Color Emoji; Linux needs this or emoji render as tofu
+    - {name: wl-clipboard, gui: true}                   # generic Wayland clipboard CLI; Noctalia uses it under the hood for some actions
+    - {name: ttf-jetbrains-mono-nerd, gui: true}        # ghostty font + Nerd glyphs for the tmux pill bar
+    - {name: noto-fonts-emoji, gui: true}               # color emoji (the tmux pet etc.) — macOS ships Apple Color Emoji; Linux needs this or emoji render as tofu
     # Desktop look (niri + Noctalia; GNOME picks these up too). Noctalia's launcher
     # and tray use the system icon theme, and Adwaita alone is mostly monochrome
     # symbolic icons. adw-gtk3 + qt6ct/qt5ct let Noctalia's gtk/qt templates
     # recolour apps to match the shell. Set up by run_onchange_after_25.
-    - papirus-icon-theme
-    - adw-gtk-theme                  # adw-gtk3: libadwaita look for GTK3 apps
-    - qt6ct
-    - qt5ct
-    - inter-font                     # Noctalia's UI font
+    - {name: papirus-icon-theme, gui: true}
+
+    - {name: adw-gtk-theme, gui: true}                  # adw-gtk3: libadwaita look for GTK3 apps
+    - {name: qt6ct, gui: true}
+
+    - {name: qt5ct, gui: true}
+
+    - {name: inter-font, gui: true}                     # Noctalia's UI font
     # GNOME: a deliberate minimal subset as the FALLBACK desktop, not the daily
     # driver. niri + Noctalia is the daily driver; GNOME exists for when a
     # Wayland compositor bug or an external-display problem needs a known-good
@@ -144,36 +152,37 @@ linux:
     # run_once_11 sets niri as the per-user default session via AccountsService;
     # GNOME stays one click away in the GDM gear menu. greetd remains only as a
     # fallback for machines where gdm is somehow absent.
-    - gnome-shell                    # core GNOME compositor
-    - gnome-session                  # session manager + .desktop entries
-    - gnome-control-center           # settings
-    - mutter                         # GNOME's window manager
-    - gnome-keyring                  # credential storage (native ssh-agent path on Linux; many GNOME apps)
-    - gdm                            # display manager. Chosen over greetd because it is the only greeter here with a SESSION PICKER: run_once_11 sets niri as the per-user default via AccountsService, and GNOME stays one click away in the gear menu. tuigreet can launch a session but has no per-user default, so that arrangement cannot exist under greetd.
-    - nautilus                       # file manager
-    - gpaste                         # clipboard history for the GNOME fallback session (ships its Shell extension; enabled by run_once_after_23). niri has Noctalia's own (Ctrl+Alt+V) — GPaste only runs under GNOME.
+    - {name: gnome-shell, gui: true}                    # core GNOME compositor
+    - {name: gnome-session, gui: true}                  # session manager + .desktop entries
+    - {name: gnome-control-center, gui: true}           # settings
+    - {name: mutter, gui: true}                         # GNOME's window manager
+    - {name: gnome-keyring, gui: true}                  # credential storage (native ssh-agent path on Linux; many GNOME apps)
+    - {name: gdm, gui: true}                            # display manager. Chosen over greetd because it is the only greeter here with a SESSION PICKER: run_once_11 sets niri as the per-user default via AccountsService, and GNOME stays one click away in the gear menu. tuigreet can launch a session but has no per-user default, so that arrangement cannot exist under greetd.
+    - {name: nautilus, gui: true}                       # file manager
+    - {name: gpaste, gui: true}                         # clipboard history for the GNOME fallback session (ships its Shell extension; enabled by run_once_after_23). niri has Noctalia's own (Ctrl+Alt+V) — GPaste only runs under GNOME.
     # ── Noctalia deps (docs.noctalia.dev/noctalia/getting-started/installation) ──
     # v5 needs wayland/mesa/pipewire/libsecret/polkit, which are already pulled
     # by the package itself. What follows are the OPTIONAL feature deps: the
     # panels for bluetooth, brightness and calendar only appear if these exist.
     # Core: brightnessctl + git + imagemagick + python are already in our
     # list elsewhere. Optional integrations listed below.
-    - wlsunset                       # blue-light filter Noctalia controls
-    - evolution-data-server          # calendar/contact backend Noctalia integrates with (optional)
-    - ddcutil                        # external monitor brightness via DDC/CI (optional; can cause issues w/ some monitors)
-    - power-profiles-daemon          # power-profile selector backend (performance/balanced/saver)
+    - {name: wlsunset, gui: true}                       # blue-light filter Noctalia controls
+    - {name: evolution-data-server, gui: true}          # calendar/contact backend Noctalia integrates with (optional)
+    - {name: ddcutil, gui: true}                        # external monitor brightness via DDC/CI (optional; can cause issues w/ some monitors)
+    - {name: power-profiles-daemon, gui: true}          # power-profile selector backend (performance/balanced/saver)
     # Noctalia v5. In [extra] as `noctalia`, NOT the AUR `noctalia-shell` that
     # packaged v4. v5 is a ground-up rewrite, not a Quickshell shell, so it
     # pulls neither quickshell nor the KF6 image plugins v4 needed.
-    - noctalia
-    - qt6-imageformats               # Qt6 plugin: ICO/MNG/TIFF/WBMP/WEBP — same reason
-    - bluez                          # BlueZ stack — the kernel-side bluetooth daemon
-    - bluez-utils                    # bluetoothctl CLI; required for Noctalia bluetooth panel
+    - {name: noctalia, gui: true}
+
+    - {name: qt6-imageformats, gui: true}               # Qt6 plugin: ICO/MNG/TIFF/WBMP/WEBP — same reason
+    - {name: bluez, gui: true}                          # BlueZ stack — the kernel-side bluetooth daemon
+    - {name: bluez-utils, gui: true}                    # bluetoothctl CLI; required for Noctalia bluetooth panel
     # polkit-gnome dropped — Noctalia ships its own polkit auth agent
-    - xdg-desktop-portal             # base portal service (D-Bus activated; required by gtk + wlr backends)
-    - xdg-desktop-portal-gtk         # file-picker / dialog backend that actually works under niri
-    - xdg-desktop-portal-wlr         # screencast / screenshot backend for wlroots-style Wayland (niri)
-    - brightnessctl                  # brightness keybinds in niri (XF86MonBrightness*)
+    - {name: xdg-desktop-portal, gui: true}             # base portal service (D-Bus activated; required by gtk + wlr backends)
+    - {name: xdg-desktop-portal-gtk, gui: true}         # file-picker / dialog backend that actually works under niri
+    - {name: xdg-desktop-portal-wlr, gui: true}         # screencast / screenshot backend for wlroots-style Wayland (niri)
+    - {name: brightnessctl, gui: true}                  # brightness keybinds in niri (XF86MonBrightness*)
     # ── Rootless podman backing bits (usually pulled as podman deps but
     #    we make them explicit so an audit / re-install can't skip them):
     - fuse-overlayfs                 # overlay storage driver for rootless containers
@@ -196,12 +205,14 @@ linux:
     - yay
     - netbird                        # mesh VPN client (replaces tailscale). NetBird Cloud free tier; self-host is a no-penalty future exit. `netbird up` in run_once_08.
     - opencode-bin
-    - zen-browser-bin
-    - nirimod-git
-    - matugen-bin                    # wallpaper-derived palettes for anything that wants them. NOTE: Noctalia v5 generates its own palette internally (theme.source = "wallpaper"), so this is no longer required BY Noctalia; kept as a general-purpose tool.
-    - bibata-cursor-theme-bin        # the cursor niri's config names (Bibata-Modern-Classic); prebuilt, not in the official repos
-    - nordvpn-bin                    # NordVPN CLI + nordvpnd. Provides `nordvpn`; run_once_08 enables the daemon, the group and autoconnect.
-    - nordvpn-gui-bin                # NordVPN's own Linux GUI (upstream .deb repacked). Depends on `nordvpn`, so it MUST come after nordvpn-bin. x86_64 only upstream — install_one just logs a miss on aarch64.
+    - {name: zen-browser-bin, gui: true}
+
+    - {name: nirimod-git, gui: true}
+
+    - {name: matugen-bin, gui: true}                    # wallpaper-derived palettes for anything that wants them. NOTE: Noctalia v5 generates its own palette internally (theme.source = "wallpaper"), so this is no longer required BY Noctalia; kept as a general-purpose tool.
+    - {name: bibata-cursor-theme-bin, gui: true}        # the cursor niri's config names (Bibata-Modern-Classic); prebuilt, not in the official repos
+    - {name: nordvpn-bin, gui: true} # NordVPN CLI + nordvpnd (flagged so a remote box skips the commercial VPN). Provides `nordvpn`; run_once_08 enables the daemon, the group and autoconnect.
+    - {name: nordvpn-gui-bin, gui: true}                # NordVPN's own Linux GUI (upstream .deb repacked). Depends on `nordvpn`, so it MUST come after nordvpn-bin. x86_64 only upstream — install_one just logs a miss on aarch64.
     - bandwhich                      # needs root/caps; kept native (matches the brew formula on macOS)
     - gping                          # ICMP; kept native
     - trippy                         # ICMP; kept native
@@ -263,46 +274,71 @@ fedora:
     - rbw                          # if absent in dnf → `cargo:rbw` via mise
     - uv                           # Astral's Python tool/env manager (Arch+mac get it via `common`; Fedora's list is self-contained so it's listed explicitly). Fedora main repo, F40+. Deliberately NOT the curl|sh installer: that extracts a tarball with GNU tar, which dies under the e2e's qemu emulation — dnf avoids it.
     # ── niri + Noctalia + ghostty + zen + zed + greetd + nerd font ──
-    - niri
-    - noctalia                     # v5; see the COPR note above
-    - ghostty
-    - zen-browser
-    - zed
-    - greetd                       # Fedora main repo
-    - tuigreet                     # Fedora main repo (Arch: greetd-tuigreet)
-    - nerd-fonts-jetbrains-mono    # from che/nerd-fonts COPR. Non-fatal if absent: the nerd-font COPRs often lag the NEWEST Fedora (no F44 build yet as of 2026-06), so this may skip on a bleeding-edge release until the COPR catches up — cosmetic only (ghostty/tmux glyphs).
+    - {name: niri, gui: true}
+
+    - {name: noctalia, gui: true}                     # v5; see the COPR note above
+    - {name: ghostty, gui: true}
+
+    - {name: zen-browser, gui: true}
+
+    - {name: zed, gui: true}
+
+    - {name: greetd, gui: true}                       # Fedora main repo
+    - {name: tuigreet, gui: true}                     # Fedora main repo (Arch: greetd-tuigreet)
+    - {name: nerd-fonts-jetbrains-mono, gui: true}    # from che/nerd-fonts COPR. Non-fatal if absent: the nerd-font COPRs often lag the NEWEST Fedora (no F44 build yet as of 2026-06), so this may skip on a bleeding-edge release until the COPR catches up — cosmetic only (ghostty/tmux glyphs).
     # ── wayland / GNOME fallback / desktop (the GNOME spin ships most already) ──
     - NetworkManager
     - fastfetch
-    - google-noto-emoji-fonts      # = Arch noto-fonts-emoji
-    - papirus-icon-theme           # desktop look, see the Arch list
-    - adw-gtk3-theme               # = Arch adw-gtk-theme
-    - qt6ct
-    - qt5ct
-    - rsms-inter-fonts             # = Arch inter-font
+    - {name: google-noto-emoji-fonts, gui: true}      # = Arch noto-fonts-emoji
+    - {name: papirus-icon-theme, gui: true}           # desktop look, see the Arch list
+    - {name: adw-gtk3-theme, gui: true}               # = Arch adw-gtk-theme
+    - {name: qt6ct, gui: true}
+
+    - {name: qt5ct, gui: true}
+
+    - {name: rsms-inter-fonts, gui: true}             # = Arch inter-font
     # (no Bibata cursor in the Fedora repos; niri falls back to the default cursor)
-    - wl-clipboard
-    - gpaste                       # GNOME fallback clipboard history (Arch: one pkg; Fedora splits out the Shell extension)
-    - gnome-shell-extension-gpaste
-    - wlsunset
-    - power-profiles-daemon
-    - ddcutil
-    - bluez
-    - bluez-tools
-    - brightnessctl
-    - xdg-desktop-portal
-    - xdg-desktop-portal-gtk
-    - xdg-desktop-portal-wlr
-    - qt6-qtimageformats
-    - evolution-data-server
-    - nautilus
-    - gnome-shell
-    - gnome-session
-    - gnome-control-center
-    - gnome-extensions-app         # = Arch gnome-shell-extensions (manage GNOME extensions)
-    - gnome-keyring
-    - gdm                          # display manager; niri default + GNOME selectable (see the Arch note)
-    - mutter
+    - {name: wl-clipboard, gui: true}
+
+    - {name: gpaste, gui: true}                       # GNOME fallback clipboard history (Arch: one pkg; Fedora splits out the Shell extension)
+    - {name: gnome-shell-extension-gpaste, gui: true}
+
+    - {name: wlsunset, gui: true}
+
+    - {name: power-profiles-daemon, gui: true}
+
+    - {name: ddcutil, gui: true}
+
+    - {name: bluez, gui: true}
+
+    - {name: bluez-tools, gui: true}
+
+    - {name: brightnessctl, gui: true}
+
+    - {name: xdg-desktop-portal, gui: true}
+
+    - {name: xdg-desktop-portal-gtk, gui: true}
+
+    - {name: xdg-desktop-portal-wlr, gui: true}
+
+    - {name: qt6-qtimageformats, gui: true}
+
+    - {name: evolution-data-server, gui: true}
+
+    - {name: nautilus, gui: true}
+
+    - {name: gnome-shell, gui: true}
+
+    - {name: gnome-session, gui: true}
+
+    - {name: gnome-control-center, gui: true}
+
+    - {name: gnome-extensions-app, gui: true}         # = Arch gnome-shell-extensions (manage GNOME extensions)
+    - {name: gnome-keyring, gui: true}
+
+    - {name: gdm, gui: true}                          # display manager; niri default + GNOME selectable (see the Arch note)
+    - {name: mutter, gui: true}
+
     # ── rootless podman backing bits ──
     - fuse-overlayfs
     - slirp4netns
@@ -310,10 +346,11 @@ fedora:
     - netavark
     # ── netbird (COPR jsbillings/netbird) ──
     - netbird
-    - netbird-ui
+    - {name: netbird-ui, gui: true}
+
     # ── nordvpn (upstream repo, enabled by run_onchange_02 before this list) ──
-    - nordvpn                      # CLI + nordvpnd; run_once_08 enables the daemon, the group and autoconnect
-    - nordvpn-gui                  # NordVPN's own GUI. x86_64 only upstream.
+    - {name: nordvpn, gui: true}   # CLI + nordvpnd (flagged so a remote box skips the commercial VPN); run_once_08 enables the daemon, the group and autoconnect
+    - {name: nordvpn-gui, gui: true}                  # NordVPN's own GUI. x86_64 only upstream.
     # Pulled via MISE on Fedora (release binaries via ubi/github/cargo/go — SAME
     # as Arch + macOS, not duplicated here): matugen,
     # bandwhich, gping, trippy, prettierd, wush, opencode. librewolf has its

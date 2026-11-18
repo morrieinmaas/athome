@@ -1,3 +1,4 @@
+{{ if ne .machineType "remote" -}}
 {{ if eq .chezmoi.os "linux" -}}
 #!/usr/bin/env bash
 # Enable the canopy-tmux user service (~/.config/systemd/user/canopy-tmux.service)
@@ -32,4 +33,5 @@ if systemctl --user enable canopy-tmux.service >/dev/null 2>&1; then
 else
   echo "!! couldn't enable canopy-tmux.service; enable it later with: systemctl --user enable canopy-tmux.service"
 fi
+{{ end -}}
 {{ end -}}

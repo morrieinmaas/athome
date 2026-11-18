@@ -86,7 +86,12 @@ func Main(args []string, stdout, stderr io.Writer) int {
 	case "status":
 		return runStatus(args[1:], stdout, stderr)
 	case "keys":
+		useMachinesInventory()
 		return runKeys(args[1:], stdout, stderr)
+	case "machine":
+		return runMachine(args[1:], stdout, stderr)
+	case "project":
+		return runProject(args[1:], stdout, stderr)
 	}
 	fmt.Fprintf(stderr, "athome: unknown command %q\n", args[0])
 	usage(stderr)
@@ -94,7 +99,7 @@ func Main(args []string, stdout, stderr io.Writer) int {
 }
 
 func usage(w io.Writer) {
-	fmt.Fprint(w, "Usage: athome <command>\n\nCommands:\n  init      set up this machine (what scripts/bootstrap.sh does)\n  update    update athome, the repo and the tools (--to <version>, --yes)\n  secrets   back up, restore or re-key the encrypted secrets vault (backup|restore|rekey)\n  teardown  undo athome on this machine (dry run by default)\n  status    show what athome manages here and whether it is current\n  keys      rotate ssh keys (--laptop, --break-glass, --all, --resume)\n  version   print the version\n\n")
+	fmt.Fprint(w, "Usage: athome <command>\n\nCommands:\n  init      set up this machine (what scripts/bootstrap.sh does)\n  update    update athome, the repo and the tools (--to <version>, --yes)\n  secrets   back up, restore or re-key the encrypted secrets vault (backup|restore|rekey)\n  teardown  undo athome on this machine (dry run by default)\n  status    show what athome manages here and whether it is current\n  keys      rotate ssh keys (--laptop, --break-glass, --boxes, --all, --resume)\n  machine   manage remote dev machines (add|sync|rm|ls)\n  project   clone a project onto a remote machine (clone)\n  version   print the version\n\n")
 	fmt.Fprint(w, "Run `athome init --help` for the init flags.\n")
 }
 

@@ -11,6 +11,20 @@ set -euo pipefail
 # Hash to force re-run on change:
 #   packages.yaml hash = {{ include ".chezmoidata/packages.yaml" | sha256sum }}
 
+{{- $remote := eq .machineType "remote" -}}
+{{- /* An entry is a plain name or a map {name: x, gui: true}. A remote box is headless: it skips gui entries and every cask. */ -}}
+{{- $lists := dict "common" .common "darwinFormulae" .darwin.brew_formulae "pacman" .linux.pacman "aur" .linux.aur "dnf" .fedora.dnf -}}
+{{- $pkgs := dict -}}
+{{- range $key, $list := $lists -}}
+{{-   $names := list -}}
+{{-   range $list -}}
+{{-     if kindIs "map" . -}}
+{{-       if not (and .gui $remote) -}}{{- $names = append $names .name -}}{{- end -}}
+{{-     else -}}{{- $names = append $names . -}}{{- end -}}
+{{-   end -}}
+{{-   $_ := set $pkgs $key $names -}}
+{{- end }}
+
 # Tally so a SYSTEMIC failure (empty toolchain) can't pass silently. Assigned
 # via $((x+1)) not ((x++)) — the post-increment form returns the old value, so
 # `((x++))` when x is 0 returns nonzero and `set -e` would kill the script.
@@ -135,17 +149,19 @@ if ! out="$(nb update 2>&1)"; then
 fi
 
 echo "==> nb formulae (common + darwin)"
-{{ range .common -}}
+{{ range $pkgs.common -}}
 install_one nb {{ . | quote }}
 {{ end -}}
-{{ range .darwin.brew_formulae -}}
+{{ range $pkgs.darwinFormulae -}}
 install_one nb {{ . | quote }}
 {{ end }}
 
+{{ if not $remote -}}
 echo "==> nb casks"
 {{ range .darwin.brew_casks -}}
 install_one nb_cask {{ . | quote }}
 {{ end }}
+{{- end }}
 
 {{- else if eq .chezmoi.os "linux" -}}
 if command -v dnf >/dev/null 2>&1 && ! command -v pacman >/dev/null 2>&1; then
@@ -163,14 +179,16 @@ if command -v dnf >/dev/null 2>&1 && ! command -v pacman >/dev/null 2>&1; then
   # Hardcoded rather than added as a `fedora.repos` data key: it is the only
   # third-party non-COPR repo we need, and one entry doesn't earn a mechanism.
   # Must run BEFORE the dnf loop below, which installs nordvpn + nordvpn-gui.
+  {{ if not $remote -}}
   if ! dnf repolist 2>/dev/null | grep -q '^nordvpn'; then
     echo "==> dnf: enabling the NordVPN repo"
     sudo dnf -y install \
       https://repo.nordvpn.com/yum/nordvpn/centos/noarch/Packages/n/nordvpn-release-1.0.0-1.noarch.rpm \
       || echo "  ! NordVPN repo setup failed — nordvpn/nordvpn-gui below will be skipped" >&2
   fi
+  {{ end -}}
   echo "==> dnf: packages (fedora.dnf)"
-  {{ range .fedora.dnf -}}
+  {{ range $pkgs.dnf -}}
   install_one dnf {{ . | quote }}
   {{ end }}
 else
@@ -196,15 +214,15 @@ else
   # pacman for official-repo entries and handles AUR itself; the pacman/aur
   # split in packages.yaml is an organizational hint, not a behavioral switch.
   echo "==> yay: official-repo packages (common + linux.pacman)"
-  {{ range .common -}}
+  {{ range $pkgs.common -}}
   install_one yay {{ . | quote }}
   {{ end -}}
-  {{ range .linux.pacman -}}
+  {{ range $pkgs.pacman -}}
   install_one yay {{ . | quote }}
   {{ end }}
 
   echo "==> yay: AUR packages (linux.aur)"
-  {{ range .linux.aur -}}
+  {{ range $pkgs.aur -}}
   install_one yay {{ . | quote }}
   {{ end }}
 fi

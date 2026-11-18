@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Headless CI/e2e (ATHOME_CI=1): systemd, GUI and hardware are absent —
+# skip cleanly so the e2e exercises the rest of the bootstrap. See test/e2e/.
+if [ -n "${ATHOME_CI:-}" ]; then echo "ATHOME_CI: skipping headless setup ($(basename "$0"))"; exit 0; fi
+
+# System-wide xkb option covers TTY + most DEs/compositors.
+if command -v localectl >/dev/null 2>&1; then
+  sudo localectl set-x11-keymap us "" "" caps:ctrl_modifier || true
+fi
+
+# GNOME-specific (idempotent — niri/Noctalia pick this up via their own config)
+if command -v gsettings >/dev/null 2>&1 && [[ -n "${DISPLAY:-${WAYLAND_DISPLAY:-}}" ]]; then
+  gsettings set org.gnome.desktop.input-sources xkb-options "['caps:ctrl_modifier']" || true
+fi
+echo "==> caps→ctrl active (Linux)"

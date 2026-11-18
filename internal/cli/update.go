@@ -90,7 +90,11 @@ func runUpdate(args []string, stdout, stderr io.Writer) int {
 	ctx, stop := notifyContext(context.Background(), stopSignals...)
 	defer stop()
 
-	target, err = resolveUpdateTarget(ctx, r, repo, target)
+	if steps.StoredData(home)["machineType"] == "remote" {
+		target, err = pinnedTarget(target, toGiven)
+	} else {
+		target, err = resolveUpdateTarget(ctx, r, repo, target)
+	}
 	if err != nil {
 		fmt.Fprintf(stderr, "athome update: %v\n", err)
 		return exitError
@@ -135,6 +139,20 @@ func withUpdateOpts(ctx context.Context, target string, toGiven, yes bool) conte
 	return steps.WithUpdate(ctx, steps.UpdateOpts{
 		Version: Version, Target: target, ToGiven: toGiven, Yes: yes, Base: base, Exec: updateExec,
 	})
+}
+
+// pinnedTarget is the release a remote box stays on: the one it runs, which
+// the laptop pinned at `athome machine add`. Only `athome machine sync` on the
+// laptop moves it, so update never fetches a newer tag or accepts another --to.
+func pinnedTarget(want string, toGiven bool) (string, error) {
+	cur, ok := selfupdate.Normalize(Version)
+	if !ok {
+		return "", fmt.Errorf("this remote machine runs %s, not a release; run athome machine sync from the laptop", Version)
+	}
+	if toGiven && want != cur {
+		return "", fmt.Errorf("this remote machine is pinned to %s by the laptop; change the pin there and run athome machine sync", cur)
+	}
+	return cur, nil
 }
 
 // resolveUpdateTarget fetches the tags and returns the release to move to: want

@@ -1,3 +1,4 @@
+{{ if ne .machineType "remote" -}}
 #!/usr/bin/env bash
 # Linux only. Configures niri + Noctalia shell. RESPECTS whatever display
 # manager you already have (e.g. GDM from archinstall's GNOME profile) and sets
@@ -147,3 +148,4 @@ fi
 
 echo "==> niri + noctalia + display-manager configured"
 {{- end }}
+{{ end -}}

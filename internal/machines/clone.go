@@ -75,7 +75,7 @@ func Clone(ctx context.Context, d Deps, repo, machine string) error {
 	if m.Home == "" {
 		return fmt.Errorf("machine %s has no home recorded; rerun athome machine add %s", m.Name, m.Name)
 	}
-	if err := CheckInclude(d.Home); err != nil {
+	if err := d.boxConfig(); err != nil {
 		return err
 	}
 	r := d.remote()

@@ -73,7 +73,7 @@ func Sync(ctx context.Context, d Deps, name string, all bool) error {
 		d.say("no machines")
 		return nil
 	}
-	if err := CheckInclude(d.Home); err != nil {
+	if err := d.boxConfig(); err != nil {
 		return err
 	}
 	if !all {

@@ -3,6 +3,7 @@ package keys
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/morrieinmaas/athome/internal/run"
@@ -12,6 +13,7 @@ const scopeHint = "gh auth refresh -h github.com -s admin:public_key,admin:ssh_s
 
 // ghAdd registers pub on GitHub as an authentication and a signing key.
 func ghAdd(ctx context.Context, r run.Runner, pub, host string) error {
+	already := false
 	for _, args := range [][]string{
 		{"ssh-key", "add", pub, "--title", host},
 		{"ssh-key", "add", pub, "--title", host + "-sign", "--type", "signing"},
@@ -20,9 +22,45 @@ func ghAdd(ctx context.Context, r run.Runner, pub, host string) error {
 		if err != nil {
 			return err
 		}
-		// A retry after a half-finished add finds the key there already.
-		if res.Code != 0 && !strings.Contains(res.Stderr, "already") {
-			return fmt.Errorf("gh %s failed: %s (missing scopes? run: %s)", strings.Join(args, " "), strings.TrimSpace(res.Stderr), scopeHint)
+		if res.Code != 0 {
+			// A retry after a half-finished add finds the key there already,
+			// but GitHub says the same when the key is on a different account.
+			if !strings.Contains(res.Stderr, "already") {
+				return fmt.Errorf("gh %s failed: %s (missing scopes? run: %s)", strings.Join(args, " "), strings.TrimSpace(res.Stderr), scopeHint)
+			}
+			already = true
+		}
+	}
+	if !already {
+		return nil
+	}
+	return ghCheckAdded(ctx, r, pub)
+}
+
+// ghCheckAdded fails unless the key in file pub is on the account gh acts as,
+// as both an authentication and a signing key.
+func ghCheckAdded(ctx context.Context, r run.Runner, pub string) error {
+	data, err := os.ReadFile(pub)
+	if err != nil {
+		return err
+	}
+	blob := pubBlob(string(data))
+	for _, endpoint := range []string{"user/keys", "user/ssh_signing_keys"} {
+		res, err := r.Run(ctx, run.Cmd{Name: "gh", Args: []string{"api", "--paginate", endpoint, "--jq", `.[] | "\(.id) \(.key)"`}})
+		if err != nil {
+			return err
+		}
+		if res.Code != 0 {
+			return fmt.Errorf("gh api %s failed: %s", endpoint, strings.TrimSpace(res.Stderr))
+		}
+		found := false
+		for _, line := range strings.Split(res.Stdout, "\n") {
+			if f := strings.Fields(line); len(f) >= 3 && f[2] == blob {
+				found = true
+			}
+		}
+		if !found {
+			return fmt.Errorf("GitHub said the key is already there, but %s lists no such key: it may be on another account", endpoint)
 		}
 	}
 	return nil

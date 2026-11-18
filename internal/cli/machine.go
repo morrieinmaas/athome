@@ -51,11 +51,10 @@ func parseMixed(fs *flag.FlagSet, args []string) ([]string, error) {
 // machineDeps builds the machines.Deps shared by the machine and project commands.
 func machineDeps(home string, stdout, stderr io.Writer) machines.Deps {
 	return machines.Deps{
-		Run:     newRunner(),
-		Home:    home,
-		Host:    steps.KeyHostname(),
-		Version: Version,
-		Out:     stdout,
+		Run:  newRunner(),
+		Home: home,
+		Host: steps.KeyHostname(),
+		Out:  stdout,
 		Backup: func(ctx context.Context) error {
 			if code := secrets.Backup(ctx, secrets.BackupFromEnv(home, newRunner(), stdout, stderr)); code != 0 {
 				return fmt.Errorf("athome secrets backup exited %d", code)

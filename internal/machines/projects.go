@@ -2,6 +2,7 @@ package machines
 
 import (
 	"fmt"
+	"io"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -34,19 +35,24 @@ func WriteRemoteProjects(home string, ms []Machine) error {
 // Refresh rewrites the generated ssh config (inventory plus pending adds) and
 // the remote projects file (inventory only). laptopKeyFile is the key's base name.
 func Refresh(home, laptopKeyFile string) error {
+	return RefreshTo(home, laptopKeyFile, io.Discard)
+}
+
+// RefreshTo is Refresh with a note on note for each pending entry it skips as invalid.
+func RefreshTo(home, laptopKeyFile string, note io.Writer) error {
 	ms, err := Load(home)
 	if err != nil {
 		return err
 	}
-	pend, err := ListPending(home)
+	pend, bad, err := ListPending(home)
 	if err != nil {
 		return err
 	}
+	for _, b := range bad {
+		fmt.Fprintf(note, "note: skipped in the ssh config: %v\n", b)
+	}
 	all := append([]Machine(nil), ms...)
 	for _, p := range pend {
-		if err := p.Validate(); err != nil {
-			return err
-		}
 		if !hasMachine(ms, p.Name) {
 			all = append(all, p)
 		}

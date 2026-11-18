@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -21,8 +22,9 @@ type Box struct {
 func NewBox(r Remote, m Machine) *Box { return &Box{r: r, m: m} }
 
 // KeysInventory returns one Box per inventory machine. With any machine it
-// fails unless ~/.ssh/config includes the generated config, so a rotation
-// never reaches a box through whatever else the ssh config says.
+// fails unless ~/.ssh/config includes the generated config, which it rewrites
+// first, so a rotation never reaches a box through whatever else the ssh config
+// says or through a bare name outside its pinned Host block.
 func KeysInventory(home string, r run.Runner, host string) ([]keys.Box, error) {
 	ms, err := Load(home)
 	if err != nil {
@@ -30,6 +32,9 @@ func KeysInventory(home string, r run.Runner, host string) ([]keys.Box, error) {
 	}
 	if len(ms) > 0 {
 		if err := CheckInclude(home); err != nil {
+			return nil, err
+		}
+		if err := Refresh(home, filepath.Base(keys.LaptopKey(home, host))); err != nil {
 			return nil, err
 		}
 	}
@@ -161,7 +166,9 @@ cat > "$kh" && chmod 600 "$kh" || exit 1
 const checkGitHubScript = pinGitHubHosts + `ssh -F /dev/null -i "$HOME/.ssh/$1_ed25519$2" -o IdentitiesOnly=yes -o BatchMode=yes -o UserKnownHostsFile="$kh" -o StrictHostKeyChecking=yes -T git@github.com`
 
 // CheckGitHub proves from the box that the key (or the .rotate key) logs in to GitHub.
-// GitHub's success banner comes with exit 1, so the output decides.
+// GitHub's success banner comes with exit 1, so the output decides. With a
+// known account the banner must greet it (Hi <account>!): a key that logs in
+// as another account is not the box's key.
 func (b *Box) CheckGitHub(ctx context.Context, rotating bool) error {
 	if err := b.needHostname(); err != nil {
 		return err
@@ -174,8 +181,12 @@ func (b *Box) CheckGitHub(ctx context.Context, rotating bool) error {
 	if err != nil {
 		return fmt.Errorf("github check on %s: %w", b.m.Name, err)
 	}
-	if !strings.Contains(res.Stdout+res.Stderr, "successfully authenticated") {
+	out := res.Stdout + res.Stderr
+	if !strings.Contains(out, "successfully authenticated") {
 		return fmt.Errorf("the box key on %s does not log in to GitHub: %s", b.m.Name, strings.TrimSpace(res.Stderr))
+	}
+	if acct := b.m.GitHubAccount; acct != "" && !strings.Contains(strings.ToLower(out), strings.ToLower("Hi "+acct+"!")) {
+		return fmt.Errorf("the box key on %s logs in to GitHub as another account than %s: %s", b.m.Name, acct, strings.TrimSpace(res.Stderr))
 	}
 	return nil
 }

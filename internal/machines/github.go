@@ -117,11 +117,26 @@ func (g *ghClient) register(ctx context.Context, name, pub string) error {
 		if err != nil {
 			return err
 		}
+		// "already" may mean the key is on another account, so the listing decides below.
 		if res.Code != 0 && !strings.Contains(res.Stderr, "already") {
 			return fmt.Errorf("gh ssh-key add --title %s failed: %s (missing scopes? run: %s)", a.title, strings.TrimSpace(res.Stderr), scopeHint)
 		}
 	}
+	auth, sign, err = g.registered(ctx, blobOf(pub))
+	if err != nil {
+		return err
+	}
+	if !auth || !sign {
+		return fmt.Errorf("the key of %s is not on GitHub account %s as both an authentication and a signing key (is it registered on another account?)", name, g.accountName())
+	}
 	return nil
+}
+
+func (g *ghClient) accountName() string {
+	if g.account == "" {
+		return "gh is logged in to"
+	}
+	return g.account
 }
 
 // login is the account gh is logged in to, for a machine that records none.

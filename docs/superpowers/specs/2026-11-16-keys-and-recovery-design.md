@@ -368,8 +368,8 @@ Decisions:
   question: its one question (which of several `ssh/*_ed25519` items) depends on Bitwarden
   at run time, so it is asked through `env.Ask`, which the progress view suspends around,
   as it does for `bw-setup` and `gh auth login`.
-- **`athome` usage** gains `keys      rotate ssh keys (--laptop, --break-glass, --all,
-  --resume)`; `athome secrets` usage names `backup|restore|rekey`.
+- **`athome` usage** gains `keys      rotate ssh keys (--laptop, --break-glass, --boxes,
+  --all, --resume)`; `athome secrets` usage names `backup|restore|rekey`.
 
 Acceptance criteria:
 

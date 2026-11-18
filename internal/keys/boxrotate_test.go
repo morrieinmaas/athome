@@ -250,3 +250,73 @@ func TestRotateBoxDeletesOnlyOwnTitles(t *testing.T) {
 }
 
 func pubBlobLine(pub string) string { return strings.Fields(pub)[0] + " " + pubBlob(pub) }
+
+func TestRotateBoxRefusesANewKeyThatIsTheCurrentOne(t *testing.T) {
+	o, f, _ := rotateHome(t)
+	var log []string
+	same := "ssh-ed25519 SAMEKEY same"
+	b := &fakeKeyBox{fakeBox: fakeBox{name: "same", scope: "work/a", log: &log}, cur: same, staged: "ssh-ed25519 SAMEKEY other-comment"}
+	withInventory(t, b)
+	ghListing(f, "user/keys", "1 ssh-ed25519 SAMEKEY athome-same")
+	ghListing(f, "user/ssh_signing_keys", "2 ssh-ed25519 SAMEKEY athome-same-sign")
+
+	err := Rotate(context.Background(), o, Kinds{Boxes: true})
+	var inc *IncompleteError
+	if !errors.As(err, &inc) || !slices.Equal(inc.Skipped, []string{"same"}) {
+		t.Fatalf("err = %v", err)
+	}
+	if d := deletes(f); len(d) != 0 {
+		t.Errorf("deleted %v: the box's only registered key is gone", d)
+	}
+	if len(ghCalls(f)) != 0 || len(b.checks) != 0 {
+		t.Errorf("gh calls %v, checks %v", ghCalls(f), b.checks)
+	}
+	if !strings.Contains(o.Out.(fmt.Stringer).String(), "is its current key") {
+		t.Errorf("no reason: %s", o.Out)
+	}
+}
+
+// alreadyRunner answers every gh ssh-key add with GitHub's "already in use".
+type alreadyRunner struct{ run.Runner }
+
+func (r alreadyRunner) Run(ctx context.Context, c run.Cmd) (run.Result, error) {
+	if c.Name == "gh" && len(c.Args) > 1 && c.Args[0] == "ssh-key" && c.Args[1] == "add" {
+		return run.Result{Code: 1, Stderr: "HTTP 422: key is already in use"}, nil
+	}
+	return r.Runner.Run(ctx, c)
+}
+
+// GitHub answers "already" for a key that is on a different account.
+func TestRotateBoxFailsWhenTheKeyIsOnAnotherAccount(t *testing.T) {
+	o, f, _ := rotateHome(t)
+	o.Run = alreadyRunner{f}
+	var log []string
+	b := &fakeKeyBox{fakeBox: fakeBox{name: "bx", scope: "work/a", log: &log}, cur: "ssh-ed25519 OLDbx bx"}
+	withInventory(t, b)
+	f.On("gh", "api", "--paginate", "user/keys", "--jq", `.[] | "\(.id) \(.key)"`).Return(run.Result{Stdout: "1 ssh-ed25519 OLDbx\n"})
+	f.On("gh", "api", "--paginate", "user/ssh_signing_keys", "--jq", `.[] | "\(.id) \(.key)"`).Return(run.Result{Stdout: "2 ssh-ed25519 OLDbx\n"})
+
+	if err := Rotate(context.Background(), o, Kinds{Boxes: true}); err == nil || !strings.Contains(err.Error(), "may be on another account") {
+		t.Fatalf("err = %v", err)
+	}
+	if len(b.checks) != 0 || len(deletes(f)) != 0 || b.cur != "ssh-ed25519 OLDbx bx" {
+		t.Errorf("went on: checks %v deletes %v cur %q", b.checks, deletes(f), b.cur)
+	}
+}
+
+func TestRotateBoxAlreadyOnTheAccountIsFine(t *testing.T) {
+	o, f, _ := rotateHome(t)
+	o.Run = alreadyRunner{f}
+	var log []string
+	b := &fakeKeyBox{fakeBox: fakeBox{name: "bx", scope: "work/a", log: &log}, cur: "ssh-ed25519 OLDbx bx"}
+	withInventory(t, b)
+	// the retry finds the new key on the account already
+	f.On("gh", "api", "--paginate", "user/keys", "--jq", `.[] | "\(.id) \(.key)"`).Return(run.Result{Stdout: "1 ssh-ed25519 NEWbx\n"})
+	f.On("gh", "api", "--paginate", "user/ssh_signing_keys", "--jq", `.[] | "\(.id) \(.key)"`).Return(run.Result{Stdout: "2 ssh-ed25519 NEWbx\n"})
+	if err := Rotate(context.Background(), o, Kinds{Boxes: true}); err != nil {
+		t.Fatal(err)
+	}
+	if b.cur != "ssh-ed25519 NEWbx bx" {
+		t.Errorf("cur = %q", b.cur)
+	}
+}

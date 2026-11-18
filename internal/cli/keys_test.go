@@ -56,6 +56,9 @@ func TestUsageListsKeys(t *testing.T) {
 	if !strings.Contains(out.String(), "keys      rotate ssh keys") {
 		t.Errorf("usage lacks keys:\n%s", out.String())
 	}
+	if !strings.Contains(out.String(), "--break-glass, --boxes, --all, --resume") {
+		t.Errorf("usage lacks the keys --boxes flag:\n%s", out.String())
+	}
 }
 
 func keysLaptopKey(home string) string {

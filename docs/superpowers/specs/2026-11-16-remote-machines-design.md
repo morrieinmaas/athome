@@ -411,7 +411,11 @@ Decisions:
   key by machine name, so `machine rm` can remove it with `ssh-keygen -R <name>`. Every
   athome command that connects first checks that `~/.ssh/config` contains the line
   `Include athome/config` and otherwise exits 1 with `~/.ssh/config does not include
-  athome/config; run chezmoi apply ~/.ssh/config`.
+  athome/config; run chezmoi apply ~/.ssh/config`. It then rewrites the generated config
+  (`sync`, `project clone`, `machine rm` and `KeysInventory` do), so a deleted or stale
+  file cannot let ssh resolve the bare name outside its pinned `HostKeyAlias` block. A
+  pending entry that does not parse or validate is skipped in the config with a note, and
+  `machine rm --force` removes it by name.
 - **ssh from athome.** A non-interactive call is
   `ssh -o BatchMode=yes <name> sh -c '<script>' athome '<arg>'...` (arguments
   single-quoted; data goes on stdin, never in arguments); an interactive one is
@@ -604,6 +608,14 @@ Decisions:
   validated with the inventory's rules, and runs `machine add` with those values on the
   terminal once the view has exited (its bootstrap and `gh auth login` need the terminal
   through `ssh -t`, which the progress view would hold); `remove` asks `remove <name>? This revokes its GitHub keys` (default no).
+- **`athome update` on a box.** A box stays on the tag the laptop pinned at `machine add`;
+  only `athome machine sync` from the laptop moves it. When `machineType` is `remote`,
+  `athome update` does not fetch tags or look for a newer release: its target is the
+  release the box runs (`pinnedTarget`, from the running version), the rest of the update
+  (`chezmoi apply` and the steps after the self-update) runs as on a laptop. `--to` with
+  another tag exits 1 saying the box is pinned to its tag by the laptop and that the pin is
+  changed there, then `athome machine sync` run. A box whose athome is not a release (a dev
+  build) exits 1 naming `athome machine sync`.
 - **`athome` usage** gains `machine   manage remote dev machines (add|sync|rm|ls)` and
   `project   clone a project onto a remote machine (clone)`.
 
@@ -676,6 +688,10 @@ Acceptance criteria:
     rejects a bad scope with the inventory's message; `remove` asks before running.
 17. `athome` usage lists `machine` and `project`; `athome machine bogus` and
     `athome project` exit 2.
+18. On a box (`machineType = "remote"`, running `1.4.0`) `athome update --yes` with `v1.5.0`
+    on origin runs no `git fetch`, no call mentions `v1.5.0`, does not replace the binary
+    and runs `chezmoi apply`; `athome update --to 1.5.0 --yes` exits 1 with `pinned to
+    v1.4.0` and runs no command.
 
 Edge cases: an inventory file that does not parse (exit 1 naming the file); a missing
 `~/.ssh/config` include line; `--athome` with a dev build; a rerun of `add` with other
@@ -721,6 +737,8 @@ Test list (unit unless marked):
 - status: criterion 2's warning.
 - tui: criterion 16.
 - cli: criterion 17; `machine add` without `--scope` and no terminal exits 2.
+- cli update on a box: criterion 18 (`TestUpdateOnBoxStaysOnPinnedTag`,
+  `TestUpdateOnBoxRefusesOtherTag` in `internal/cli/update_test.go`).
 
 Out of scope for this build: the full box drill in a systemd container (bootstrap over ssh,
 lingering, the reboot restore) stays a manual check before a release, listed in

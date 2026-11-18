@@ -35,8 +35,12 @@ type world struct {
 	ghEnv   []string               // GH_TOKEN values seen
 	ghLogin string                 // the account gh api user answers with
 	ghNext  int
-	grofe   map[string]string // machine -> target
-	grofeOK bool
+	// ghForeign holds key blobs registered on some other account: adding one
+	// answers "already", as GitHub does, and registers nothing here.
+	ghForeign map[string]bool
+	ghOwner   map[string]string // key blob -> the account that added it
+	grofe     map[string]string // machine -> target
+	grofeOK   bool
 
 	rbwLocked bool
 	rbwItems  map[string][]string
@@ -78,13 +82,14 @@ func newWorld(t *testing.T) (*world, Deps, *bytes.Buffer) {
 		fail:     map[string]bool{},
 		boxes:    map[string]*fakeBox{},
 		ghKeys:   map[string][]fakeGHKey{},
+		ghOwner:  map[string]string{},
 		grofe:    map[string]string{},
 		grofeOK:  true,
 		rbwItems: map[string][]string{},
 		ghLogin:  "octo",
 	}
 	out := &bytes.Buffer{}
-	d := Deps{Run: w, Home: home, Host: "lap", Version: "v0.4.0", Out: out, Backup: func(context.Context) error {
+	d := Deps{Run: w, Home: home, Host: "lap", Out: out, Backup: func(context.Context) error {
 		w.add("backup")
 		return nil
 	}}
@@ -282,7 +287,7 @@ func (w *world) ssh(c run.Cmd) run.Result {
 		}
 		for _, k := range w.ghKeys["user/keys"] {
 			if strings.Contains(b.pub, strings.Fields(k.key)[1]) {
-				return run.Result{Stderr: "Hi x! You've successfully authenticated, but GitHub does not provide shell access.", Code: 1}
+				return run.Result{Stderr: "Hi " + w.keyOwner(k.key) + "! You've successfully authenticated, but GitHub does not provide shell access.", Code: 1}
 			}
 		}
 		return run.Result{Stderr: "git@github.com: Permission denied (publickey).", Code: 255}
@@ -415,9 +420,13 @@ func (w *world) gh(c run.Cmd) run.Result {
 			return run.Result{Code: 1, Stderr: "HTTP 404: Not Found (admin:public_key)"}
 		}
 		pub, _ := os.ReadFile(a[2])
+		if w.ghForeign[strings.Fields(string(pub))[1]] {
+			return run.Result{Code: 1, Stderr: "HTTP 422: key is already in use"}
+		}
 		w.ghNext++
 		title := a[slices.Index(a, "--title")+1]
 		w.ghKeys[endpoint] = append(w.ghKeys[endpoint], fakeGHKey{strconv.Itoa(w.ghNext), strings.Join(strings.Fields(string(pub))[:2], " "), title})
+		w.ghOwner[strings.Fields(string(pub))[1]] = w.ghAccount(c)
 		w.add(op + " " + title)
 		return run.Result{}
 	case len(a) == 4 && a[0] == "api" && a[1] == "-X" && a[2] == "DELETE":
@@ -435,6 +444,24 @@ func (w *world) gh(c run.Cmd) run.Result {
 		return run.Result{}
 	}
 	return run.Result{Code: 2, Stderr: "fake gh: unexpected " + strings.Join(a, " ")}
+}
+
+// keyOwner is the account whose key this is; octo when a test seeded it.
+func (w *world) keyOwner(key string) string {
+	if a := w.ghOwner[strings.Fields(key)[len(strings.Fields(key))-1]]; a != "" {
+		return a
+	}
+	return "octo"
+}
+
+// ghAccount is the account a gh call acts as: its GH_TOKEN's, else gh's own login.
+func (w *world) ghAccount(c run.Cmd) string {
+	for _, e := range c.Env {
+		if v, ok := strings.CutPrefix(e, "GH_TOKEN=tok-"); ok {
+			return v
+		}
+	}
+	return w.ghLogin
 }
 
 func (w *world) grofeCmd(c run.Cmd) run.Result {

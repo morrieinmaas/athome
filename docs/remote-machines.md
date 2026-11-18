@@ -157,8 +157,9 @@ its new commits as unverified (GitHub verifies them at once).
 `athome secrets restore` brings back the inventory, but not the pinned host keys, and the
 boxes only accept the laptop key that added them. To work on a box from a second laptop,
 authorize that laptop's key on the box from the first one (or restore the same laptop key
-with `--import-ssh-bw`), then run any `athome machine` command so `~/.ssh/athome/config` is
-written. Pinning host keys on a second laptop is not automated yet.
+with `--import-ssh-bw`), then run any `athome machine` command that reaches a box (`sync`,
+`rm`, `project clone`, `keys rotate --boxes`; each rewrites `~/.ssh/athome/config` first, so
+a box is never reached outside its pinned host-key block). Pinning host keys on a second laptop is not automated yet.
 
 ## The manual box drill
 

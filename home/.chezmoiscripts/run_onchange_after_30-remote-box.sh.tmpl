@@ -60,9 +60,10 @@ sudo timedatectl set-timezone {{ $tz | squote }} || warn "could not set the time
 {{- end }}
 {{ if $locale }}
 # ── locale ───────────────────────────────────────────────────────────────────
-# Arch only generates the locales listed in /etc/locale.gen.
+# Arch only generates the locales listed in /etc/locale.gen. The locale goes to perl
+# through the environment: spliced into the regex, an @ would interpolate.
 if command -v locale-gen >/dev/null 2>&1 && [ -f /etc/locale.gen ]; then
-  sudo perl -pi -e 's/^#\s*(\Q'{{ $locale | squote }}'\E[ .])/$1/' /etc/locale.gen \
+  sudo env L={{ $locale | squote }} perl -pi -e 's/^#\s*(\Q$ENV{L}\E[ .])/$1/' /etc/locale.gen \
     && sudo locale-gen >/dev/null || warn "could not generate the locale"
 fi
 sudo localectl set-locale "LANG="{{ $locale | squote }} || warn "could not set the locale"

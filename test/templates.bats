@@ -224,6 +224,33 @@ STUB
   if grep -q 'timedatectl\|localectl\|locale-gen' "$TMP/box.sh"; then return 1; fi
 }
 
+@test "remote-box script: a locale with @ reaches perl as text, not as an array" {
+  printf '[data]\n  machineType = "remote"\n  locale = "de_DE@euro"\n' >"$TMP/at.toml"
+  render at .chezmoiscripts/run_onchange_after_30-remote-box.sh.tmpl linux >"$TMP/box.sh"
+  perl -pi -e "s{/etc/locale\\.gen}{$TMP/locale.gen}g" "$TMP/box.sh"
+  printf '#de_DE@euro ISO-8859-15\n#de_DE.UTF-8 UTF-8\n#de ISO-8859-1\n' >"$TMP/locale.gen"
+  mkdir "$TMP/home" "$TMP/stubs"
+  # sudo runs perl and env for real, answers cat with "no", and succeeds at the rest
+  cat >"$TMP/stubs/sudo" <<'STUB'
+#!/bin/sh
+case "$1" in
+  env | perl) exec "$@" ;;
+  cat) exit 1 ;;
+  *) cat >/dev/null 2>&1 </dev/null; exit 0 ;;
+esac
+STUB
+  chmod +x "$TMP/stubs/sudo"
+  printf '#!/bin/sh\nexit 0\n' >"$TMP/stubs/systemctl"
+  printf '#!/bin/sh\nexit 0\n' >"$TMP/stubs/locale-gen"
+  chmod +x "$TMP/stubs/systemctl" "$TMP/stubs/locale-gen"
+  HOME="$TMP/home" PATH="$TMP/stubs:$PATH" run bash "$TMP/box.sh"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"could not generate the locale"* ]]
+  [ "$(sed -n 1p "$TMP/locale.gen")" = "de_DE@euro ISO-8859-15" ]
+  [ "$(sed -n 2p "$TMP/locale.gen")" = "#de_DE.UTF-8 UTF-8" ]
+  [ "$(sed -n 3p "$TMP/locale.gen")" = "#de ISO-8859-1" ]
+}
+
 # render_ssh_config <personal|work|remote> pins the hostname so the output is comparable.
 render_ssh_config() {
   perl -pe 's/\.chezmoi\.hostname/"fixture"/g' "$ROOT/home/private_dot_ssh/private_config.tmpl" |

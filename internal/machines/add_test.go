@@ -356,3 +356,73 @@ func TestSameEntryIgnoresFilledFields(t *testing.T) {
 		t.Fatal("jump differs")
 	}
 }
+
+// GitHub answers "already" when the key is on a different account, so add
+// must not take it for success.
+func TestAddFailsWhenTheBoxKeyIsOnAnotherAccount(t *testing.T) {
+	needKeygen(t)
+	w, d, _ := newWorld(t)
+	w.ghForeign = map[string]bool{"AAAAC3NzaC1lZDI1NTE5AAAABOXKEY8": true}
+	err := Add(context.Background(), d, newAdd())
+	if err == nil || !strings.HasPrefix(err.Error(), "athome machine add: machine-box-key: ") || !strings.Contains(err.Error(), "not on GitHub account octo") {
+		t.Fatalf("err = %v", err)
+	}
+	if ms, _ := Load(d.Home); len(ms) != 0 {
+		t.Errorf("inventory written: %v", ms)
+	}
+}
+
+func TestBoxCheckGitHubNeedsTheMachinesAccount(t *testing.T) {
+	w, d, _ := newWorld(t)
+	b := w.box("acme-dev")
+	b.pub = "ssh-ed25519 AAAAKEY athome@acme-dev"
+	w.ghKeys["user/keys"] = []fakeGHKey{{"1", "ssh-ed25519 AAAAKEY", "athome-acme-dev"}}
+	w.ghOwner["AAAAKEY"] = "someone-else"
+	m := newAdd()
+	m.Hostname, m.GitHubAccount = "dev", "acme-bot"
+	if err := NewBox(d.remote(), m).CheckGitHub(context.Background(), false); err == nil || !strings.Contains(err.Error(), "another account than acme-bot") {
+		t.Fatalf("err = %v", err)
+	}
+	w.ghOwner["AAAAKEY"] = "Acme-Bot"
+	if err := NewBox(d.remote(), m).CheckGitHub(context.Background(), false); err != nil {
+		t.Fatalf("the account's own login failed: %v", err)
+	}
+}
+
+func TestAddRerunChecksTheBoxGitHubLoginAgain(t *testing.T) {
+	needKeygen(t)
+	w, d, _ := newWorld(t)
+	w.setFail("authorize", true)
+	if err := Add(context.Background(), d, newAdd()); err == nil {
+		t.Fatal("want the authorize failure")
+	}
+	w.setFail("authorize", false)
+	if err := Add(context.Background(), d, newAdd()); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(w.ops("box-github-check")); n != 2 {
+		t.Errorf("box github check ran %d times, want 2 (the first pass, then the rerun's check):\n%s", n, strings.Join(w.logCopy(), "\n"))
+	}
+}
+
+func TestAddLeftBehindOmitsGrofeWhenNotInstalled(t *testing.T) {
+	needKeygen(t)
+	if os.Getuid() == 0 {
+		t.Skip("root ignores directory modes")
+	}
+	w, d, _ := newWorld(t)
+	w.grofeOK = false
+	blocked := filepath.Join(d.Home, ".config")
+	os.Mkdir(blocked, 0o500)
+	t.Cleanup(func() { os.Chmod(blocked, 0o700) })
+	err := Add(context.Background(), d, newAdd())
+	if err == nil || !strings.Contains(err.Error(), "machine-inventory") {
+		t.Fatalf("err = %v", err)
+	}
+	if strings.Contains(err.Error(), "grofe machine") {
+		t.Errorf("grofe machine listed as left behind though grofe is not installed: %v", err)
+	}
+	if !strings.Contains(err.Error(), "gh login on the box") {
+		t.Errorf("left-behind list lost the other steps: %v", err)
+	}
+}

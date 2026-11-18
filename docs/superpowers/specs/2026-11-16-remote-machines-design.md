@@ -725,7 +725,9 @@ manual step). canopy's `remote set` and `CANOPY_THEME` (canopy's spec and M5). L
 remote projects in tmux-sessionx (canopy's remote-awareness spec); this build covers the
 `repo` function. `sync --all` at the end of `athome update`. The lingering check in grofe's
 `reboot-check` (upstream in grofe). Bumping the grofe pin to the release with
-`machine` and `-r` (done once grofe releases).
+`machine` and `-r` (done once grofe releases). A second laptop: the inventory is mirrored, but the
+pinned host keys and that laptop's authorization on the boxes are not (documented in
+`docs/remote-machines.md`).
 
 Docs (same PR): new `docs/remote-machines.md` (the scope model, prerequisites: a box with
 your laptop key authorized, git, curl and sudo; `machine add|sync|rm|ls`, `project clone`,

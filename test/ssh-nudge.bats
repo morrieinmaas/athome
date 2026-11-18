@@ -66,6 +66,11 @@ nudge() {
   [ -z "$stderr" ]
 }
 
+@test "with -G (print config, no login): no hint" {
+  GROFE=1 nudge -G acme-dev
+  [ -z "$stderr" ]
+}
+
 @test "with a remote command: no hint, arguments unchanged" {
   GROFE=1 nudge acme-dev 'ls -la'
   [ -z "$stderr" ]

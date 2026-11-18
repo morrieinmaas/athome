@@ -21,7 +21,7 @@ _athome_ssh_machine() {
     rest=${arg#-}
     while [[ -n $rest ]]; do
       c=${rest[1]}; rest=${rest[2,-1]}
-      if [[ $c == T ]]; then
+      if [[ $c == [TG] ]]; then
         notty=1
       elif [[ $c == [bBcDEeFIiJLlmOoPpQRSWw] ]]; then
         # Takes a value: the rest of this word, or else the next word.

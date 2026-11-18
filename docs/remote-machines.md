@@ -20,6 +20,7 @@ several boxes for the same scope.
 ## What a box needs before `machine add`
 
 - Arch, Fedora or macOS, reachable over ssh as a user with sudo (a password prompt is fine).
+  Not root: the bootstrap turns off root login, so `machine add` refuses `--user root`.
 - Your laptop key in that user's `~/.ssh/authorized_keys` (the cloud console, cloud-init or
   `ssh-copy-id` put it there).
 - `git` and `curl`.
@@ -99,7 +100,8 @@ athome machine rm acme-dev
   directory beside it, runs `mise install`, copies `~/.secrets/<repo>/.env*` from the laptop
   and records the repo in the inventory. `--machine` can be left out when there is one
   machine.
-- `machine rm` revokes the box's GitHub keys, logs `gh` out on the box, removes the
+- `machine rm` first revokes the box's GitHub keys (so an unreachable box never stops that),
+  then logs `gh` out on the box, removes the
   break-glass authorization, the grofe entry, the pinned host key, the ssh block and the
   inventory entry. It never wipes the box.
 

@@ -353,18 +353,20 @@ Decisions:
 
 - **New package `internal/machines`**, reaching every tool through `run.Runner`. It may
   import `internal/keys`, `internal/secrets` and `internal/steps`; `internal/keys` never
-  imports it. The cli sets `keys.Inventory = machines.KeysInventory` at start-up.
+  imports it. The cli sets `keys.Inventory` to a closure over `machines.KeysInventory(home, runner, host)` before a keys command runs; with machines in the inventory it fails with the `Include` message below when `~/.ssh/config` lacks the line.
 - **Inventory** `~/.config/athome/machines.toml`, the spec's table plus two fields athome
   fills in itself at `machine add`: `home` (the box's `$HOME`, read over ssh) and
   `hostname` (the box's short hostname, which names its key `~/.ssh/<hostname>_ed25519`).
   Written 0600 through a temp file and rename, its directory 0700. A missing file is an
   empty inventory. Every command that reads it validates every entry and exits 1 naming
   the machine and field on the first error:
-  - name: `^[a-z0-9][a-z0-9._-]{0,62}$`, and not `local` (grofe's own name);
+  - name: `^[a-z0-9][a-z0-9_-]{0,62}$` (no dots, so a name never shadows a real host such
+    as `github.com` in the ssh config), and not `local` (grofe's own name);
   - scope: `work/`, `personal/` or `sidebiz/`, then one or more path segments of
     `[A-Za-z0-9._-]`, none `.` or `..`;
   - target: `^[A-Za-z0-9][A-Za-z0-9.-]*$` (a host or mesh name, an IPv4 address);
-  - user: `^[a-z_][a-z0-9_.-]*$`, required; jump: empty or `^[A-Za-z0-9@._:-]+$`;
+  - user: `^[a-z_][a-z0-9_.-]*$`, required, not `root` (the bootstrap turns off root
+    login); jump: empty or `[user@]host[:port]` starting with `[A-Za-z0-9]`;
     port: 1 to 65535, default 22;
   - athome: `^v[0-9]+\.[0-9]+\.[0-9]+$`; github_account: empty or `^[A-Za-z0-9-]+$`;
   - repos: each `^[A-Za-z0-9._-]+$`, not `.` or `..`, no duplicates;
@@ -415,7 +417,7 @@ Decisions:
   single-quoted; data goes on stdin, never in arguments); an interactive one is
   `ssh -t <name> ...` with `Interactive`. A login check (`Box.Login`) uses a temp config
   written from the same block without `IdentityFile`, `ControlMaster` and `ControlPath`
-  (`ControlPath none`), and with a jump as `ProxyCommand ssh -W [%h]:%p <jump>`, run as
+  (`ControlPath none`), and with a jump as `ProxyCommand ssh -W [%h]:%p [-p <port>] [-l <user>] <host>`, run as
   `ssh -F <tmp> -i <key> -o IdentitiesOnly=yes -o BatchMode=yes <name> true`, so neither
   the laptop key nor a shared master connection can make it pass.
 - **Pending adds** live in `~/.local/state/athome/machines/<name>.toml` (the entry with
@@ -427,8 +429,8 @@ Decisions:
 - **`athome machine add <name> --scope s --target t [--user u] [--jump j] [--port p]
   [--github-account a] [--forward-agent] [--athome <tag>]`.** `--user` defaults to the
   laptop's `$USER`; `--athome` to `v<running version>`, and a running version that is not
-  `X.Y.Z` exits 2 asking for `--athome`; `--github-account` to empty (the account `gh` is
-  logged in as). On a terminal a missing `--scope` or `--target` is asked as a line prompt
+  `X.Y.Z` exits 2 asking for `--athome`; `--github-account` to the account `gh` is
+  logged in as (`gh api user --jq .login`), resolved once and stored in the entry. On a terminal a missing `--scope` or `--target` is asked as a line prompt
   (and as the TUI form, below); without one it exits 2 naming the flag. A name already in
   the inventory exits 1 (`machine <name> already exists`). `--forward-agent` prints
   `warning: root on <name> can use your laptop key while you are attached`. The steps run
@@ -453,9 +455,10 @@ Decisions:
      reads its public key, adds the missing ones with
      `gh ssh-key add <tmp.pub> --title athome-<name>` and
      `--title athome-<name>-sign --type signing`, then checks from the box with
-     `ssh -i ~/.ssh/<hostname>_ed25519 -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=accept-new -T git@github.com`
-     (passes when the output contains `successfully authenticated`; this also pins
-     github.com on the box). With `github_account` set, every `gh` call gets
+     `ssh -i ~/.ssh/<hostname>_ed25519 -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -T git@github.com`
+     against `~/.ssh/athome_github_known_hosts` on the box, which athome writes from
+     GitHub's published host keys, so github.com is never trusted on first use (passes
+     when the output contains `successfully authenticated`). Every `gh` call gets
      `GH_TOKEN` from `gh auth token --hostname github.com --user <account>`.
   4. `machine-break-glass`: done when the scope's break-glass public key is in the box's
      `~/.ssh/authorized_keys`. Apply reads it with `keys.BreakGlassPub`, creates it with
@@ -512,7 +515,9 @@ Decisions:
   all `darwin.brew_casks` on remote; plain string entries are unchanged. The desktop-only
   scripts (`run_once_09`, `run_once_11`, `run_once_15`, `run_once_after_20`,
   `run_once_after_23`, `run_onchange_after_24`, `run_onchange_after_25`) render empty on
-  remote. New `run_onchange_after_30-remote-box.sh.tmpl` (remote Linux only, skipped under
+  remote, and `.chezmoiignore` skips the desktop configs (niri, quickshell, noctalia, greetd,
+  autostart, qt5ct, qt6ct, the canopy-tmux unit, `Pictures`) there. New
+  `run_onchange_after_30-remote-box.sh.tmpl` (remote Linux only, skipped under
   `ATHOME_CI`) writes `/etc/ssh/sshd_config.d/10-athome.conf` (`PasswordAuthentication
   no`, `KbdInteractiveAuthentication no`, `PermitRootLogin no`), checks `sshd -t` before
   reloading `sshd`, runs `loginctl enable-linger $USER`, sets the timezone and locale when
@@ -531,10 +536,13 @@ Decisions:
   and send each on stdin to
   `sh -c 'umask 077; mkdir -p "$HOME/.secrets/$1" && cat > "$HOME/.secrets/$1/$2"'`.
   Only repos in the machine's `repos` list are copied.
-- **`athome machine rm <name> [--force]`**: on the box, `gh auth logout --hostname
-  github.com` and removal of the scope's break-glass key from `authorized_keys`; on GitHub,
-  every authentication and signing key titled `athome-<name>` or `athome-<name>-sign`
-  (`gh api -X DELETE user/keys/<id>`, `user/ssh_signing_keys/<id>`); then
+- **`athome machine rm <name> [--force]`**: first, on GitHub, the authentication key titled
+  `athome-<name>` and the signing key titled `athome-<name>-sign`
+  (`gh api -X DELETE user/keys/<id>`, `user/ssh_signing_keys/<id>`), so an unreachable or
+  breached box never stops the revocation; then on the box `gh auth logout --hostname
+  github.com` and removal of the scope's break-glass key from `authorized_keys` (skipped
+  with no entry and no pending file, or without the `Include` line, so athome never
+  connects to a host it did not configure); then
   `grofe machine rm <name>` when listed, `ssh-keygen -R <name> -f ~/.ssh/athome/known_hosts`,
   the inventory entry and pending file, the rewritten ssh config and remote projects file,
   and `athome secrets backup` when the inventory changed. Without `--force` an unknown name
@@ -563,7 +571,7 @@ Decisions:
   hostname, matches the name, target or target's `ssh -G` hostname of a row of
   `grofe machine ls`, prints `grofe: for reconnects and forwarding, use grofe -r <machine>`
   to stderr. It then runs `command ssh "$@"` in every case.
-- **Boxes for `athome keys`.** `machines.KeysInventory(home)` returns one ssh `Box` per
+- **Boxes for `athome keys`.** `machines.KeysInventory(home, runner, host)` returns one ssh `Box` per
   inventory machine. `Authorize(pub)` appends the key when its blob is absent; `Reset(keys)`
   writes exactly those keys through `authorized_keys.athome` and a rename; both send keys
   on stdin, check each is one `ssh-ed25519 <base64>[ comment]` line, and keep the file
@@ -586,8 +594,9 @@ Decisions:
 - **TUI.** The home menu gains `machines` (between `update` and `quit`). It opens a list of
   the inventory (`machine ls` lines) with `add`, `sync`, `sync all`, `remove` and `back`.
   `add` is a form (name, scope, target, user, port, jump, GitHub account, forward agent),
-  validated with the inventory's rules, and runs `machine add` with those values in the
-  progress view; `remove` asks `remove <name>? This revokes its GitHub keys` (default no).
+  validated with the inventory's rules, and runs `machine add` with those values on the
+  terminal once the view has exited (its bootstrap and `gh auth login` need the terminal
+  through `ssh -t`, which the progress view would hold); `remove` asks `remove <name>? This revokes its GitHub keys` (default no).
 - **`athome` usage** gains `machine   manage remote dev machines (add|sync|rm|ls)` and
   `project   clone a project onto a remote machine (clone)`.
 

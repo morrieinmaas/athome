@@ -455,8 +455,9 @@ Decisions:
      reads its public key, adds the missing ones with
      `gh ssh-key add <tmp.pub> --title athome-<name>` and
      `--title athome-<name>-sign --type signing`, then checks from the box with
-     `ssh -i ~/.ssh/<hostname>_ed25519 -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -T git@github.com`
-     against `~/.ssh/athome_github_known_hosts` on the box, which athome writes from
+     `ssh -F /dev/null -i ~/.ssh/<hostname>_ed25519 -o IdentitiesOnly=yes -o BatchMode=yes -o UserKnownHostsFile=~/.ssh/athome_github_known_hosts -o StrictHostKeyChecking=yes -T git@github.com`
+     (`-F /dev/null`, so the box's own config cannot offer another key), against
+     `~/.ssh/athome_github_known_hosts` on the box, which athome writes from
      GitHub's published host keys, so github.com is never trusted on first use (passes
      when the output contains `successfully authenticated`). Every `gh` call gets
      `GH_TOKEN` from `gh auth token --hostname github.com --user <account>`.
@@ -554,7 +555,12 @@ Decisions:
   user@target[:port], <n> repos)` per machine in name order, or `no machines` and exit 0.
 - **`athome project clone <repo> [--machine <name>]`.** `<repo>` is `owner/name` (cloned
   as `git@github.com:owner/name.git`) or a `git@github.com:owner/name.git` or
-  `https://github.com/owner/name(.git)` URL; anything else exits 2. Without `--machine`
+  `https://github.com/owner/name(.git)` URL (`owner/name.git` is accepted too); anything
+  else, and the name `worktrees` (the worktree directory), exits 2. The clone runs with
+  `GIT_SSH_COMMAND` pinned to `~/.ssh/athome_github_known_hosts`, and on remote the box's
+  `Host github.com` block reads that file too (`UserKnownHostsFile ~/.ssh/known_hosts
+  ~/.ssh/athome_github_known_hosts`, `StrictHostKeyChecking yes`), so no git over ssh on
+  the box trusts github.com on first use. Without `--machine`
   the inventory must hold exactly one machine; otherwise exit 2 naming them. On the box:
   `mkdir -p <home>/<scope>/worktrees`, `git clone <url> <home>/<scope>/<name>` unless
   `<name>/.git` exists, `mise trust` and `mise install` (`~/.local/bin/mise`) in it when it

@@ -144,7 +144,9 @@ accepted to keep plain `gh` and git over ssh; revoking the box key ends it. See
 [where everything lives](secrets.md#where-everything-lives) and
 [rotation](secrets.md#rotation): `athome keys rotate --boxes` rotates every box's key, and
 every rotation resets each box's `authorized_keys` to the managed set (laptop key and the
-scope's break-glass key).
+scope's break-glass key). After `--boxes`, the box re-renders its `allowed_signers` from the new
+key on the next `athome machine sync`; until then `git log --show-signature` on the box shows
+its new commits as unverified (GitHub verifies them at once).
 
 ## A second laptop
 

@@ -540,9 +540,10 @@ Decisions:
   `athome-<name>` and the signing key titled `athome-<name>-sign`
   (`gh api -X DELETE user/keys/<id>`, `user/ssh_signing_keys/<id>`), so an unreachable or
   breached box never stops the revocation; then on the box `gh auth logout --hostname
-  github.com` and removal of the scope's break-glass key from `authorized_keys` (skipped
+  github.com` and removal of the scope's break-glass key from `authorized_keys` (never run
   with no entry and no pending file, or without the `Include` line, so athome never
-  connects to a host it did not configure); then
+  connects to a host it did not configure: plain `rm` then exits 1 after the revocation,
+  `--force` notes it and goes on); then
   `grofe machine rm <name>` when listed, `ssh-keygen -R <name> -f ~/.ssh/athome/known_hosts`,
   the inventory entry and pending file, the rewritten ssh config and remote projects file,
   and `athome secrets backup` when the inventory changed. Without `--force` an unknown name

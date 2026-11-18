@@ -170,8 +170,8 @@ needed for `gh` itself (pull requests, issues); git over ssh uses the box key. I
 everything your GitHub account does, so the keys spec lists it under "Breached box".
 
 On the laptop, athome's zsh config exports `CANOPY_THEME` as the active theme's name (the
-basename of `$CANOPY_STATE/current/theme`'s target, not a path), so canopy can carry it to a
-box on attach. That export is added when canopy's themes (M5) land.
+contents of `~/.config/themes/active`, which athome's `theme` writes), so canopy can carry it
+to a box on attach. "Build 2: canopy hookup" below has the details.
 
 ## Commands
 
@@ -399,6 +399,7 @@ Decisions:
       IdentityFile ~/.ssh/<laptop key file>
       IdentitiesOnly yes
       ForwardAgent no        # yes when forward_agent
+      SendEnv CANOPY_THEME   # Build 2
       HostKeyAlias acme-dev
       UserKnownHostsFile ~/.ssh/athome/known_hosts
       StrictHostKeyChecking yes
@@ -764,3 +765,84 @@ directory); `docs/how-it-works.md` (`machineType = "remote"`, headless packages,
 generated ssh config); `docs/customizing.md` (`contextColors`, the remote prompt, `gui:
 true`); `docs/commands.md` (`machine`, `project`, `keys rotate --boxes`); `docs/secrets.md`
 (box keys and `--boxes` now real); `README.md` (one line linking the new page).
+
+## Build 2: canopy hookup
+
+Goal: athome's side of canopy's remote awareness
+([canopy#13](https://github.com/morrieinmaas/canopy/pull/13), canopy's
+`docs/superpowers/specs/2026-11-16-remote-awareness-design.md`, follow-ups A to D). A box
+runs `canopy remote set` with its machine, scope and context colour on every bootstrap and
+`machine sync`, the laptop exports its theme name as `CANOPY_THEME`, and that name reaches
+the box on attach, over `grofe -r` and over real tmux on plain ssh. Laptops change only by
+the export.
+
+Decisions:
+
+- **A. The export** is `home/dot_zsh/canopy-theme.zsh`, sourced by `dot_zshrc.tmpl` after
+  `ssh-nudge.zsh` on every machine: a precmd hook that exports `CANOPY_THEME` as the
+  contents of `~/.config/themes/active` when that file is readable, and does nothing
+  otherwise. It is not registered in an ssh login whose environment already holds
+  `CANOPY_THEME` (`$SSH_CONNECTION` set): that value is the laptop's, sent by `SendEnv`, and a
+  `tmux attach` from that shell must carry it, not the box's own theme. This replaces the
+  earlier plan to export the basename of `$CANOPY_STATE/current/theme`.
+- **B. `canopy remote set`** is a chezmoi script, `run_after_31-canopy-remote.sh.tmpl`,
+  rendered only when `machineType = "remote"` (Linux and macOS alike), so every
+  `chezmoi apply` on a box runs it: the bootstrap, every `machine sync` and `athome update`
+  there. No Go change is needed: `machine sync` already reruns the bootstrap. It runs after
+  `run_onchange_18` has installed canopy, with the values from chezmoi's data as flags:
+  `--machine <machineName> --scope <scope> --color <contextColors[context]>`, each through
+  `squote` (canopy checks them again). The colour is the existing `contextColors` table;
+  no inventory field is added. It calls `~/.local/share/canopy/bin/canopy-remote`; when that
+  is absent (a canopy pin older than `canopy remote`) it prints one note and exits 0. When
+  the two canopy files changed, it runs `~/.local/lib/grofe/grofe reload`, which never starts
+  a server: a `no server running` answer is silent, any other failure a warning. Real tmux
+  loads the files at its next start. A failed `set` is a warning; the apply goes on.
+- **C. Real tmux only.** The generated `~/.ssh/athome/config` gains `SendEnv CANOPY_THEME`
+  in every machine block, after `ForwardAgent`, and not in `Box.Login`'s temp config. The
+  remote-box script's sshd drop-in gains `AcceptEnv CANOPY_THEME`, the only variable it
+  accepts. `grofe -r` needs neither: its attach hello carries the client's environment and
+  canopy's `update-environment[90]` entry picks the name up. athome does not manage sshd on a
+  macOS box, so there `AcceptEnv CANOPY_THEME` is a documented manual line.
+- **D.** `~/.local/bin/theme` and `~/.config/themes/` are not ignored on a remote machine;
+  a test keeps it so.
+- `pins.canopy` stays where it is: moving it reruns canopy's install on every laptop. Until
+  it reaches a canopy with `canopy remote`, B prints its note and the rest is inert.
+
+Acceptance criteria:
+
+1. `run_after_31-canopy-remote.sh.tmpl` renders empty for `personal` and `work` on Linux
+   and macOS; for remote `acme-dev` in `work/acme` it runs
+   `canopy-remote set --machine acme-dev --scope work/acme --color yellow`, and a
+   `sidebiz/x` box gets `--color magenta`.
+2. With a grofe stub, the first run calls `grofe reload` once; a second run with the same
+   values calls `set` again and no reload. A reload answering `no server running` prints
+   nothing and exits 0; any other failure prints `grofe reload failed (<output>)` and exits 0.
+3. Without `canopy-remote` it exits 0 with the note; without grofe it sets and exits 0.
+4. The remote-box script's drop-in is exactly `PasswordAuthentication no`,
+   `KbdInteractiveAuthentication no`, `PermitRootLogin no`, `AcceptEnv CANOPY_THEME`.
+5. The generated ssh config golden has `SendEnv CANOPY_THEME` in each block, and
+   `ssh -G` reports `sendenv CANOPY_THEME`; the login config has no `SendEnv`.
+6. `dot_zshrc.tmpl` sources `canopy-theme.zsh` for every machine type. Sourced under
+   `zsh -f`, its precmd leaves `CANOPY_THEME` unset with no `active` file and exports each
+   new name after `active` changes; with `SSH_CONNECTION` and `CANOPY_THEME=everforest` set
+   it keeps `everforest`, and with `SSH_CONNECTION` alone it exports the file's name.
+7. `chezmoi managed` for a remote machine lists `.local/bin/theme`,
+   `.config/themes/registry.sh` and `.config/themes/apply-tmux.sh`, as for a laptop.
+8. Every laptop golden in `test/fixtures` still matches.
+
+Edge cases: a box whose canopy predates `canopy remote` (note, exit 0); no grofe installed
+(no reload); no grofe server running (silent); a grofe reload that rejects a file
+(warning, the apply goes on); no `~/.config/themes/active` (no export); a file deleted
+after an export (the old value stays until the shell exits); a macOS box (no sshd drop-in,
+documented); an ssh login without `SendEnv` (the box's own theme, so `follow-theme` is a
+no-op).
+
+Test list: criteria 1 to 4, 6 and 7 in `test/templates.bats`; criterion 5 in
+`internal/machines` (golden and `TestLoginCheck`) and `test/ssh-config.bats`; criterion 8 is
+the existing fixture tests.
+
+Out of scope: moving `pins.canopy`; reloading a real tmux server; the `grofe -r` container
+test (canopy's spec); repainting attached clients when the laptop's theme changes.
+
+Docs (same PR): `docs/remote-machines.md` (the bootstrap bullet and "Your theme on the
+box").

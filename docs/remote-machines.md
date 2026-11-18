@@ -75,7 +75,11 @@ The box runs `athome init` with `machineType = "remote"` and the scope:
   `~/.config/environment.d/athome.conf`, and a prompt that reads `acme-dev · work/acme` in
   the context's colour;
 - a systemd user unit, `grofe-restore.service`, that starts `grofe start-server --restore`
-  at boot.
+  at boot;
+- `canopy remote set --machine <name> --scope <scope> --color <colour>`, run on every
+  bootstrap and `machine sync`, so grofe's and tmux's status line and the terminal title
+  say `acme-dev · work/acme` in the context's colour; a running grofe server is reloaded
+  when that changed it (see [Your theme on the box](#your-theme-on-the-box)).
 
 A box never gets Bitwarden: init never runs `bw-setup`, `rbw register` or `rbw login` there,
 because a logged-in rbw would reach the whole vault. It never gets the git-crypt key or the
@@ -124,6 +128,23 @@ which attaches to that repo's session on the box, creating it if needed.
 
 Inside grofe, a plain `ssh acme-dev` prints a one-line hint to use `grofe -r acme-dev`
 instead (reconnects, forwarding, no nested multiplexer), then runs ssh as asked.
+
+## Your theme on the box
+
+Every zsh prompt, on the laptop and on a box, exports `CANOPY_THEME` as the name in
+`~/.config/themes/active` (what `theme` last set). An attach to a box carries it there, and
+canopy runs the box's own `theme <name>` when the box knows that theme and is not already
+on it. So a box follows the laptop's theme on each attach, not live while you stay attached.
+
+- `grofe -r` sends the client's environment itself; nothing else is needed.
+- Real tmux over plain ssh needs ssh to carry the variable. A box shell that arrived with it keeps it rather than exporting the box's own theme, so `tmux attach` from there carries the laptop's. The generated
+  `~/.ssh/athome/config` has `SendEnv CANOPY_THEME` in each box's block, and on a Linux box
+  the sshd drop-in `/etc/ssh/sshd_config.d/10-athome.conf` has `AcceptEnv CANOPY_THEME`. athome
+  does not manage sshd on a macOS box: add `AcceptEnv CANOPY_THEME` to its sshd config by
+  hand if you attach there with real tmux.
+
+This needs the pinned canopy (`pins.canopy`) to have `canopy remote`; with an older one the
+bootstrap says so and goes on. The box keeps the `theme` command and `~/.config/themes`.
 
 ## Moving a local scope to a box
 

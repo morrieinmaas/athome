@@ -1,0 +1,11 @@
+{{ if eq .machineType "remote" -}}
+[Unit]
+Description=Restore grofe sessions after a reboot
+
+[Service]
+Type=forking
+ExecStart=%h/.local/lib/grofe/grofe start-server --restore
+
+[Install]
+WantedBy=default.target
+{{ end -}}

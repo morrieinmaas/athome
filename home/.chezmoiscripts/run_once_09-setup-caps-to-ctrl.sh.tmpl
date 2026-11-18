@@ -1,3 +1,4 @@
+{{ if ne .machineType "remote" -}}
 #!/usr/bin/env bash
 set -euo pipefail
 
@@ -29,3 +30,4 @@ if command -v gsettings >/dev/null 2>&1 && [[ -n "${DISPLAY:-${WAYLAND_DISPLAY:-
 fi
 echo "==> caps→ctrl active (Linux)"
 {{- end }}
+{{ end }}

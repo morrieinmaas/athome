@@ -1,3 +1,4 @@
+{{ if ne .machineType "remote" -}}
 #!/usr/bin/env bash
 # WiFi backend: NetworkManager on its default backend, wpa_supplicant.
 #
@@ -70,3 +71,4 @@ if [[ "$changed" == 1 ]]; then
 EOF
 fi
 {{- end }}
+{{ end }}

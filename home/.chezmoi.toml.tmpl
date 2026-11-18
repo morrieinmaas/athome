@@ -1,6 +1,6 @@
 {{/* First-run prompts for chezmoi. Stored at ~/.config/chezmoi/chezmoi.toml after init. */ -}}
 
-{{- $machineType         := promptStringOnce . "machineType"         "Machine type (work|personal — personal covers sidehustle)" "personal" -}}
+{{- $machineType         := promptStringOnce . "machineType"         "Machine type (work|personal|remote — personal covers sidehustle; remote is a headless dev box set up by athome machine add)" "personal" -}}
 {{- $hostname            := promptStringOnce . "hostname"            "Hostname" .chezmoi.hostname -}}
 {{- $githubHandle        := promptStringOnce . "githubHandle"        "GitHub username (e.g. octocat)" "" -}}
 {{- $githubId            := promptStringOnce . "githubId"            "GitHub numeric user ID (`gh api user -q .id`; empty = plain noreply email)" "" -}}
@@ -31,6 +31,16 @@
      block; you fill host/user later. */ -}}
 {{- $matterhornHost      := promptStringOnce . "matterhornHost"      "Matterhorn (Mattermost) server host, NO https://, e.g. mattermost.example.com (empty = none)" "" -}}
 {{- $matterhornUser      := promptStringOnce . "matterhornUser"      "Matterhorn login (email or username), e.g. you@example.com (empty = none)" "" -}}
+{{/* Remote-machine keys: carried from existing data, never prompted (a laptop must never be asked).
+     Only a remote box has them; they come from the bootstrap config. */ -}}
+{{- $scope        := "" -}}
+{{- $machineName  := "" -}}
+{{- $timezone     := "" -}}
+{{- $locale       := "" -}}
+{{- if hasKey . "scope" }}{{ $scope = .scope }}{{ end -}}
+{{- if hasKey . "machineName" }}{{ $machineName = .machineName }}{{ end -}}
+{{- if hasKey . "timezone" }}{{ $timezone = .timezone }}{{ end -}}
+{{- if hasKey . "locale" }}{{ $locale = .locale }}{{ end -}}
 
 # No `encryption` key: age was dropped (D5) — there are no encrypted_* files in
 # this repo, and with `pass` gone there's no driver for encrypted-files-in-repo.
@@ -57,6 +67,12 @@
     hostname     = {{ $hostname | quote }}
     githubHandle = {{ $githubHandle | quote }}
     githubId     = {{ $githubId | quote }}
+
+    # Remote machines only (empty on a laptop): where the box sits and its identity.
+    scope        = {{ $scope | quote }}
+    machineName  = {{ $machineName | quote }}
+    timezone     = {{ $timezone | quote }}
+    locale       = {{ $locale | quote }}
 
     # Optional overlay: extra packages installed on top of packages.yaml
     # (space-separated; or per-machine via ~/.config/athome/extra-packages).

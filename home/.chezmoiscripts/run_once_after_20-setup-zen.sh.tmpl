@@ -1,3 +1,4 @@
+{{ if ne .machineType "remote" -}}
 #!/usr/bin/env bash
 # Zen Browser: make it the default browser and declaratively (re)install its
 # extensions. Zen is a Firefox fork, so it honours a Firefox enterprise policy
@@ -101,3 +102,4 @@ cat <<'EOF'
     uBlock Origin, Privacy Badger, Simple Modify Headers) — manage at
     about:addons. Edit the EXT block in run_once_after_20-setup-zen to change them.
 EOF
+{{ end }}

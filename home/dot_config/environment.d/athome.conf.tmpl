@@ -1,0 +1,5 @@
+{{ if eq .machineType "remote" -}}
+ATHOME_MACHINE={{ .machineName }}
+ATHOME_SCOPE={{ .scope }}
+ATHOME_CONTEXT_COLOR={{ index .contextColors (index (splitList "/" .scope) 0) }}
+{{ end -}}

@@ -3,7 +3,8 @@
 # Remote box setup that needs root or systemd: sshd hardening, lingering (so the
 # grofe server and its sessions survive logout), timezone, locale, and the
 # grofe-restore user unit. Failures are warnings; the rest of the apply goes on.
-# The one hard rule: a drop-in that fails `sshd -t` is removed again, so a bad
+# The one hard rule: a drop-in that fails `sshd -t` never stays. The previous
+# one is written back when it passes, otherwise the file is removed, so a bad
 # file can never lock you out at the next sshd restart.
 #
 # Skipped under ATHOME_CI (container drills have no sudo, no systemd).
@@ -42,8 +43,7 @@ if [ "$old" != "$want" ]; then
       fi
       echo "==> sshd hardened ($dropin)"
     else
-      if [ -n "$old" ]; then
-        printf '%s\n' "$old" | sudo tee "$dropin" >/dev/null
+      if [ -n "$old" ] && printf '%s\n' "$old" | sudo tee "$dropin" >/dev/null && sudo sshd -t; then
         warn "sshd -t failed with the new $dropin; put the previous one back, sshd left as it was"
       else
         sudo rm -f "$dropin"

@@ -162,8 +162,8 @@ func validateRemote(d map[string]string) error {
 	if !ok {
 		return fmt.Errorf("%w: scope must be work|personal|sidebiz/<path> for a remote machine (got: %q; set ATHOME_SCOPE or scope in the config file)", ErrUsage, scope)
 	}
-	if !MachineNameRe.MatchString(d["machineName"]) || d["machineName"] == "local" || d["machineName"] == "0" {
-		return fmt.Errorf("%w: machineName must match %s and not be local or 0 for a remote machine (got: %q; set ATHOME_MACHINE_NAME or machineName in the config file)", ErrUsage, MachineNameRe, d["machineName"])
+	if !MachineNameRe.MatchString(d["machineName"]) || d["machineName"] == "local" {
+		return fmt.Errorf("%w: machineName must match %s and not be local for a remote machine (got: %q; set ATHOME_MACHINE_NAME or machineName in the config file)", ErrUsage, MachineNameRe, d["machineName"])
 	}
 	if tz := d["timezone"]; tz != "" && !TimezoneRe.MatchString(tz) {
 		return fmt.Errorf("%w: timezone must match %s (got: %q)", ErrUsage, TimezoneRe, tz)

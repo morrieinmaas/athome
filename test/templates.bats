@@ -417,11 +417,13 @@ run_canopy_remote() {
 @test "remote-box script: a failing sshd -t puts back the drop-in that was there" {
   render remote .chezmoiscripts/run_onchange_after_30-remote-box.sh.tmpl linux >"$TMP/box.sh"
   mkdir "$TMP/home" "$TMP/stubs"
-  # sudo cat answers with an old drop-in; sshd -t fails; tee logs what it writes.
+  # sudo cat answers with an old drop-in; sshd -t fails on the new one and passes
+  # on the old one (or always fails with SSHD_FAIL); tee logs what it writes.
   cat >"$TMP/stubs/sudo" <<STUB
 #!/bin/sh
 case "\$1" in
-  sshd) exit 1 ;;
+  sshd) n=\$((\$(cat "$TMP/sshd.n" 2>/dev/null || echo 0) + 1)); echo \$n >"$TMP/sshd.n"
+    [ -z "\${SSHD_FAIL:-}" ] && [ \$n -ge 2 ] ;;
   mkdir) exit 0 ;;
   cat) printf 'PermitRootLogin no\n'; exit 0 ;;
   tee) { printf 'tee:'; cat; } >>"$TMP/calls"; exit 0 ;;
@@ -438,6 +440,12 @@ STUB
   [ "$(grep -c '^tee:' "$TMP/calls")" = 2 ]
   [ "$(grep '^tee:' "$TMP/calls" | tail -n 1)" = 'tee:PermitRootLogin no' ]
   if grep -q '^rm -f' "$TMP/calls"; then return 1; fi
+  # an old drop-in that fails too is removed, never left in place
+  rm -f "$TMP/calls" "$TMP/sshd.n"
+  HOME="$TMP/home" PATH="$TMP/stubs:$PATH" SSHD_FAIL=1 run bash "$TMP/box.sh"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"removed it again"* ]]
+  grep -q '^rm -f /etc/ssh/sshd_config.d/10-athome.conf' "$TMP/calls"
 }
 
 @test "canopy-theme.zsh: a pane inside grofe or tmux follows this machine's theme even over ssh" {

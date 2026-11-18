@@ -801,8 +801,8 @@ Decisions:
   in every machine block, after `ForwardAgent`, and not in `Box.Login`'s temp config. The
   remote-box script's sshd drop-in gains `AcceptEnv CANOPY_THEME` (added to any `AcceptEnv`
   the main `sshd_config` has, such as Debian's `LANG LC_*`). When `sshd -t` fails after the
-  drop-in changed, the previous drop-in is written back rather than removed, so a box that
-  had the hardening keeps it. `grofe -r` needs neither: its attach hello carries the client's environment and
+  drop-in changed, the previous drop-in is written back and checked again, so a box that had
+  the hardening keeps it; when that fails too, the file is removed. `grofe -r` needs neither: its attach hello carries the client's environment and
   canopy's `update-environment[90]` entry picks the name up. athome does not manage sshd on a
   macOS box, so there `AcceptEnv CANOPY_THEME` is a documented manual line.
 - **D.** `~/.local/bin/theme` and `~/.config/themes/` are not ignored on a remote machine;
@@ -822,7 +822,8 @@ Acceptance criteria:
 3. Without `canopy-remote` it exits 0 with the note; without grofe it sets and exits 0.
 4. The remote-box script's drop-in is exactly `PasswordAuthentication no`,
    `KbdInteractiveAuthentication no`, `PermitRootLogin no`, `AcceptEnv CANOPY_THEME`. With
-   `sshd -t` failing, an existing drop-in is written back and none is removed.
+   `sshd -t` failing on the new one, an existing drop-in that passes is written back and
+   none is removed; one that fails too is removed.
 5. The generated ssh config golden has `SendEnv CANOPY_THEME` in each block, and
    `ssh -G` reports `sendenv CANOPY_THEME`; the login config has no `SendEnv`.
 6. `dot_zshrc.tmpl` sources `canopy-theme.zsh` for every machine type. Sourced under
@@ -832,8 +833,9 @@ Acceptance criteria:
    so does a pane (`TMUX` or `GROFE` set) even with both.
 7. `chezmoi managed` for a remote machine lists `.local/bin/theme`,
    `.config/themes/registry.sh` and `.config/themes/apply-tmux.sh`, as for a laptop.
-8. A box named `0` is refused by `machines.Load` and by `config.Load`, because canopy
-   refuses it (a status format reads `0` as unset).
+8. `machine add 0` exits 1 before any command runs, because canopy refuses the name (a
+   status format reads `0` as unset). An inventory that already holds a `0` still loads, so
+   it can be listed and removed.
 9. Every laptop golden in `test/fixtures` still matches.
 
 Edge cases: a box whose canopy predates `canopy remote` (note, exit 0); no grofe installed
@@ -845,7 +847,7 @@ no-op).
 
 Test list: criteria 1 to 4, 6 and 7 in `test/templates.bats`; criterion 5 in
 `internal/machines` (golden and `TestLoginCheck`) and `test/ssh-config.bats`; criterion 8 in
-`internal/machines` and `internal/config`; criterion 9 is the existing fixture tests.
+`internal/machines`; criterion 9 is the existing fixture tests.
 
 Out of scope: moving `pins.canopy`; reloading a real tmux server; the `grofe -r` container
 test (canopy's spec); repainting attached clients when the laptop's theme changes.

@@ -400,3 +400,24 @@ func TestRemoteMachine(t *testing.T) {
 		}
 	})
 }
+
+func TestRemoteTimezoneLocaleValidated(t *testing.T) {
+	dir := t.TempDir()
+	p := writeFile(t, filepath.Join(dir, "a.toml"), "machine = \"remote\"\nscope = \"work/acme\"\nmachineName = \"a\"\n")
+	for name, env := range map[string]map[string]string{
+		"timezone shell": {"ATHOME_TIMEZONE": "UTC; rm -rf /"},
+		"timezone quote": {"ATHOME_TIMEZONE": "Europe/A'ms"},
+		"locale shell":   {"ATHOME_LOCALE": "en_US$(id)"},
+		"locale space":   {"ATHOME_LOCALE": "en US"},
+	} {
+		_, err := config.Load(config.Options{ConfigPath: p, Home: dir, Env: env})
+		key := strings.Fields(name)[0]
+		if !errors.Is(err, config.ErrUsage) || !strings.Contains(err.Error(), key) {
+			t.Errorf("%s: err = %v, want ErrUsage naming %s", name, err, key)
+		}
+	}
+	env := map[string]string{"ATHOME_TIMEZONE": "America/Port-au-Prince", "ATHOME_LOCALE": "sr_RS@latin"}
+	if _, err := config.Load(config.Options{ConfigPath: p, Home: dir, Env: env}); err != nil {
+		t.Errorf("valid values refused: %v", err)
+	}
+}

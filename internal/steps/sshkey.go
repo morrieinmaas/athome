@@ -248,6 +248,7 @@ func skImportBWApply(ctx context.Context, env *Env) error {
 // reports whether Apply should generate a key. Only Apply calls it, never a check.
 func skDecide(ctx context.Context, env *Env) bool {
 	if fileExists(skKeyPath(ctx, env)) {
+		skRemoteUse(env)
 		if env.Cfg.Data["sshKeyAction"] == "" && env.Ask != nil {
 			skSetData(env, "sshKeyAction", env.Ask.Choose("ssh key "+filepath.Base(skKeyPath(ctx, env))+" found:", "use", "use", "generate", "reupload"))
 		}
@@ -275,6 +276,14 @@ func skGenerate(env *Env) string {
 	return env.Cfg.Data["generateSshKey"]
 }
 
+// skRemoteUse pins an existing key to "use" on a remote box: `athome machine add`
+// made it before the bootstrap, so init never asks, rotates or re-uploads it.
+func skRemoteUse(env *Env) {
+	if env.Cfg.Machine == "remote" {
+		skSetData(env, "sshKeyAction", "use")
+	}
+}
+
 func skSetData(env *Env, key, val string) {
 	if env.Cfg.Data == nil {
 		env.Cfg.Data = map[string]string{}
@@ -284,6 +293,7 @@ func skSetData(env *Env, key, val string) {
 
 func skKeygenCheck(ctx context.Context, env *Env) (bool, error) {
 	if fileExists(skKeyPath(ctx, env)) {
+		skRemoteUse(env)
 		if env.Ask != nil && env.Cfg.Data["sshKeyAction"] == "" {
 			return false, nil // Apply asks
 		}

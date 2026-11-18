@@ -781,8 +781,8 @@ Decisions:
 - **A. The export** is `home/dot_zsh/canopy-theme.zsh`, sourced by `dot_zshrc.tmpl` after
   `ssh-nudge.zsh` on every machine: a precmd hook that exports `CANOPY_THEME` as the
   contents of `~/.config/themes/active` when that file is readable, and does nothing
-  otherwise. It is not registered in an ssh login whose environment already holds
-  `CANOPY_THEME` (`$SSH_CONNECTION` set): that value is the laptop's, sent by `SendEnv`, and a
+  otherwise. It is not registered in an ssh login shell (`$SSH_CONNECTION` set, `$TMUX` and `$GROFE`
+  unset) whose environment already holds `CANOPY_THEME`: that value is the laptop's, sent by `SendEnv`, and a
   `tmux attach` from that shell must carry it, not the box's own theme. This replaces the
   earlier plan to export the basename of `$CANOPY_STATE/current/theme`.
 - **B. `canopy remote set`** is a chezmoi script, `run_after_31-canopy-remote.sh.tmpl`,
@@ -799,8 +799,10 @@ Decisions:
   loads the files at its next start. A failed `set` is a warning; the apply goes on.
 - **C. Real tmux only.** The generated `~/.ssh/athome/config` gains `SendEnv CANOPY_THEME`
   in every machine block, after `ForwardAgent`, and not in `Box.Login`'s temp config. The
-  remote-box script's sshd drop-in gains `AcceptEnv CANOPY_THEME`, the only variable it
-  accepts. `grofe -r` needs neither: its attach hello carries the client's environment and
+  remote-box script's sshd drop-in gains `AcceptEnv CANOPY_THEME` (added to any `AcceptEnv`
+  the main `sshd_config` has, such as Debian's `LANG LC_*`). When `sshd -t` fails after the
+  drop-in changed, the previous drop-in is written back rather than removed, so a box that
+  had the hardening keeps it. `grofe -r` needs neither: its attach hello carries the client's environment and
   canopy's `update-environment[90]` entry picks the name up. athome does not manage sshd on a
   macOS box, so there `AcceptEnv CANOPY_THEME` is a documented manual line.
 - **D.** `~/.local/bin/theme` and `~/.config/themes/` are not ignored on a remote machine;
@@ -819,16 +821,20 @@ Acceptance criteria:
    nothing and exits 0; any other failure prints `grofe reload failed (<output>)` and exits 0.
 3. Without `canopy-remote` it exits 0 with the note; without grofe it sets and exits 0.
 4. The remote-box script's drop-in is exactly `PasswordAuthentication no`,
-   `KbdInteractiveAuthentication no`, `PermitRootLogin no`, `AcceptEnv CANOPY_THEME`.
+   `KbdInteractiveAuthentication no`, `PermitRootLogin no`, `AcceptEnv CANOPY_THEME`. With
+   `sshd -t` failing, an existing drop-in is written back and none is removed.
 5. The generated ssh config golden has `SendEnv CANOPY_THEME` in each block, and
    `ssh -G` reports `sendenv CANOPY_THEME`; the login config has no `SendEnv`.
 6. `dot_zshrc.tmpl` sources `canopy-theme.zsh` for every machine type. Sourced under
    `zsh -f`, its precmd leaves `CANOPY_THEME` unset with no `active` file and exports each
    new name after `active` changes; with `SSH_CONNECTION` and `CANOPY_THEME=everforest` set
-   it keeps `everforest`, and with `SSH_CONNECTION` alone it exports the file's name.
+   it keeps `everforest`, and with `SSH_CONNECTION` alone it exports the file's name, and
+   so does a pane (`TMUX` or `GROFE` set) even with both.
 7. `chezmoi managed` for a remote machine lists `.local/bin/theme`,
    `.config/themes/registry.sh` and `.config/themes/apply-tmux.sh`, as for a laptop.
-8. Every laptop golden in `test/fixtures` still matches.
+8. A box named `0` is refused by `machines.Load` and by `config.Load`, because canopy
+   refuses it (a status format reads `0` as unset).
+9. Every laptop golden in `test/fixtures` still matches.
 
 Edge cases: a box whose canopy predates `canopy remote` (note, exit 0); no grofe installed
 (no reload); no grofe server running (silent); a grofe reload that rejects a file
@@ -838,8 +844,8 @@ documented); an ssh login without `SendEnv` (the box's own theme, so `follow-the
 no-op).
 
 Test list: criteria 1 to 4, 6 and 7 in `test/templates.bats`; criterion 5 in
-`internal/machines` (golden and `TestLoginCheck`) and `test/ssh-config.bats`; criterion 8 is
-the existing fixture tests.
+`internal/machines` (golden and `TestLoginCheck`) and `test/ssh-config.bats`; criterion 8 in
+`internal/machines` and `internal/config`; criterion 9 is the existing fixture tests.
 
 Out of scope: moving `pins.canopy`; reloading a real tmux server; the `grofe -r` container
 test (canopy's spec); repainting attached clients when the laptop's theme changes.

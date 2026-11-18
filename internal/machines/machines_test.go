@@ -35,6 +35,7 @@ func TestValidate(t *testing.T) {
 		{"repos", func(m *Machine) { m.Repos = []string{"../x"} }},
 		{"repos", func(m *Machine) { m.Repos = []string{"a", "a"} }},
 		{"name", func(m *Machine) { m.Name = "local" }},
+		{"name", func(m *Machine) { m.Name = "0" }},
 		{"jump", func(m *Machine) { m.Jump = "a b" }},
 		{"athome", func(m *Machine) { m.Athome = "0.4" }},
 		{"home", func(m *Machine) { m.Home = "relative" }},

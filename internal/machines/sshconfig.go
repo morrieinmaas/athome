@@ -60,7 +60,7 @@ func block(m Machine, laptopKeyFile string, login bool) string {
 		line("ForwardAgent no")
 	}
 	if !login {
-		// canopy on the box follows the laptop's theme on attach; sshd there accepts only this name.
+		// canopy on the box follows the laptop's theme on attach; the box's sshd drop-in accepts it.
 		line("SendEnv CANOPY_THEME")
 	}
 	line("HostKeyAlias %s", m.Name)

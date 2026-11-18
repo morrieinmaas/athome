@@ -403,15 +403,51 @@ run_canopy_remote() {
   run env -u CANOPY_STATE -u XDG_STATE_HOME -u XDG_CONFIG_HOME HOME="$TMP/home" bash "$1"
 }
 
-@test "canopy remote: renders only on a remote machine, on either OS" {
+@test "canopy remote: renders only on a remote machine, with no OS branch" {
   s=.chezmoiscripts/run_after_31-canopy-remote.sh.tmpl
-  for os in linux darwin; do
-    for t in personal work; do
-      [ -z "$(render "$t" "$s" "$os" | tr -d '[:space:]')" ]
-    done
-    render remote "$s" "$os" >"$TMP/cr.sh"
-    bash -n "$TMP/cr.sh"
-    shellcheck -S warning -x "$TMP/cr.sh" 2>/dev/null || ! command -v shellcheck >/dev/null
+  for t in personal work; do
+    [ -z "$(render "$t" "$s" | tr -d '[:space:]')" ]
+  done
+  if grep -q 'chezmoi\.os' "$ROOT/home/$s"; then return 1; fi
+  render remote "$s" >"$TMP/cr.sh"
+  bash -n "$TMP/cr.sh"
+  shellcheck -S warning -x "$TMP/cr.sh" 2>/dev/null || ! command -v shellcheck >/dev/null
+}
+
+@test "remote-box script: a failing sshd -t puts back the drop-in that was there" {
+  render remote .chezmoiscripts/run_onchange_after_30-remote-box.sh.tmpl linux >"$TMP/box.sh"
+  mkdir "$TMP/home" "$TMP/stubs"
+  # sudo cat answers with an old drop-in; sshd -t fails; tee logs what it writes.
+  cat >"$TMP/stubs/sudo" <<STUB
+#!/bin/sh
+case "\$1" in
+  sshd) exit 1 ;;
+  mkdir) exit 0 ;;
+  cat) printf 'PermitRootLogin no\n'; exit 0 ;;
+  tee) { printf 'tee:'; cat; } >>"$TMP/calls"; exit 0 ;;
+  *) printf '%s\n' "\$*" >>"$TMP/calls"; exit 0 ;;
+esac
+STUB
+  chmod +x "$TMP/stubs/sudo"
+  printf '#!/bin/sh\nexit 0\n' >"$TMP/stubs/systemctl"
+  chmod +x "$TMP/stubs/systemctl"
+  HOME="$TMP/home" PATH="$TMP/stubs:$PATH" run bash "$TMP/box.sh"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"put the previous one back"* ]]
+  # the new drop-in, then the old one written back last
+  [ "$(grep -c '^tee:' "$TMP/calls")" = 2 ]
+  [ "$(grep '^tee:' "$TMP/calls" | tail -n 1)" = 'tee:PermitRootLogin no' ]
+  if grep -q '^rm -f' "$TMP/calls"; then return 1; fi
+}
+
+@test "canopy-theme.zsh: a pane inside grofe or tmux follows this machine's theme even over ssh" {
+  command -v zsh >/dev/null || skip "zsh not installed"
+  mkdir -p "$TMP/home/.config/themes"
+  printf 'gruvbox\n' >"$TMP/home/.config/themes/active"
+  for mux in TMUX=/tmp/x,1,0 GROFE=1; do
+    run env HOME="$TMP/home" SSH_CONNECTION="10.0.0.1 1 10.0.0.2 22" CANOPY_THEME=everforest "$mux" \
+      zsh -f -c 'source "$1"; for f in $precmd_functions; do $f; done; print -r -- "$CANOPY_THEME"' _ "$ROOT/home/dot_zsh/canopy-theme.zsh"
+    [ "$output" = gruvbox ]
   done
 }
 

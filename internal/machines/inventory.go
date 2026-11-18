@@ -54,8 +54,8 @@ func (m Machine) Validate() error {
 	bad := func(field, why string) error {
 		return fmt.Errorf("machine %s: %s: %s", m.Name, field, why)
 	}
-	if !config.MachineNameRe.MatchString(m.Name) || m.Name == "local" {
-		return bad("name", fmt.Sprintf("%q must match %s and not be local", m.Name, config.MachineNameRe))
+	if !config.MachineNameRe.MatchString(m.Name) || m.Name == "local" || m.Name == "0" {
+		return bad("name", fmt.Sprintf("%q must match %s and not be local or 0 (canopy reads 0 as unset)", m.Name, config.MachineNameRe))
 	}
 	if !config.ScopeRe.MatchString(m.Scope) || slices.ContainsFunc(strings.Split(m.Scope, "/"), func(s string) bool { return s == "." || s == ".." }) {
 		return bad("scope", fmt.Sprintf("%q must be work/, personal/ or sidebiz/ followed by path segments of [A-Za-z0-9._-]", m.Scope))

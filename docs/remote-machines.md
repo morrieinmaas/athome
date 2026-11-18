@@ -137,7 +137,8 @@ canopy runs the box's own `theme <name>` when the box knows that theme and is no
 on it. So a box follows the laptop's theme on each attach, not live while you stay attached.
 
 - `grofe -r` sends the client's environment itself; nothing else is needed.
-- Real tmux over plain ssh needs ssh to carry the variable. A box shell that arrived with it keeps it rather than exporting the box's own theme, so `tmux attach` from there carries the laptop's. The generated
+- Real tmux over plain ssh needs ssh to carry the variable. A box login shell that arrived with it keeps it rather than exporting
+  the box's own theme, so `tmux attach` from there carries the laptop's. The generated
   `~/.ssh/athome/config` has `SendEnv CANOPY_THEME` in each box's block, and on a Linux box
   the sshd drop-in `/etc/ssh/sshd_config.d/10-athome.conf` has `AcceptEnv CANOPY_THEME`. athome
   does not manage sshd on a macOS box: add `AcceptEnv CANOPY_THEME` to its sshd config by

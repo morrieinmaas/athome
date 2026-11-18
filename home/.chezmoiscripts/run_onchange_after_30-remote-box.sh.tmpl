@@ -21,14 +21,16 @@ warn() { echo "!! remote box: $*" >&2; }
 # ── sshd: key-only logins, no root ───────────────────────────────────────────
 # AcceptEnv CANOPY_THEME: the laptop sends its theme name (SendEnv in its
 # generated ssh config), so a real tmux attached over plain ssh can follow it;
-# canopy checks the value before using it. grofe -r carries it without this.
+# canopy checks the value before using it. It adds to any AcceptEnv sshd_config
+# already has. grofe -r carries the name without this.
 dropin=/etc/ssh/sshd_config.d/10-athome.conf
 want="PasswordAuthentication no
 KbdInteractiveAuthentication no
 PermitRootLogin no
 AcceptEnv CANOPY_THEME"
 
-if [ "$(sudo cat "$dropin" 2>/dev/null)" != "$want" ]; then
+old="$(sudo cat "$dropin" 2>/dev/null)"
+if [ "$old" != "$want" ]; then
   if sudo mkdir -p /etc/ssh/sshd_config.d && printf '%s\n' "$want" | sudo tee "$dropin" >/dev/null; then
     if sudo sshd -t; then
       if systemctl is-active --quiet sshd; then
@@ -40,8 +42,13 @@ if [ "$(sudo cat "$dropin" 2>/dev/null)" != "$want" ]; then
       fi
       echo "==> sshd hardened ($dropin)"
     else
-      sudo rm -f "$dropin"
-      warn "sshd -t rejected $dropin; removed it again, sshd left as it was"
+      if [ -n "$old" ]; then
+        printf '%s\n' "$old" | sudo tee "$dropin" >/dev/null
+        warn "sshd -t failed with the new $dropin; put the previous one back, sshd left as it was"
+      else
+        sudo rm -f "$dropin"
+        warn "sshd -t rejected $dropin; removed it again, sshd left as it was"
+      fi
     fi
   else
     warn "could not write $dropin"

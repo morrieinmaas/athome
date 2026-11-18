@@ -380,6 +380,7 @@ func TestRemoteMachine(t *testing.T) {
 		"leading dash":   "machine = \"remote\"\nscope = \"work/a\"\nmachineName = \"-x\"\n",
 		"dotted name":    "machine = \"remote\"\nscope = \"work/a\"\nmachineName = \"a.b\"\n",
 		"local name":     "machine = \"remote\"\nscope = \"work/a\"\nmachineName = \"local\"\n",
+		"zero name":      "machine = \"remote\"\nscope = \"work/a\"\nmachineName = \"0\"\n",
 		"trailing slash": "machine = \"remote\"\nscope = \"work/a/\"\nmachineName = \"a\"\n",
 	} {
 		t.Run("refused: "+name, func(t *testing.T) {

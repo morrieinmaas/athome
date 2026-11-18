@@ -1,0 +1,34 @@
+name: sshd
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  drill:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: build the sshd image
+        run: docker build -t athome-sshd test/sshd
+      - name: start sshd with a fresh key
+        run: |
+          ssh-keygen -q -t ed25519 -N '' -C drill -f "$RUNNER_TEMP/drill_key"
+          docker run -d --name athome-sshd -p 127.0.0.1:2222:22 \
+            -e AUTHORIZED_KEY="$(cat "$RUNNER_TEMP/drill_key.pub")" athome-sshd
+          for i in $(seq 1 30); do
+            if ssh-keyscan -t ed25519 -p 2222 127.0.0.1 2>/dev/null | grep -q ssh-ed25519; then exit 0; fi
+            sleep 1
+          done
+          docker logs athome-sshd
+          exit 1
+      - name: run the drill
+        run: go test -race -count=1 -run Sshd -v ./internal/machines/
+        env:
+          ATHOME_SSHD_ADDR: 127.0.0.1:2222
+          ATHOME_SSHD_KEY: ${{ runner.temp }}/drill_key

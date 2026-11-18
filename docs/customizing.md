@@ -99,6 +99,32 @@ Per-machine values (names, emails, URLs, flags) live in chezmoi `[data]`.
 Values are cached in `~/.config/chezmoi/chezmoi.toml` after first run. To change
 one later, edit that file directly (it's your private cache, not tracked).
 
+## Context colours and the remote prompt
+
+Each context has one colour, an ANSI colour name, in `home/.chezmoidata/contextColors.toml`:
+
+```toml
+[contextColors]
+    work     = "yellow"
+    personal = "green"
+    sidebiz  = "magenta"
+```
+
+ANSI colours come from your terminal's palette, so they follow your terminal theme. On a
+[remote machine](remote-machines.md) the starship prompt's host segment becomes
+`<machine> · <scope>` in the scope's context colour; on the laptop the prompt is unchanged.
+
+## Headless packages
+
+A [remote machine](remote-machines.md) skips GUI packages. In `packages.yaml`, a GUI app or a
+piece of the desktop stack in a shared list is written as a map instead of a plain name:
+
+```yaml
+  - {name: ghostty, gui: true}
+```
+
+Remote machines skip those entries and every macOS cask; everything else installs as usual.
+
 ## Bumping grofe or canopy
 
 One edit: change `grofe` (a release tag such as `v0.3.1`) or `canopy` (a tag or commit) in

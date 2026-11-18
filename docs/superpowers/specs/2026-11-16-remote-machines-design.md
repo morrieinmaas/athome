@@ -433,8 +433,9 @@ Decisions:
   the inventory exits 1 (`machine <name> already exists`). `--forward-agent` prints
   `warning: root on <name> can use your laptop key while you are attached`. The steps run
   through `steps.Execute`, each a `steps.Step` whose check runs before its apply, in this
-  order (the box key moves before the bootstrap, because the box's gitconfig rewrites
-  GitHub https URLs to ssh, so the bootstrap's clones need a registered key):
+  order (the box key moves before the bootstrap, because the bootstrap's chezmoi apply
+  renders the signing config and `allowed_signers` from whichever key file exists then,
+  and the box's first push needs the key registered):
   1. `machine-validate`: the entry, the local scope check, the `Include` line, rbw
      unlocked (`keys.ErrLocked`'s message otherwise, since step 4 needs the break-glass
      key). Check: none.

@@ -65,6 +65,29 @@ There are no per-repo overrides to forget. A side-business repo cloned into
 your answers at install time and are never written to the repo. Repos outside
 those three folders commit with your noreply email and aren't signed.
 
+## Remote machines
+
+A third machine type, `machineType = "remote"`, is for [remote dev
+machines](remote-machines.md). It is never asked in the form: `athome machine add` on the
+laptop writes a `bootstrap.toml` with it, the box's `scope` (e.g. `work/acme`) and its
+`machineName`, and runs `athome init` on the box with that file. On a remote machine:
+
+- `run_03` creates only `~/<scope>`, with the context's `use ctx` envrc and git identity.
+- The machine is headless. `packages.yaml` entries tagged `gui: true` and every macOS cask
+  are skipped, the desktop scripts render empty, and the desktop configs are ignored.
+- init never runs `bw-setup`, never asks to restore the vault and never generates an ssh
+  key; the box's own key comes from `machine add`.
+- `~/.zshenv` and `~/.config/environment.d/athome.conf` set `ATHOME_MACHINE`,
+  `ATHOME_SCOPE` and `ATHOME_CONTEXT_COLOR`; the starship prompt shows
+  `<machine> · <scope>` in the context's colour.
+- `run_onchange_after_30` hardens sshd (keys only, no root login), turns on lingering, sets
+  the laptop's timezone and locale, and enables `grofe-restore.service`, which starts
+  `grofe start-server --restore` at boot.
+
+On the laptop, `~/.ssh/config` includes `~/.ssh/athome/config`, which athome writes from the
+inventory (`~/.config/athome/machines.toml`, mirrored into the secrets vault): one `Host`
+block per machine, with the host key pinned in `~/.ssh/athome/known_hosts`.
+
 ## SSH keys and signing
 
 Each machine gets one passphrase-less ed25519 key, `~/.ssh/<hostname>_ed25519`,

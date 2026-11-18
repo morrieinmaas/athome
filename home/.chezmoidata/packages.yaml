@@ -211,7 +211,7 @@ linux:
 
     - {name: matugen-bin, gui: true}                    # wallpaper-derived palettes for anything that wants them. NOTE: Noctalia v5 generates its own palette internally (theme.source = "wallpaper"), so this is no longer required BY Noctalia; kept as a general-purpose tool.
     - {name: bibata-cursor-theme-bin, gui: true}        # the cursor niri's config names (Bibata-Modern-Classic); prebuilt, not in the official repos
-    - nordvpn-bin                    # NordVPN CLI + nordvpnd. Provides `nordvpn`; run_once_08 enables the daemon, the group and autoconnect.
+    - {name: nordvpn-bin, gui: true} # NordVPN CLI + nordvpnd (flagged so a remote box skips the commercial VPN). Provides `nordvpn`; run_once_08 enables the daemon, the group and autoconnect.
     - {name: nordvpn-gui-bin, gui: true}                # NordVPN's own Linux GUI (upstream .deb repacked). Depends on `nordvpn`, so it MUST come after nordvpn-bin. x86_64 only upstream — install_one just logs a miss on aarch64.
     - bandwhich                      # needs root/caps; kept native (matches the brew formula on macOS)
     - gping                          # ICMP; kept native
@@ -349,7 +349,7 @@ fedora:
     - {name: netbird-ui, gui: true}
 
     # ── nordvpn (upstream repo, enabled by run_onchange_02 before this list) ──
-    - nordvpn                      # CLI + nordvpnd; run_once_08 enables the daemon, the group and autoconnect
+    - {name: nordvpn, gui: true}   # CLI + nordvpnd (flagged so a remote box skips the commercial VPN); run_once_08 enables the daemon, the group and autoconnect
     - {name: nordvpn-gui, gui: true}                  # NordVPN's own GUI. x86_64 only upstream.
     # Pulled via MISE on Fedora (release binaries via ubi/github/cargo/go — SAME
     # as Arch + macOS, not duplicated here): matugen,

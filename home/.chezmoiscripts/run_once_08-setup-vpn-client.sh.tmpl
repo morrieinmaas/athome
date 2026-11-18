@@ -41,8 +41,10 @@ fi
 echo "==> mesh_provider={{ dig "mesh_provider" "netbird" . }}: skipping NetBird install"
 {{- end }}
 
+{{ if ne .machineType "remote" -}}
 ls -d /Applications/NordVPN.app   >/dev/null 2>&1 && echo "==> NordVPN.app present"   || true
 ls -d /Applications/ProtonVPN.app >/dev/null 2>&1 && echo "==> ProtonVPN.app present" || true
+{{- end }}
 {{- else if eq .chezmoi.os "linux" -}}
 # ── Linux ───────────────────────────────────────────────────────────────────
 # netbird is installed by run_onchange_02 (packages.yaml): AUR on Arch, COPR/dnf
@@ -62,6 +64,7 @@ fi
 echo "==> mesh_provider={{ dig "mesh_provider" "netbird" . }}: skipping NetBird service"
 {{- end }}
 
+{{ if ne .machineType "remote" -}}
 # NordVPN: enable group + daemon + auto-connect
 if command -v nordvpn >/dev/null 2>&1; then
   sudo systemctl enable --now nordvpnd 2>/dev/null || true
@@ -116,6 +119,7 @@ else
   [[ -n "${ATHOME_FOLLOWUP_LOG:-}" ]] && printf '  • %s\n' "$msg" >> "$ATHOME_FOLLOWUP_LOG"
 fi
 {{- end }}
+{{- end }}
 
 cat <<'EOF'
 
@@ -135,6 +139,7 @@ echo "  #   sudo netbird up --management-url https://<netbird-host> --setup-key 
 echo "  # See docs/netbird-cloud.md for details + the self-host exit."
 {{- end }}
 
+{{ if ne .machineType "remote" -}}
 cat <<'EOF'
 
   # ── Commercial (NordVPN) ────────────────────────────────────────────────
@@ -146,3 +151,4 @@ cat <<'EOF'
                 --password "$(rbw get nordvpn-password)"
   chezmoi apply        # re-runs this script → nordvpn set autoconnect on
 EOF
+{{ end -}}

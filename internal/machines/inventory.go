@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
+	"github.com/morrieinmaas/athome/internal/config"
 )
 
 // Machine is one inventory entry. Name is the table key, not a field.
@@ -37,8 +38,6 @@ type Machine struct {
 const defaultPort = 22
 
 var (
-	nameRe     = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,62}$`)
-	scopeRe    = regexp.MustCompile(`^(work|personal|sidebiz)(/[A-Za-z0-9._-]+)+$`)
 	targetRe   = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9.-]*$`)
 	userRe     = regexp.MustCompile(`^[a-z_][a-z0-9_.-]*$`)
 	jumpRe     = regexp.MustCompile(`^([A-Za-z0-9][A-Za-z0-9._-]*@)?[A-Za-z0-9][A-Za-z0-9._-]*(:[0-9]{1,5})?$`)
@@ -55,10 +54,10 @@ func (m Machine) Validate() error {
 	bad := func(field, why string) error {
 		return fmt.Errorf("machine %s: %s: %s", m.Name, field, why)
 	}
-	if !nameRe.MatchString(m.Name) || m.Name == "local" {
-		return bad("name", fmt.Sprintf("%q must match %s and not be local", m.Name, nameRe))
+	if !config.MachineNameRe.MatchString(m.Name) || m.Name == "local" {
+		return bad("name", fmt.Sprintf("%q must match %s and not be local", m.Name, config.MachineNameRe))
 	}
-	if !scopeRe.MatchString(m.Scope) || slices.ContainsFunc(strings.Split(m.Scope, "/"), func(s string) bool { return s == "." || s == ".." }) {
+	if !config.ScopeRe.MatchString(m.Scope) || slices.ContainsFunc(strings.Split(m.Scope, "/"), func(s string) bool { return s == "." || s == ".." }) {
 		return bad("scope", fmt.Sprintf("%q must be work/, personal/ or sidebiz/ followed by path segments of [A-Za-z0-9._-]", m.Scope))
 	}
 	if !targetRe.MatchString(m.Target) {

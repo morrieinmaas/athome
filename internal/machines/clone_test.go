@@ -218,7 +218,7 @@ func TestCloneAndKeyScriptsOnDisk(t *testing.T) {
 	}
 	scope := filepath.Join(home, "work", "acme")
 	for i := 0; i < 2; i++ { // the second run leaves the clone alone
-		if out, err := shRun(t, home, cloneScript, githubKnownHosts, scope, "api", src); err != nil {
+		if out, err := shRun(t, home, cloneScript, githubKnownHosts, scope, "api", src, "dev"); err != nil {
 			t.Fatal(out, err)
 		}
 	}
@@ -263,7 +263,7 @@ func TestCloneScriptPinsGitHubHostKeys(t *testing.T) {
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	scope := filepath.Join(home, "work", "acme")
-	if out, err := shRun(t, home, cloneScript, githubKnownHosts, scope, "api", "git@github.com:acme/api.git"); err != nil {
+	if out, err := shRun(t, home, cloneScript, githubKnownHosts, scope, "api", "git@github.com:acme/api.git", "dev"); err != nil {
 		t.Fatal(out, err)
 	}
 	kh := filepath.Join(home, ".ssh", "athome_github_known_hosts")
@@ -281,7 +281,9 @@ func TestCloneScriptPinsGitHubHostKeys(t *testing.T) {
 	if err != nil {
 		t.Fatalf("%q: %v", b, err)
 	}
-	for _, want := range []string{"UserKnownHostsFile=" + kh, "StrictHostKeyChecking=yes"} {
+	// Only the box's own key is offered: no id_ed25519 fallback.
+	key := filepath.Join(home, ".ssh", "dev_ed25519")
+	for _, want := range []string{"UserKnownHostsFile=" + kh, "StrictHostKeyChecking=yes", "IdentitiesOnly=yes", "-i\n" + key + "\n"} {
 		if !strings.Contains(string(out), want) {
 			t.Errorf("GIT_SSH_COMMAND lacks %q: %s", want, b)
 		}

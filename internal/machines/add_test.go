@@ -426,3 +426,17 @@ func TestAddLeftBehindOmitsGrofeWhenNotInstalled(t *testing.T) {
 		t.Errorf("left-behind list lost the other steps: %v", err)
 	}
 }
+
+// A login banner before the probe's output must not be taken for the home.
+func TestParseHostProbeIgnoresBanners(t *testing.T) {
+	out := "Welcome to Ubuntu\r\nlast login: today\n" + hostProbeMark + "\n/home/dev\ndev.example.org\n"
+	home, host, ok := parseHostProbe(out)
+	if !ok || home != "/home/dev" || host != "dev.example.org" {
+		t.Errorf("got %q %q %v", home, host, ok)
+	}
+	for _, bad := range []string{"", "/home/dev\ndev\n", hostProbeMark + "\n/home/dev\n"} {
+		if _, _, ok := parseHostProbe(bad); ok {
+			t.Errorf("%q parsed", bad)
+		}
+	}
+}

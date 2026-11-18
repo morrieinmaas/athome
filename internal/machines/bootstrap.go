@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"regexp"
 	"strings"
 
+	"github.com/morrieinmaas/athome/internal/config"
 	"github.com/morrieinmaas/athome/internal/run"
 	"github.com/morrieinmaas/athome/internal/steps"
 )
@@ -27,11 +27,6 @@ func laptopTimezone() string {
 	}
 	return tz
 }
-
-var (
-	timezoneRe = regexp.MustCompile(`^[A-Za-z0-9_+./-]+$`)
-	localeRe   = regexp.MustCompile(`^[A-Za-z0-9_.@-]+$`)
-)
 
 // tomlString is s as a TOML basic string: quotes, backslashes and control
 // characters escaped, so no value can end its string or start another key.
@@ -86,10 +81,10 @@ func BootstrapTOML(data map[string]any, m Machine, timezone, locale string) stri
 	case "sidebiz":
 		list = append(list, kv{"sidebizEmail", str("sidebizEmail")}, kv{"sidebizName", str("sidebizName")})
 	}
-	if !timezoneRe.MatchString(timezone) {
+	if !config.TimezoneRe.MatchString(timezone) {
 		timezone = ""
 	}
-	if !localeRe.MatchString(locale) {
+	if !config.LocaleRe.MatchString(locale) {
 		locale = ""
 	}
 	list = append(list,
@@ -121,10 +116,11 @@ const (
 	readBootstrapScript = `cat "$HOME/.config/athome/bootstrap.toml"`
 	uploadScript        = `umask 077; mkdir -p "$HOME/.config/athome" && cat > "$HOME/.config/athome/bootstrap.toml" && chmod 600 "$HOME/.config/athome/bootstrap.toml"`
 	checkoutScript      = `d="$HOME/.local/share/athome"
+u=https://github.com/morrieinmaas/athome
 if [ -d "$d/.git" ]; then
-  git -C "$d" fetch --quiet --force --tags origin && git -C "$d" checkout --quiet --detach "refs/tags/$1"
+  git -C "$d" remote set-url origin "$u" && git -C "$d" fetch --quiet --force --tags origin && git -C "$d" checkout --quiet --force --detach "refs/tags/$1"
 else
-  mkdir -p "$HOME/.local/share" && git clone --quiet --branch "$1" https://github.com/morrieinmaas/athome "$d"
+  mkdir -p "$HOME/.local/share" && git clone --quiet --branch "$1" "$u" "$d"
 fi`
 	bootstrapScript   = `cd "$HOME/.local/share/athome" && ATHOME_VERSION="$1" ./scripts/bootstrap.sh --config "$HOME/.config/athome/bootstrap.toml"`
 	bootstrapScriptNI = bootstrapScript + ` --non-interactive`
@@ -180,10 +176,10 @@ func bootstrapDone(ctx context.Context, d Deps, m Machine) (bool, error) {
 // box's bootstrap. interactive runs it with ssh -t so sudo can prompt; otherwise
 // it runs with ssh -T and --non-interactive, its output going to out.
 func bootstrapBox(ctx context.Context, d Deps, m Machine, interactive bool, out io.Writer) error {
-	if tz := laptopTimezone(); tz != "" && !timezoneRe.MatchString(tz) {
+	if tz := laptopTimezone(); tz != "" && !config.TimezoneRe.MatchString(tz) {
 		d.say("note: timezone %q is not a zoneinfo name, so it is left out of the box's answers", tz)
 	}
-	if loc := os.Getenv("LANG"); loc != "" && !localeRe.MatchString(loc) {
+	if loc := os.Getenv("LANG"); loc != "" && !config.LocaleRe.MatchString(loc) {
 		d.say("note: locale %q is not a locale name, so it is left out of the box's answers", loc)
 	}
 	r := d.remote()

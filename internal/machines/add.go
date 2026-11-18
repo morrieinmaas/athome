@@ -43,11 +43,6 @@ func (d Deps) refresh() error {
 	return RefreshTo(d.Home, filepath.Base(keys.LaptopKey(d.Home, d.Host)), d.outOrDiscard())
 }
 
-// updateInventory reloads the inventory, applies change to it, saves it and
-// refreshes the generated ssh config and projects file. change reports whether
-// it altered the list; when it did not, nothing is written. Applying only this
-// command's change to a fresh load keeps a machine another command added
-// meanwhile.
 // boxConfig readies the generated ssh config for a command that reaches boxes:
 // ~/.ssh/config must include it, and it is rewritten so every machine has its
 // pinned Host block (a missing file would let ssh resolve the bare name outside it).
@@ -58,6 +53,11 @@ func (d Deps) boxConfig() error {
 	return d.refresh()
 }
 
+// updateInventory reloads the inventory, applies change to it, saves it and
+// refreshes the generated ssh config and projects file. change reports whether
+// it altered the list; when it did not, nothing is written. Applying only this
+// command's change to a fresh load keeps a machine another command added
+// meanwhile.
 func (d Deps) updateInventory(change func(ms []Machine) ([]Machine, bool, error)) (bool, error) {
 	ms, err := Load(d.Home)
 	if err != nil {
@@ -126,7 +126,9 @@ func reachErr(name string, res run.Result) error {
 }
 
 const (
-	hostProbeScript = `printf "%s\n" "$HOME"; uname -n`
+	// hostProbeMark precedes the values, so a shell banner before it is ignored.
+	hostProbeMark   = "athome-host-probe"
+	hostProbeScript = `echo ` + hostProbeMark + `; printf "%s\n" "$HOME"; uname -n`
 	readPubScript   = `cat "$HOME/.ssh/$1_ed25519.pub"`
 	boxKeyScript    = prepareSSH + `k="$HOME/.ssh/$1_ed25519"
 [ -f "$k" ] || ssh-keygen -q -t ed25519 -N '' -C "athome@$2" -f "$k" || exit 1
@@ -139,8 +141,6 @@ cat "$k.pub"`
 
 func never(context.Context, *steps.Env) (bool, error) { return false, nil }
 
-// AddSteps are the eight steps of machine add, in order. m is the machine
-// being added (its pending entry when resuming); the steps fill in Home and Hostname.
 // addRun is what the add steps share. m follows the steps: machine-validate
 // resolves the GitHub account, machine-host-key records home and hostname.
 type addRun struct {
@@ -159,6 +159,8 @@ func (a *addRun) savePending() error {
 	return a.d.refresh()
 }
 
+// AddSteps are the eight steps of machine add, in order. m is the machine
+// being added (its pending entry when resuming); the steps fill in Home and Hostname.
 func AddSteps(d Deps, m *Machine) []steps.Step {
 	a := &addRun{d: d, m: m, r: d.remote(), gh: d.gh(*m)}
 	return []steps.Step{
@@ -220,12 +222,12 @@ func (a *addRun) hostKeyApply(ctx context.Context, e *steps.Env) error {
 	if err := okOrErr("read home and hostname", m.Name, res, err); err != nil {
 		return err
 	}
-	lines := strings.Split(strings.TrimSpace(res.Stdout), "\n")
-	if len(lines) < 2 {
+	home, hostname, ok := parseHostProbe(res.Stdout)
+	if !ok {
 		return fmt.Errorf("%s answered %q, want its home and hostname", m.Name, strings.TrimSpace(res.Stdout))
 	}
-	m.Home = strings.TrimSpace(lines[0])
-	m.Hostname, _, _ = strings.Cut(strings.TrimSpace(lines[1]), ".")
+	m.Home = home
+	m.Hostname, _, _ = strings.Cut(hostname, ".")
 	if err := m.Validate(); err != nil {
 		return err
 	}
@@ -236,6 +238,16 @@ func (a *addRun) hostKeyApply(ctx context.Context, e *steps.Env) error {
 		a.d.say("pinned host key (trust on first use) for %s: %s", m.Name, strings.TrimSpace(res.Stdout))
 	}
 	return a.savePending()
+}
+
+// parseHostProbe reads home and hostname from the lines after hostProbeMark.
+func parseHostProbe(out string) (home, hostname string, ok bool) {
+	lines := strings.Split(strings.TrimSpace(strings.ReplaceAll(out, "\r", "")), "\n")
+	i := slices.Index(lines, hostProbeMark)
+	if i < 0 || len(lines) < i+3 {
+		return "", "", false
+	}
+	return strings.TrimSpace(lines[i+1]), strings.TrimSpace(lines[i+2]), true
 }
 
 // boxKeyCheck: the box's key is on the account as both kinds and logs in

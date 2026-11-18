@@ -178,12 +178,14 @@ if command -v dnf >/dev/null 2>&1 && ! command -v pacman >/dev/null 2>&1; then
   # Hardcoded rather than added as a `fedora.repos` data key: it is the only
   # third-party non-COPR repo we need, and one entry doesn't earn a mechanism.
   # Must run BEFORE the dnf loop below, which installs nordvpn + nordvpn-gui.
+  {{ if not $remote -}}
   if ! dnf repolist 2>/dev/null | grep -q '^nordvpn'; then
     echo "==> dnf: enabling the NordVPN repo"
     sudo dnf -y install \
       https://repo.nordvpn.com/yum/nordvpn/centos/noarch/Packages/n/nordvpn-release-1.0.0-1.noarch.rpm \
       || echo "  ! NordVPN repo setup failed — nordvpn/nordvpn-gui below will be skipped" >&2
   fi
+  {{ end -}}
   echo "==> dnf: packages (fedora.dnf)"
   {{ range $pkgs.dnf -}}
   install_one dnf {{ . | quote }}

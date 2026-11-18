@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
+	"github.com/morrieinmaas/athome/internal/config"
 )
 
 func pendingDir(home string) string {
@@ -17,8 +18,8 @@ func pendingDir(home string) string {
 }
 
 func pendingPath(home, name string) (string, error) {
-	if !nameRe.MatchString(name) {
-		return "", fmt.Errorf("machine %s: name: must match %s", name, nameRe)
+	if !config.MachineNameRe.MatchString(name) {
+		return "", fmt.Errorf("machine %s: name: must match %s", name, config.MachineNameRe)
 	}
 	return filepath.Join(pendingDir(home), name+".toml"), nil
 }
@@ -98,8 +99,8 @@ func ListPending(home string) (out []Machine, bad []error, err error) {
 		if !ok {
 			continue
 		}
-		if !nameRe.MatchString(name) {
-			bad = append(bad, &InvalidPendingError{name, fmt.Errorf("name: must match %s", nameRe)})
+		if !config.MachineNameRe.MatchString(name) {
+			bad = append(bad, &InvalidPendingError{name, fmt.Errorf("name: must match %s", config.MachineNameRe)})
 			continue
 		}
 		m, err := LoadPending(home, name)

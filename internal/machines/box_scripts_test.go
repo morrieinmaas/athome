@@ -110,7 +110,11 @@ func TestCheckoutScriptKeepsBoxOnPinnedTag(t *testing.T) {
 		t.Fatal(err)
 	}
 	git(origin, "init", "-q", "-b", "main")
-	git(origin, "commit", "-q", "--allow-empty", "-m", "one")
+	if err := os.WriteFile(filepath.Join(origin, "f"), []byte("pinned\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git(origin, "add", "f")
+	git(origin, "commit", "-q", "-m", "one")
 	git(origin, "tag", "v1.4.0")
 	pinned := git(origin, "rev-parse", "HEAD")
 	git(origin, "commit", "-q", "--allow-empty", "-m", "two")
@@ -121,6 +125,18 @@ func TestCheckoutScriptKeepsBoxOnPinnedTag(t *testing.T) {
 		t.Fatal(err)
 	}
 	git(home, "clone", "-q", origin, d) // on main, at the newest commit
+	// The box's origin points elsewhere and its tree has local edits: the script
+	// puts origin back to the canonical URL (here redirected to the fixture) and discards the edits.
+	git(d, "remote", "set-url", "origin", "https://example.invalid/fork/athome")
+	if err := os.WriteFile(filepath.Join(d, "f"), []byte("local edit\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := filepath.Join(home, "gitconfig")
+	if err := os.WriteFile(cfg, []byte("[url \""+origin+"\"]\n\tinsteadOf = https://github.com/morrieinmaas/athome\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_CONFIG_GLOBAL", cfg)
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 	if out, err := shRun(t, home, checkoutScript, "", "v1.4.0"); err != nil {
 		t.Fatal(out, err)
 	}
@@ -129,5 +145,8 @@ func TestCheckoutScriptKeepsBoxOnPinnedTag(t *testing.T) {
 	}
 	if b := git(d, "branch", "--show-current"); b != "" {
 		t.Errorf("box is on branch %q, want detached", b)
+	}
+	if got, _ := os.ReadFile(filepath.Join(d, "f")); string(got) != "pinned\n" {
+		t.Errorf("local edit survived the checkout: %q", got)
 	}
 }

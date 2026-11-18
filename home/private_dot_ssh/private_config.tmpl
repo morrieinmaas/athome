@@ -33,11 +33,15 @@ Host *
 Host github.com
     HostName github.com
     User git
-    IdentityFile ~/.ssh/id_ed25519
-    IdentityFile ~/.ssh/{{ .chezmoi.hostname }}_ed25519
 {{- if eq .machineType "remote" }}
+    # A box offers its own key only; an id_ed25519 left on it is never tried.
+    IdentityFile ~/.ssh/{{ .chezmoi.hostname }}_ed25519
+    IdentitiesOnly yes
     # The box pins GitHub's published host keys (athome writes the file), so a first
     # git or ssh to GitHub is never trust on first use.
     UserKnownHostsFile ~/.ssh/known_hosts ~/.ssh/athome_github_known_hosts
     StrictHostKeyChecking yes
+{{- else }}
+    IdentityFile ~/.ssh/id_ed25519
+    IdentityFile ~/.ssh/{{ .chezmoi.hostname }}_ed25519
 {{- end }}

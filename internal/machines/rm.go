@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/morrieinmaas/athome/internal/config"
 	"github.com/morrieinmaas/athome/internal/keys"
 	"github.com/morrieinmaas/athome/internal/run"
 )
@@ -69,8 +70,8 @@ func Remove(ctx context.Context, d Deps, name string, force bool) error {
 		if !force {
 			return fmt.Errorf("machine %s not found", name)
 		}
-		if !nameRe.MatchString(name) {
-			return fmt.Errorf("machine %s: name: must match %s", name, nameRe)
+		if !config.MachineNameRe.MatchString(name) {
+			return fmt.Errorf("machine %s: name: must match %s", name, config.MachineNameRe)
 		}
 		m = &Machine{Name: name}
 	}

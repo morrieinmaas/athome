@@ -264,7 +264,7 @@ func (w *world) ssh(c run.Cmd) run.Result {
 		f, _ := os.OpenFile(kh, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 		fmt.Fprintf(f, "%s ssh-ed25519 AAAAFAKEHOSTKEY\n", name)
 		f.Close()
-		return run.Result{Stdout: b.home + "\n" + b.hostname + ".example.org\n"}
+		return run.Result{Stdout: "Welcome to the box\nlast login: yesterday\n" + hostProbeMark + "\n" + b.home + "\n" + b.hostname + ".example.org\n"}
 	case readPubScript:
 		if b.pub == "" {
 			return run.Result{Code: 1, Stderr: "no such file"}

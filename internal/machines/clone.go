@@ -34,7 +34,8 @@ func parseRepo(s string) (url, name string, err error) {
 const (
 	mkWorktreesScript = `mkdir -p "$1/worktrees"`
 	// cloneScript pins GitHub's host keys first: the box's ~/.ssh/config may not be rendered yet.
-	cloneScript      = pinGitHubHosts + `[ -d "$1/$2/.git" ] || GIT_SSH_COMMAND='ssh -o UserKnownHostsFile="$HOME/.ssh/athome_github_known_hosts" -o StrictHostKeyChecking=yes' git clone "$3" "$1/$2"`
+	// It offers only the box's own key ($4 is the box's hostname), never an id_ed25519 left on the box.
+	cloneScript      = pinGitHubHosts + `[ -d "$1/$2/.git" ] || GIT_SSH_COMMAND='ssh -i "$HOME/.ssh/'"$4"'_ed25519" -o IdentitiesOnly=yes -o UserKnownHostsFile="$HOME/.ssh/athome_github_known_hosts" -o StrictHostKeyChecking=yes' git clone "$3" "$1/$2"`
 	miseDetectScript = `cd "$1/$2" || exit 1
 for f in mise.toml .mise.toml .tool-versions; do [ -f "$f" ] && echo yes && exit 0; done
 exit 0`
@@ -72,7 +73,7 @@ func Clone(ctx context.Context, d Deps, repo, machine string) error {
 		}
 	}
 	m := ms[idx]
-	if m.Home == "" {
+	if m.Home == "" || m.Hostname == "" {
 		return fmt.Errorf("machine %s has no home recorded; rerun athome machine add %s", m.Name, m.Name)
 	}
 	if err := d.boxConfig(); err != nil {
@@ -86,7 +87,7 @@ func Clone(ctx context.Context, d Deps, repo, machine string) error {
 	if err := okOrErr("create "+scopeDir+"/worktrees", m.Name, res, err); err != nil {
 		return err
 	}
-	res, err = r.Exec(ctx, m.Name, cloneScript, githubKnownHosts, scopeDir, name, url)
+	res, err = r.Exec(ctx, m.Name, cloneScript, githubKnownHosts, scopeDir, name, url, m.Hostname)
 	if err := okOrErr("clone "+url, m.Name, res, err); err != nil {
 		return err
 	}

@@ -270,3 +270,61 @@ render_ssh_config() {
     cmp "$TMP/ssh-config.$t" "$ROOT/test/fixtures/ssh-config"
   done
 }
+
+# render_with_keys <personal|work|remote> <template under home/> renders it with
+# a HOME that holds both an id_ed25519.pub and the (pinned) fixture host's key.
+render_with_keys() {
+  mkdir -p "$TMP/keyhome/.ssh"
+  printf 'ssh-ed25519 AAAAIDKEY id\n' >"$TMP/keyhome/.ssh/id_ed25519.pub"
+  printf 'ssh-ed25519 AAAABOXKEY box\n' >"$TMP/keyhome/.ssh/fixture_ed25519.pub"
+  { cat "$TMP/$1.toml"; printf '  name_personal = "P"\n  email_personal = "p@example.org"\n  name_work = ""\n  email_work = ""\n  name_sidebiz = ""\n  email_sidebiz = ""\n'; } >"$TMP/keys-$1.toml"
+  perl -pe 's/\.chezmoi\.hostname/"fixture"/g' "$ROOT/home/$2" |
+    HOME="$TMP/keyhome" chezmoi --source "$ROOT/home" --config "$TMP/keys-$1.toml" execute-template
+}
+
+@test "ssh config: remote offers only the box key to GitHub, a laptop keeps both" {
+  block="$(render_ssh_config remote | awk '/^Host github.com$/{f=1;next} f&&/^Host /{exit} f')"
+  [[ "$block" == *"IdentityFile ~/.ssh/fixture_ed25519"* ]]
+  [[ "$block" == *"IdentitiesOnly yes"* ]]
+  [[ "$block" != *"IdentityFile ~/.ssh/id_ed25519"* ]]
+  block="$(render_ssh_config personal | awk '/^Host github.com$/{f=1;next} f&&/^Host /{exit} f')"
+  [[ "$block" == *"IdentityFile ~/.ssh/id_ed25519"* ]]
+  [[ "$block" == *"IdentityFile ~/.ssh/fixture_ed25519"* ]]
+}
+
+@test "gitconfig: remote signs with the box key even when id_ed25519 exists, a laptop prefers id_ed25519" {
+  for f in dot_gitconfig-work.tmpl dot_gitconfig-personal.tmpl dot_gitconfig-sidebiz.tmpl; do
+    [[ "$(render_with_keys remote "$f")" == *"signingkey = $TMP/keyhome/.ssh/fixture_ed25519.pub"* ]]
+    [[ "$(render_with_keys personal "$f")" == *"signingkey = $TMP/keyhome/.ssh/id_ed25519.pub"* ]]
+    [[ "$(render_with_keys work "$f")" == *"signingkey = $TMP/keyhome/.ssh/id_ed25519.pub"* ]]
+  done
+}
+
+@test "allowed_signers: remote lists the box key, a laptop lists id_ed25519" {
+  out="$(render_with_keys remote dot_config/git/allowed_signers.tmpl)"
+  [[ "$out" == *"AAAABOXKEY"* && "$out" != *"AAAAIDKEY"* ]]
+  out="$(render_with_keys personal dot_config/git/allowed_signers.tmpl)"
+  [[ "$out" == *"AAAAIDKEY"* && "$out" != *"AAAABOXKEY"* ]]
+}
+
+@test "vpn client: remote keeps the mesh and renders no commercial VPN, a laptop keeps both" {
+  s=.chezmoiscripts/run_once_08-setup-vpn-client.sh.tmpl
+  printf '  nordvpn_country = ""\n  netbird_management_url = ""\n' | tee -a "$TMP/personal.toml" >>"$TMP/remote.toml"
+  for os in linux darwin; do
+    render remote "$s" "$os" >"$TMP/vpn.$os.sh"
+    bash -n "$TMP/vpn.$os.sh"
+    grep -q 'sudo netbird up' "$TMP/vpn.$os.sh"
+    if grep -v '^#' "$TMP/vpn.$os.sh" | grep -qi 'nordvpn\|protonvpn'; then return 1; fi
+    render personal "$s" "$os" | grep -qi nordvpn
+  done
+  render remote "$s" linux | grep -q 'netbird@main'
+}
+
+@test "run_onchange_02: remote skips the NordVPN packages and repo, a laptop installs them" {
+  s=.chezmoiscripts/run_onchange_02-install-packages.sh.tmpl
+  render remote "$s" linux >"$TMP/remote.sh"
+  if grep -v '^ *#' "$TMP/remote.sh" | grep -qi nordvpn; then return 1; fi
+  render personal "$s" linux >"$TMP/personal.sh"
+  grep -q 'install_one yay "nordvpn-bin"' "$TMP/personal.sh"
+  grep -q 'install_one dnf "nordvpn"' "$TMP/personal.sh"
+}

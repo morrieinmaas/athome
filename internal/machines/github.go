@@ -124,27 +124,53 @@ func (g *ghClient) register(ctx context.Context, name, pub string) error {
 	return nil
 }
 
-// deleteByTitle deletes every authentication and signing key titled exactly
-// athome-<name> or athome-<name>-sign.
-func (g *ghClient) deleteByTitle(ctx context.Context, name string) error {
-	titles := map[string]bool{"athome-" + name: true, "athome-" + name + "-sign": true}
-	for _, endpoint := range ghEndpoints {
-		ks, err := g.keys(ctx, endpoint)
+// login is the account gh is logged in to, for a machine that records none.
+func (g *ghClient) login(ctx context.Context) (string, error) {
+	res, err := g.run(ctx, "api", "user", "--jq", ".login")
+	if err != nil {
+		return "", err
+	}
+	login := strings.TrimSpace(res.Stdout)
+	if res.Code != 0 || login == "" {
+		return "", fmt.Errorf("gh api user failed: %s", strings.TrimSpace(res.Stderr))
+	}
+	return login, nil
+}
+
+// deleteByTitle deletes the authentication key titled athome-<name> and the
+// signing key titled athome-<name>-sign, and returns how many it deleted. Each
+// title is matched on its own endpoint only, so another machine called
+// <name>-sign keeps its keys.
+func (g *ghClient) deleteByTitle(ctx context.Context, name string) (int, error) {
+	n := 0
+	for _, e := range []struct{ endpoint, title string }{
+		{ghEndpoints[0], "athome-" + name},
+		{ghEndpoints[1], "athome-" + name + "-sign"},
+	} {
+		ks, err := g.keys(ctx, e.endpoint)
 		if err != nil {
-			return err
+			return n, err
 		}
 		for _, k := range ks {
-			if !titles[k.Title] {
+			if k.Title != e.title {
 				continue
 			}
-			res, err := g.run(ctx, "api", "-X", "DELETE", endpoint+"/"+k.ID)
+			res, err := g.run(ctx, "api", "-X", "DELETE", e.endpoint+"/"+k.ID)
 			if err != nil {
-				return err
+				return n, err
 			}
 			if res.Code != 0 {
-				return fmt.Errorf("gh api -X DELETE %s/%s failed: %s", endpoint, k.ID, strings.TrimSpace(res.Stderr))
+				return n, fmt.Errorf("gh api -X DELETE %s/%s failed: %s", e.endpoint, k.ID, strings.TrimSpace(res.Stderr))
 			}
+			n++
 		}
 	}
-	return nil
+	return n, nil
 }
+
+// githubKnownHosts is GitHub's published SSH host keys (gh api meta), pinned on
+// the box so its check of github.com never trusts on first use.
+const githubKnownHosts = `github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl
+github.com ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBEmKSENjQEezOmxkZMy7opKgwFB9nkt5YRrYMjNuG5N87uRgg6CLrbo5wAdT/y6v0mKV0U2w0WZ2YB/++Tpockg=
+github.com ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCj7ndNxQowgcQnjshcLrqPEiiphnt+VTTvDP6mHBL9j1aNUkY4Ue1gvwnGLVlOhGeYrnZaMgRK6+PKCUXaDbC7qtbW8gIkhL7aGCsOr/C56SJMy/BCZfxd1nWzAOxSDPgVsmerOBYfNqltV9/hWCqBywINIR+5dIg6JTJ72pcEpEjcYgXkE2YEFXV1JHnsKgbLWNlhScqb2UmyRkQyytRLtL+38TGxkxCflmO+5Z8CSSNY7GidjMIZ7Q4zMjA2n1nGrlTDkzwDCsw+wqFPGQA179cnfGWOWRVruj16z6XyvxvjJwbz0wQZ75XK5tKSb7FNyeIEs4TT4jk+S4dhPeAUC5y+bDYirYgM4GC7uEnztnZyaVWQ7B381AK4Qdrwt51ZqExKbQpTUNn+EjqoTwvqNj4kqx5QUCI0ThS/YkOxJCXmPUWZbhjpCg56i+2aB6CmK2JGhn57K5mj0MNdBXA4/WnwH6XoPWJzK5Nyu2zB3nAZp+S5hpQs+p1vN1/wsjk=
+`

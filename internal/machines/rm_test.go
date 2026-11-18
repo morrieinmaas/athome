@@ -36,10 +36,10 @@ func TestRemoveRevokesEverything(t *testing.T) {
 	}
 	log := w.logCopy()[mark:]
 	want := []string{
-		"box-gh-logout acme-dev",
-		"box-drop-key acme-dev",
 		"gh-delete user/keys athome-acme-dev",
 		"gh-delete user/ssh_signing_keys athome-acme-dev-sign",
+		"box-gh-logout acme-dev",
+		"box-drop-key acme-dev",
 		"grofe machine rm acme-dev",
 		"keygen-R acme-dev",
 		"backup",
@@ -90,8 +90,11 @@ func TestRemoveUnknownAndFailing(t *testing.T) {
 	if ms, _ := Load(d.Home); len(ms) != 1 {
 		t.Error("inventory changed although a step failed")
 	}
-	if len(w.ops("gh-delete")) != 0 {
-		t.Error("GitHub keys deleted after a failed box step")
+	if len(w.ops("gh-delete")) != 2 {
+		t.Error("the GitHub keys are revoked first, before the box is reached")
+	}
+	if len(w.ops("grofe machine rm")) != 0 || len(w.ops("keygen-R")) != 0 {
+		t.Error("laptop-side steps ran after a failed box step")
 	}
 }
 

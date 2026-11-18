@@ -101,14 +101,21 @@ func Clone(ctx context.Context, d Deps, repo, machine string) error {
 	if err := copyEnv(ctx, d, r.Exec, m, name, out); err != nil {
 		return err
 	}
-	if !slices.Contains(m.Repos, name) {
-		ms[idx].Repos = append(ms[idx].Repos, name)
-		if err := Save(d.Home, ms); err != nil {
-			return err
+	changed, err := d.updateInventory(func(ms []Machine) ([]Machine, bool, error) {
+		i := slices.IndexFunc(ms, func(x Machine) bool { return x.Name == m.Name })
+		if i < 0 {
+			return nil, false, fmt.Errorf("machine %s was removed while %s was being cloned", m.Name, name)
 		}
-		if err := d.refresh(); err != nil {
-			return err
+		if slices.Contains(ms[i].Repos, name) {
+			return ms, false, nil
 		}
+		ms[i].Repos = append(ms[i].Repos, name)
+		return ms, true, nil
+	})
+	if err != nil {
+		return err
+	}
+	if changed {
 		d.backup(ctx)
 	}
 	d.say("✓ %s on %s: %s/%s", name, m.Name, scopeDir, name)

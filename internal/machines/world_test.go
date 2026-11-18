@@ -33,6 +33,7 @@ type world struct {
 
 	ghKeys  map[string][]fakeGHKey // endpoint -> keys
 	ghEnv   []string               // GH_TOKEN values seen
+	ghLogin string                 // the account gh api user answers with
 	ghNext  int
 	grofe   map[string]string // machine -> target
 	grofeOK bool
@@ -80,6 +81,7 @@ func newWorld(t *testing.T) (*world, Deps, *bytes.Buffer) {
 		grofe:    map[string]string{},
 		grofeOK:  true,
 		rbwItems: map[string][]string{},
+		ghLogin:  "octo",
 	}
 	out := &bytes.Buffer{}
 	d := Deps{Run: w, Home: home, Host: "lap", Version: "v0.4.0", Out: out, Backup: func(context.Context) error {
@@ -389,6 +391,12 @@ func (w *world) gh(c run.Cmd) run.Result {
 	}
 	a := c.Args
 	switch {
+	case len(a) == 4 && a[0] == "api" && a[1] == "user" && a[2] == "--jq" && a[3] == ".login":
+		w.add("gh-user")
+		if w.ghLogin == "" {
+			return run.Result{Code: 1, Stderr: "gh: not logged in"}
+		}
+		return run.Result{Stdout: w.ghLogin + "\n"}
 	case len(a) > 1 && a[0] == "auth" && a[1] == "token":
 		w.add("gh-token " + a[len(a)-1])
 		return run.Result{Stdout: "tok-" + a[len(a)-1] + "\n"}

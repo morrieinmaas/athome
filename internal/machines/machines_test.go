@@ -79,7 +79,9 @@ func TestInventoryRoundTrip(t *testing.T) {
 	if fi.Mode().Perm() != 0o600 || di.Mode().Perm() != 0o700 {
 		t.Fatalf("modes %v %v", fi.Mode().Perm(), di.Mode().Perm())
 	}
-	// Save refreshes the generated files.
+	if err := Refresh(home, "laptop_ed25519"); err != nil {
+		t.Fatal(err)
+	}
 	cfg, err := os.ReadFile(filepath.Join(SSHDir(home), "config"))
 	if err != nil || !strings.Contains(string(cfg), "Host acme-gpu") {
 		t.Fatalf("config: %v %s", err, cfg)
@@ -159,6 +161,9 @@ func TestRefreshIncludesPendingAndNameOrder(t *testing.T) {
 		t.Fatalf("mode %v", fi.Mode().Perm())
 	}
 	if err := Save(home, []Machine{acme()}); err != nil {
+		t.Fatal(err)
+	}
+	if err := Refresh(home, "laptop_ed25519"); err != nil {
 		t.Fatal(err)
 	}
 	cfg, _ := os.ReadFile(filepath.Join(SSHDir(home), "config"))
@@ -456,6 +461,8 @@ func TestKeysInventory(t *testing.T) {
 	if err := Save(home, []Machine{gpu(), acme()}); err != nil {
 		t.Fatal(err)
 	}
+	os.MkdirAll(filepath.Join(home, ".ssh"), 0o700)
+	os.WriteFile(filepath.Join(home, ".ssh", "config"), []byte("Include athome/config\n"), 0o600)
 	bs, err := KeysInventory(home, runtest.NewFake(), "lap")
 	if err != nil || len(bs) != 2 || bs[0].Name() != "acme-dev" || bs[1].Scope() != "work/acme" {
 		t.Fatalf("%v %v", bs, err)

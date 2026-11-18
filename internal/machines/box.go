@@ -20,11 +20,18 @@ type Box struct {
 
 func NewBox(r Remote, m Machine) *Box { return &Box{r: r, m: m} }
 
-// KeysInventory returns one Box per inventory machine.
+// KeysInventory returns one Box per inventory machine. With any machine it
+// fails unless ~/.ssh/config includes the generated config, so a rotation
+// never reaches a box through whatever else the ssh config says.
 func KeysInventory(home string, r run.Runner, host string) ([]keys.Box, error) {
 	ms, err := Load(home)
 	if err != nil {
 		return nil, err
+	}
+	if len(ms) > 0 {
+		if err := CheckInclude(home); err != nil {
+			return nil, err
+		}
 	}
 	out := make([]keys.Box, 0, len(ms))
 	for _, m := range ms {
@@ -73,7 +80,7 @@ const authorizeScript = prepareSSH + `f="$HOME/.ssh/authorized_keys"
 touch "$f" && chmod 600 "$f" || exit 1
 k=$(cat)
 b=$(printf '%s\n' "$k" | awk '{print $2}')
-if awk -v b="$b" '{for (i = 1; i <= NF; i++) if ($i == b) found = 1} END {exit !found}' "$f"; then exit 0; fi
+if awk -v b="$b" '/^[[:space:]]*#/ {next} {for (i = 1; i <= NF; i++) if ($i == b) found = 1} END {exit !found}' "$f"; then exit 0; fi
 if [ -s "$f" ] && [ -n "$(tail -c1 "$f")" ]; then echo >> "$f"; fi
 printf '%s\n' "$k" >> "$f"`
 
@@ -145,7 +152,11 @@ func (b *Box) NewKey(ctx context.Context) (string, error) {
 	return pub, nil
 }
 
-const checkGitHubScript = `ssh -i "$HOME/.ssh/$1_ed25519$2" -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=accept-new -T git@github.com`
+// checkGitHubScript reads GitHub's host keys from stdin into a file of their
+// own, so the check trusts nothing on first use.
+const checkGitHubScript = prepareSSH + `kh="$HOME/.ssh/athome_github_known_hosts"
+cat > "$kh" && chmod 600 "$kh" || exit 1
+ssh -i "$HOME/.ssh/$1_ed25519$2" -o IdentitiesOnly=yes -o BatchMode=yes -o UserKnownHostsFile="$kh" -o StrictHostKeyChecking=yes -T git@github.com`
 
 // CheckGitHub proves from the box that the key (or the .rotate key) logs in to GitHub.
 // GitHub's success banner comes with exit 1, so the output decides.
@@ -157,7 +168,7 @@ func (b *Box) CheckGitHub(ctx context.Context, rotating bool) error {
 	if rotating {
 		suffix = ".rotate"
 	}
-	res, err := b.r.Exec(ctx, b.m.Name, checkGitHubScript, "", b.m.Hostname, suffix)
+	res, err := b.r.Exec(ctx, b.m.Name, checkGitHubScript, githubKnownHosts, b.m.Hostname, suffix)
 	if err != nil {
 		return fmt.Errorf("github check on %s: %w", b.m.Name, err)
 	}
@@ -167,10 +178,14 @@ func (b *Box) CheckGitHub(ctx context.Context, rotating bool) error {
 	return nil
 }
 
+// promoteScript moves the public key first: an interruption between the two
+// moves leaves .rotate in place, and a rerun finishes the job. A .rotate.pub
+// on its own is an unfinished promotion too.
 const promoteScript = `k="$HOME/.ssh/$1_ed25519"
-if [ -f "$k.rotate" ]; then
-  mv "$k.rotate" "$k" && mv "$k.rotate.pub" "$k.pub"
-  exit
+if [ -f "$k.rotate" ] || [ -f "$k.rotate.pub" ]; then
+  if [ -f "$k.rotate.pub" ]; then mv "$k.rotate.pub" "$k.pub" || exit 1; fi
+  if [ -f "$k.rotate" ]; then mv "$k.rotate" "$k" || exit 1; fi
+  exit 0
 fi
 [ "$(awk '{print $2}' "$k.pub")" = "$2" ] || { echo "no .rotate key and the current key is not the new one" >&2; exit 1; }`
 

@@ -207,7 +207,11 @@ func TestCloneAndKeyScriptsOnDisk(t *testing.T) {
 	needKeygen(t)
 	home := t.TempDir()
 	src := filepath.Join(t.TempDir(), "src")
-	for _, c := range [][]string{{"init", "-q", src}, {"-C", src, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "x"}} {
+	// Neither the user's git config nor a signing setup may reach the fixture.
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	for _, c := range [][]string{{"init", "-q", src}, {"-C", src, "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "commit", "-q", "--allow-empty", "-m", "x"}} {
 		if out, err := exec.Command("git", c...).CombinedOutput(); err != nil {
 			t.Fatal(string(out), err)
 		}

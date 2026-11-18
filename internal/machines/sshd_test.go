@@ -312,7 +312,19 @@ func TestSshdDrill(t *testing.T) {
 
 		old := keys.Inventory
 		t.Cleanup(func() { keys.Inventory = old })
-		keys.Inventory = func(h string) ([]keys.Box, error) { return KeysInventory(h, d, laptopHost) }
+		// KeysInventory insists on "Include athome/config"; the drill's include is an
+		// absolute path (see above), so it builds the boxes itself.
+		keys.Inventory = func(h string) ([]keys.Box, error) {
+			ms, err := Load(h)
+			if err != nil {
+				return nil, err
+			}
+			var out []keys.Box
+			for _, m := range ms {
+				out = append(out, NewBox(Remote{Run: d, Home: h, Host: laptopHost}, m))
+			}
+			return out, nil
+		}
 		o := keys.Options{Home: home, Host: laptopHost, Run: d, Out: io.Discard, Now: time.Now}
 		if err := keys.Rotate(ctx, o, keys.Kinds{Laptop: true}); err != nil {
 			t.Fatal(err)

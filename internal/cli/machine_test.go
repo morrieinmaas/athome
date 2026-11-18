@@ -11,6 +11,7 @@ import (
 	"github.com/morrieinmaas/athome/internal/cli"
 	"github.com/morrieinmaas/athome/internal/keys"
 	"github.com/morrieinmaas/athome/internal/machines"
+	"github.com/morrieinmaas/athome/internal/run"
 	"github.com/morrieinmaas/athome/internal/run/runtest"
 )
 
@@ -33,6 +34,7 @@ func machineEnv(t *testing.T) (home string, fake *runtest.Fake) {
 	}
 	fake = runtest.NewFake()
 	fake.Have("rbw")
+	fake.On("gh", "api", "user", "--jq", ".login").Return(run.Result{Stdout: "octo\n"})
 	t.Cleanup(cli.SetRunner(fake))
 	old := cli.Version
 	cli.Version = "0.5.2"

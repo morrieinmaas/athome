@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/morrieinmaas/athome/internal/keys"
@@ -27,7 +28,7 @@ func (r Remote) laptopKey() string { return keys.LaptopKey(r.Home, r.Host) }
 // sshArgs builds the ssh command line. While <laptop key>.old exists a box
 // skipped after the key swap still accepts only that key.
 func (r Remote) sshArgs(mode []string, name, script string, args []string) []string {
-	out := slicesClone(mode)
+	out := slices.Clone(mode)
 	if old := r.laptopKey() + ".old"; fileExists(old) {
 		out = append(out, "-i", old)
 	}
@@ -37,8 +38,6 @@ func (r Remote) sshArgs(mode []string, name, script string, args []string) []str
 	}
 	return out
 }
-
-func slicesClone(s []string) []string { return append([]string(nil), s...) }
 
 func fileExists(p string) bool {
 	_, err := os.Stat(p)

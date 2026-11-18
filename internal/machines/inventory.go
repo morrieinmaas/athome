@@ -33,11 +33,11 @@ type Machine struct {
 }
 
 var (
-	nameRe     = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,62}$`)
+	nameRe     = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,62}$`)
 	scopeRe    = regexp.MustCompile(`^(work|personal|sidebiz)(/[A-Za-z0-9._-]+)+$`)
 	targetRe   = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9.-]*$`)
 	userRe     = regexp.MustCompile(`^[a-z_][a-z0-9_.-]*$`)
-	jumpRe     = regexp.MustCompile(`^[A-Za-z0-9@._:-]+$`)
+	jumpRe     = regexp.MustCompile(`^([A-Za-z0-9][A-Za-z0-9._-]*@)?[A-Za-z0-9][A-Za-z0-9._-]*(:[0-9]{1,5})?$`)
 	athomeRe   = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+$`)
 	accountRe  = regexp.MustCompile(`^[A-Za-z0-9-]+$`)
 	repoRe     = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
@@ -60,11 +60,14 @@ func (m Machine) Validate() error {
 	if !targetRe.MatchString(m.Target) {
 		return bad("target", fmt.Sprintf("%q must match %s", m.Target, targetRe))
 	}
+	if m.User == "root" {
+		return fmt.Errorf("machine %s: user root: log in as a sudo user; the bootstrap turns off root login", m.Name)
+	}
 	if !userRe.MatchString(m.User) {
 		return bad("user", fmt.Sprintf("%q must match %s", m.User, userRe))
 	}
 	if m.Jump != "" && !jumpRe.MatchString(m.Jump) {
-		return bad("jump", fmt.Sprintf("%q must match %s", m.Jump, jumpRe))
+		return bad("jump", fmt.Sprintf("%q must be [user@]host[:port], starting with a letter or digit", m.Jump))
 	}
 	if m.Port < 0 || m.Port > 65535 {
 		return bad("port", fmt.Sprintf("%d must be 1 to 65535", m.Port))
@@ -141,8 +144,8 @@ func Load(home string) ([]Machine, error) {
 	return out, nil
 }
 
-// Save writes the inventory (0600, directory 0700) and then refreshes the
-// generated ssh config and remote projects file.
+// Save writes the inventory (0600, directory 0700). It leaves the generated
+// ssh config and remote projects file alone; Deps.updateInventory refreshes them.
 func Save(home string, ms []Machine) error {
 	f := inventoryFile{Machines: map[string]Machine{}}
 	for _, m := range ms {
@@ -158,10 +161,7 @@ func Save(home string, ms []Machine) error {
 	if err := toml.NewEncoder(&b).Encode(f); err != nil {
 		return err
 	}
-	if err := writeAtomic(Path(home), []byte(b.String())); err != nil {
-		return err
-	}
-	return Refresh(home, filepath.Base(laptopKey(home)))
+	return writeAtomic(Path(home), []byte(b.String()))
 }
 
 // writeAtomic writes data 0600 through a temp file and rename, creating the

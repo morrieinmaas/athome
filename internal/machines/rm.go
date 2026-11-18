@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/morrieinmaas/athome/internal/keys"
@@ -24,10 +25,11 @@ type rmStep struct {
 	run  func(ctx context.Context) error
 }
 
-// Remove revokes a machine: its gh login and break-glass key on the box, its
-// GitHub keys, its grofe entry and pinned host key, then the inventory entry.
-// Without force the first failing step stops the run before the inventory
-// changes. With force each failing step is a note and the run exits 0.
+// Remove revokes a machine: its GitHub keys first, then its gh login and
+// break-glass key on the box, then its grofe entry, pinned host key and
+// inventory entry. Without force the first failing step stops the run before
+// the inventory changes. With force each failing step is a note and the run
+// exits 0.
 func Remove(ctx context.Context, d Deps, name string, force bool) error {
 	ms, err := Load(d.Home)
 	if err != nil {
@@ -45,6 +47,7 @@ func Remove(ctx context.Context, d Deps, name string, force bool) error {
 			return err
 		}
 	}
+	known := m != nil
 	if m == nil {
 		if !force {
 			return fmt.Errorf("machine %s not found", name)
@@ -57,9 +60,35 @@ func Remove(ctx context.Context, d Deps, name string, force bool) error {
 	r := d.remote()
 	gh := d.gh(*m)
 
+	// boxReady gates both box steps: with no entry to say where the box is, or
+	// without the generated ssh config in play, no ssh call is made at all.
+	boxReady := func() error {
+		if !known {
+			return errors.New("no inventory entry or pending add, so no box is reached")
+		}
+		return CheckInclude(d.Home)
+	}
+
 	list := []rmStep{
+		{"GitHub keys", func(ctx context.Context) error {
+			n, err := gh.deleteByTitle(ctx, name)
+			if err != nil {
+				return err
+			}
+			if n == 0 {
+				acct := m.GitHubAccount
+				if acct == "" {
+					acct, _ = gh.login(ctx)
+				}
+				if acct == "" {
+					acct = "the account gh is logged in to"
+				}
+				d.say("note: no GitHub key titled athome-%s or athome-%s-sign in account %s", name, name, acct)
+			}
+			return nil
+		}},
 		{"gh auth logout on the box", func(ctx context.Context) error {
-			if err := CheckInclude(d.Home); err != nil {
+			if err := boxReady(); err != nil {
 				return err
 			}
 			res, err := r.Exec(ctx, name, ghLogoutScript, "")
@@ -73,6 +102,9 @@ func Remove(ctx context.Context, d Deps, name string, force bool) error {
 				d.say("note: no scope known for %s, so no break-glass key is removed", name)
 				return nil
 			}
+			if err := boxReady(); err != nil {
+				return err
+			}
 			pub, err := keys.BreakGlassPub(ctx, d.Run, m.Scope)
 			if errors.Is(err, keys.ErrNoItem) {
 				return nil
@@ -83,7 +115,6 @@ func Remove(ctx context.Context, d Deps, name string, force bool) error {
 			res, err := r.Exec(ctx, name, dropKeyScript, "", blobOf(pub))
 			return okOrErr("remove the break-glass key", name, res, err)
 		}},
-		{"GitHub keys", func(ctx context.Context) error { return gh.deleteByTitle(ctx, name) }},
 		{"grofe machine rm", func(ctx context.Context) error {
 			has, ok, err := d.grofeHas(ctx, name)
 			if err != nil || !ok || !has {
@@ -116,14 +147,14 @@ func Remove(ctx context.Context, d Deps, name string, force bool) error {
 			return nil
 		}},
 		{"inventory", func(ctx context.Context) error {
-			var kept []Machine
-			for _, x := range ms {
-				if x.Name != name {
-					kept = append(kept, x)
-				}
-			}
+			changed := false
 			if inInventory {
-				if err := Save(d.Home, kept); err != nil {
+				var err error
+				changed, err = d.updateInventory(func(ms []Machine) ([]Machine, bool, error) {
+					kept := slices.DeleteFunc(slices.Clone(ms), func(x Machine) bool { return x.Name == name })
+					return kept, len(kept) != len(ms), nil
+				})
+				if err != nil {
 					return err
 				}
 			}
@@ -133,7 +164,7 @@ func Remove(ctx context.Context, d Deps, name string, force bool) error {
 			if err := d.refresh(); err != nil {
 				return err
 			}
-			if inInventory {
+			if changed {
 				d.backup(ctx)
 			}
 			return nil

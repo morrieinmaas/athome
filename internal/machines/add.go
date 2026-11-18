@@ -44,6 +44,26 @@ func (d Deps) refresh() error {
 	return Refresh(d.Home, filepath.Base(keys.LaptopKey(d.Home, d.Host)))
 }
 
+// updateInventory reloads the inventory, applies change to it, saves it and
+// refreshes the generated ssh config and projects file. change reports whether
+// it altered the list; when it did not, nothing is written. Applying only this
+// command's change to a fresh load keeps a machine another command added
+// meanwhile.
+func (d Deps) updateInventory(change func(ms []Machine) ([]Machine, bool, error)) (bool, error) {
+	ms, err := Load(d.Home)
+	if err != nil {
+		return false, err
+	}
+	ms, changed, err := change(ms)
+	if err != nil || !changed {
+		return false, err
+	}
+	if err := Save(d.Home, ms); err != nil {
+		return false, err
+	}
+	return true, d.refresh()
+}
+
 // backup mirrors the inventory into the secrets vault; a failure is a warning.
 func (d Deps) backup(ctx context.Context) {
 	if d.Backup == nil {
@@ -114,7 +134,7 @@ func never(context.Context, *steps.Env) (bool, error) { return false, nil }
 // being added (its pending entry when resuming); the steps fill in Home and Hostname.
 func AddSteps(d Deps, m *Machine) []steps.Step {
 	r := d.remote()
-	gh := d.gh(*m)
+	gh := d.gh(*m) // its account follows m once machine-validate has resolved it
 	box := func() *Box { return NewBox(r, *m) }
 	savePending := func() error {
 		if err := SavePending(d.Home, *m); err != nil {
@@ -139,6 +159,19 @@ func AddSteps(d Deps, m *Machine) []steps.Step {
 			if res, err := d.Run.Run(ctx, run.Cmd{Name: "rbw", Args: []string{"unlocked"}}); err != nil || res.Code != 0 {
 				return keys.ErrLocked
 			}
+			// Pin the account now: a later gh auth switch must not move rm or a
+			// rotation to another account.
+			if m.GitHubAccount == "" {
+				acct, err := gh.login(ctx)
+				if err != nil {
+					return fmt.Errorf("resolve the GitHub account (log in with gh auth login): %w", err)
+				}
+				m.GitHubAccount = acct
+				if err := m.Validate(); err != nil {
+					return err
+				}
+			}
+			gh.account = m.GitHubAccount
 			return nil
 		}},
 		{Name: "machine-host-key", Check: func(ctx context.Context, e *steps.Env) (bool, error) {
@@ -214,7 +247,7 @@ func AddSteps(d Deps, m *Machine) []steps.Step {
 			if err := reachErr(m.Name, res); err != nil {
 				return false, err
 			}
-			return res.Code == 0 && slices.ContainsFunc(strings.Fields(res.Stdout), func(w string) bool { return w == blobOf(pub) }), nil
+			return res.Code == 0 && authorizedHas(res.Stdout, blobOf(pub)), nil
 		}, Apply: func(ctx context.Context, e *steps.Env) error {
 			pub, err := keys.BreakGlassPub(ctx, d.Run, m.Scope)
 			if errors.Is(err, keys.ErrNoItem) {
@@ -269,11 +302,9 @@ func AddSteps(d Deps, m *Machine) []steps.Step {
 			return nil
 		}},
 		{Name: "machine-inventory", Check: never, Apply: func(ctx context.Context, e *steps.Env) error {
-			ms, err := Load(d.Home)
-			if err != nil {
-				return err
-			}
-			if err := Save(d.Home, append(ms, *m)); err != nil {
+			if _, err := d.updateInventory(func(ms []Machine) ([]Machine, bool, error) {
+				return append(ms, *m), true, nil
+			}); err != nil {
 				return err
 			}
 			if err := RemovePending(d.Home, m.Name); err != nil {
@@ -295,6 +326,20 @@ func (d Deps) outOrDiscard() io.Writer {
 	return d.Out
 }
 
+// authorizedHas reports whether an authorized_keys file lists blob, ignoring
+// comment lines.
+func authorizedHas(authorized, blob string) bool {
+	for _, l := range strings.Split(authorized, "\n") {
+		if strings.HasPrefix(strings.TrimLeft(l, " \t"), "#") {
+			continue
+		}
+		if slices.Contains(strings.Fields(l), blob) {
+			return true
+		}
+	}
+	return false
+}
+
 // hostKeyPinned reports whether the pinned known_hosts holds a key for name.
 func (d Deps) hostKeyPinned(ctx context.Context, name string) (bool, error) {
 	res, err := d.Run.Run(ctx, run.Cmd{Name: "ssh-keygen", Args: []string{"-F", name, "-f", KnownHosts(d.Home)}})
@@ -314,12 +359,14 @@ var leftBehind = []struct{ step, what string }{
 	{"machine-grofe", "grofe machine"},
 }
 
-// sameEntry compares what the flags set; Home, Hostname and Repos are filled in by the add itself.
+// sameEntry compares what the flags set; Home, Hostname and Repos are filled in
+// by the add itself, and so is the GitHub account when the flag left it empty.
 func sameEntry(a, b Machine) bool {
 	a.Home, a.Hostname, a.Repos, a.Port = "", "", nil, a.port()
 	b.Home, b.Hostname, b.Repos, b.Port = "", "", nil, b.port()
 	return a.Name == b.Name && a.Scope == b.Scope && a.Target == b.Target && a.User == b.User && a.Jump == b.Jump &&
-		a.Port == b.Port && a.Athome == b.Athome && a.ForwardAgent == b.ForwardAgent && a.GitHubAccount == b.GitHubAccount
+		a.Port == b.Port && a.Athome == b.Athome && a.ForwardAgent == b.ForwardAgent &&
+		(b.GitHubAccount == "" || a.GitHubAccount == b.GitHubAccount)
 }
 
 // Add runs machine add's steps. A rerun with the same values resumes: every
@@ -369,6 +416,10 @@ func Add(ctx context.Context, d Deps, m Machine) error {
 		return errors.New(msg)
 	}
 	passed := append(rep.Applied, rep.Skipped...)
+	if failed.Name == "machine-box-key" {
+		// the keys may be on GitHub although the step failed after gh ssh-key add
+		passed = append(passed, failed.Name)
+	}
 	var left []string
 	for _, l := range leftBehind {
 		if slices.Contains(passed, l.step) {

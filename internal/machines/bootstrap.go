@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
 	"strings"
 
 	"github.com/morrieinmaas/athome/internal/run"
@@ -27,8 +28,41 @@ func laptopTimezone() string {
 	return tz
 }
 
+var (
+	timezoneRe = regexp.MustCompile(`^[A-Za-z0-9_+./-]+$`)
+	localeRe   = regexp.MustCompile(`^[A-Za-z0-9_.@-]+$`)
+)
+
+// tomlString is s as a TOML basic string: quotes, backslashes and control
+// characters escaped, so no value can end its string or start another key.
+func tomlString(s string) string {
+	var b strings.Builder
+	b.WriteByte('"')
+	for _, r := range s {
+		switch {
+		case r == '"':
+			b.WriteString(`\"`)
+		case r == '\\':
+			b.WriteString(`\\`)
+		case r == '\n':
+			b.WriteString(`\n`)
+		case r == '\r':
+			b.WriteString(`\r`)
+		case r == '\t':
+			b.WriteString(`\t`)
+		case r < 0x20 || r == 0x7f:
+			fmt.Fprintf(&b, `\u%04X`, r)
+		default:
+			b.WriteRune(r)
+		}
+	}
+	b.WriteByte('"')
+	return b.String()
+}
+
 // BootstrapTOML is the answers file a box's bootstrap reads, built from the
-// laptop's chezmoi data. Keys with empty values are left out.
+// laptop's chezmoi data. Keys with empty values are left out, and so is a
+// timezone or locale that is not made of the characters those names use.
 func BootstrapTOML(data map[string]any, m Machine, timezone, locale string) string {
 	str := func(k string) string {
 		v, ok := data[k]
@@ -52,6 +86,12 @@ func BootstrapTOML(data map[string]any, m Machine, timezone, locale string) stri
 	case "sidebiz":
 		list = append(list, kv{"sidebizEmail", str("sidebizEmail")}, kv{"sidebizName", str("sidebizName")})
 	}
+	if !timezoneRe.MatchString(timezone) {
+		timezone = ""
+	}
+	if !localeRe.MatchString(locale) {
+		locale = ""
+	}
 	list = append(list,
 		kv{"includeAgents", str("includeAgents")},
 		kv{"agentsRepo", str("agentsRepo")},
@@ -64,10 +104,10 @@ func BootstrapTOML(data map[string]any, m Machine, timezone, locale string) stri
 	)
 	var b strings.Builder
 	for _, e := range list {
-		if e.v == "" || strings.ContainsAny(e.v, "\r\n") {
+		if e.v == "" {
 			continue
 		}
-		fmt.Fprintf(&b, "%s = \"%s\"\n", e.k, e.v)
+		fmt.Fprintf(&b, "%s = %s\n", e.k, tomlString(e.v))
 	}
 	return b.String()
 }
@@ -140,6 +180,12 @@ func bootstrapDone(ctx context.Context, d Deps, m Machine) (bool, error) {
 // box's bootstrap. interactive runs it with ssh -t so sudo can prompt; otherwise
 // it runs with ssh -T and --non-interactive, its output going to out.
 func bootstrapBox(ctx context.Context, d Deps, m Machine, interactive bool, out io.Writer) error {
+	if tz := laptopTimezone(); tz != "" && !timezoneRe.MatchString(tz) {
+		d.say("note: timezone %q is not a zoneinfo name, so it is left out of the box's answers", tz)
+	}
+	if loc := os.Getenv("LANG"); loc != "" && !localeRe.MatchString(loc) {
+		d.say("note: locale %q is not a locale name, so it is left out of the box's answers", loc)
+	}
 	r := d.remote()
 	exec := execFn(r.Exec)
 	if !interactive {

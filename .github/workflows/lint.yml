@@ -34,7 +34,12 @@ jobs:
       - name: Install chezmoi and zsh
         run: |
           sudo apt-get install -y zsh
-          sh -c "$(curl -fsLS get.chezmoi.io)" -- -b "$HOME/.local/bin"
+          v=2.72.2
+          sha=a2be1b8bcdf06c6f173e070bb3ddbcc52c50478fe9b57f6e6c63d15c7cff4f03
+          curl -fsSLO "https://github.com/twpayne/chezmoi/releases/download/v${v}/chezmoi_${v}_linux_amd64.tar.gz"
+          echo "$sha  chezmoi_${v}_linux_amd64.tar.gz" | sha256sum -c -
+          mkdir -p "$HOME/.local/bin"
+          tar -xzf "chezmoi_${v}_linux_amd64.tar.gz" -C "$HOME/.local/bin" chezmoi
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Run bats suite
         run: bats test

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/morrieinmaas/athome/internal/prompt"
+	"github.com/morrieinmaas/athome/internal/run"
 	"github.com/morrieinmaas/athome/internal/steps"
 )
 
@@ -113,6 +114,48 @@ func TestRemoteExistingKeyIsUsedAsIs(t *testing.T) {
 			}
 			if b, _ := os.ReadFile(key); string(b) != "PRIVATE" {
 				t.Errorf("key changed: %q", b)
+			}
+		})
+	}
+}
+
+// The remote rules are one gate: a remote box never uploads to GitHub and never
+// touches rbw, whichever way gh and ssh answer, so `machine sync` stays clean.
+func TestRemoteInitNeverUploadsOrTouchesRbw(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		sshBanner string
+	}{
+		{"github already authenticates (signing key path)", "Hi octo! You've successfully authenticated"},
+		{"github does not authenticate (upload path)", "Permission denied (publickey)."},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fx := remoteFixture(t)
+			t.Setenv("PATH", "/usr/bin")
+			t.Cleanup(steps.SetNanobrewBin(fx.Path("absent-nb")))
+			fx.Fake.Have("chezmoi", "gh", "rbw", "gitleaks", "mise", "yay")
+			fx.Fake.On("sudo", "-n", "true").Return(run.Result{Code: 0})
+			fx.Fake.On("chezmoi", chezmoiVerify(fx)...).Return(run.Result{Code: 0})
+			fx.Fake.On("gh", "auth", "status").Return(run.Result{Code: 0, Stdout: "Token scopes: 'admin:public_key', 'admin:ssh_signing_key'"})
+			fx.Fake.On("ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5",
+				"-o", "StrictHostKeyChecking=accept-new", "-T", "git@github.com").Return(run.Result{Code: 1, Stderr: tc.sshBanner})
+			fx.PutKey("PRIVATE\n", "ssh-ed25519 AAAA testhost\n")
+			writeFile(t, fx.Path(".ssh", "id_ed25519.pub"), "ssh-ed25519 AAAA default\n", 0o644)
+			writeFile(t, fx.Path("work", "acme", ".envrc"), "x", 0o644)
+			rep, err := fx.Exec(steps.All())
+			if err != nil {
+				t.Fatalf("%v\n%s", err, fx.Log)
+			}
+			for _, n := range rep.Applied {
+				if n == "github-keys" {
+					t.Errorf("github-keys applied on a remote box\n%s", fx.Log)
+				}
+			}
+			for _, c := range fx.Fake.Calls() {
+				line := c.Name + " " + strings.Join(c.Args, " ")
+				if c.Name == "rbw" || strings.Contains(line, "ssh-key add") {
+					t.Errorf("remote init ran %q", line)
+				}
 			}
 		})
 	}

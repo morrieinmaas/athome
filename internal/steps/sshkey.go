@@ -89,7 +89,7 @@ func skCopy(src, dst string, mode os.FileMode) error {
 func SSHKey() []Step {
 	return []Step{
 		{Name: "ssh-import-dir", Check: skImportDirCheck, Apply: skImportDirApply},
-		{Name: "ssh-import-bw", Check: skImportBWCheck, Apply: skImportBWApply},
+		skipOnRemote(Step{Name: "ssh-import-bw", Check: skImportBWCheck, Apply: skImportBWApply}),
 		{
 			Name:  "ssh-keygen",
 			Check: skKeygenCheck,
@@ -105,11 +105,11 @@ func SSHKey() []Step {
 			},
 		},
 		{Name: "ssh-pub", Check: skPubCheck, Apply: skPubApply},
-		{
+		skipOnRemote(Step{
 			Name:  "ssh-bw-backup",
 			Check: func(_ context.Context, env *Env) (bool, error) { return !env.KeyGenerated, nil },
 			Apply: func(ctx context.Context, env *Env) error { return skBWBackup(ctx, env) },
-		},
+		}),
 	}
 }
 

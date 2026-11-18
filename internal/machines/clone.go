@@ -33,8 +33,9 @@ func parseRepo(s string) (url, name string, err error) {
 
 const (
 	mkWorktreesScript = `mkdir -p "$1/worktrees"`
-	cloneScript       = `[ -d "$1/$2/.git" ] || git clone "$3" "$1/$2"`
-	miseDetectScript  = `cd "$1/$2" || exit 1
+	// cloneScript pins GitHub's host keys first: the box's ~/.ssh/config may not be rendered yet.
+	cloneScript      = pinGitHubHosts + `[ -d "$1/$2/.git" ] || GIT_SSH_COMMAND='ssh -o UserKnownHostsFile="$HOME/.ssh/athome_github_known_hosts" -o StrictHostKeyChecking=yes' git clone "$3" "$1/$2"`
+	miseDetectScript = `cd "$1/$2" || exit 1
 for f in mise.toml .mise.toml .tool-versions; do [ -f "$f" ] && echo yes && exit 0; done
 exit 0`
 	miseInstallScript = `cd "$1/$2" && "$HOME/.local/bin/mise" trust && "$HOME/.local/bin/mise" install`
@@ -85,7 +86,7 @@ func Clone(ctx context.Context, d Deps, repo, machine string) error {
 	if err := okOrErr("create "+scopeDir+"/worktrees", m.Name, res, err); err != nil {
 		return err
 	}
-	res, err = r.Exec(ctx, m.Name, cloneScript, "", scopeDir, name, url)
+	res, err = r.Exec(ctx, m.Name, cloneScript, githubKnownHosts, scopeDir, name, url)
 	if err := okOrErr("clone "+url, m.Name, res, err); err != nil {
 		return err
 	}

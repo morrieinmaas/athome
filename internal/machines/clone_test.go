@@ -218,7 +218,7 @@ func TestCloneAndKeyScriptsOnDisk(t *testing.T) {
 	}
 	scope := filepath.Join(home, "work", "acme")
 	for i := 0; i < 2; i++ { // the second run leaves the clone alone
-		if out, err := shRun(t, home, cloneScript, "", scope, "api", src); err != nil {
+		if out, err := shRun(t, home, cloneScript, githubKnownHosts, scope, "api", src); err != nil {
 			t.Fatal(out, err)
 		}
 	}
@@ -247,6 +247,43 @@ func TestCloneRefusesTheWorktreesName(t *testing.T) {
 	for _, in := range []string{"acme/worktrees", "git@github.com:acme/worktrees.git", "https://github.com/acme/worktrees"} {
 		if _, _, err := parseRepo(in); err == nil || !errors.As(err, new(UsageError)) {
 			t.Errorf("%q accepted or not a usage error: %v", in, err)
+		}
+	}
+}
+
+// A box whose ~/.ssh/config chezmoi has not rendered yet must still not trust
+// GitHub on first use: the clone pins the host keys first and tells git's ssh
+// to read only them.
+func TestCloneScriptPinsGitHubHostKeys(t *testing.T) {
+	home := t.TempDir()
+	bin := t.TempDir()
+	stub := "#!/bin/sh\necho \"$GIT_SSH_COMMAND\" > \"$HOME/git.ssh\"\ncat \"$HOME/.ssh/athome_github_known_hosts\" > \"$HOME/git.kh\"\n"
+	if err := os.WriteFile(filepath.Join(bin, "git"), []byte(stub), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	scope := filepath.Join(home, "work", "acme")
+	if out, err := shRun(t, home, cloneScript, githubKnownHosts, scope, "api", "git@github.com:acme/api.git"); err != nil {
+		t.Fatal(out, err)
+	}
+	kh := filepath.Join(home, ".ssh", "athome_github_known_hosts")
+	if b, _ := os.ReadFile(filepath.Join(home, "git.kh")); string(b) != githubKnownHosts {
+		t.Errorf("known_hosts when git ran: %q", b)
+	}
+	if fi, err := os.Stat(kh); err != nil || fi.Mode().Perm() != 0o600 {
+		t.Errorf("known_hosts mode: %v %v", fi, err)
+	}
+	// git hands GIT_SSH_COMMAND to a shell, so $HOME in it expands there.
+	b, _ := os.ReadFile(filepath.Join(home, "git.ssh"))
+	cmd := exec.Command("sh", "-c", `eval "set -- $(cat "$HOME/git.ssh")"; printf '%s\n' "$@"`)
+	cmd.Env = append(os.Environ(), "HOME="+home)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("%q: %v", b, err)
+	}
+	for _, want := range []string{"UserKnownHostsFile=" + kh, "StrictHostKeyChecking=yes"} {
+		if !strings.Contains(string(out), want) {
+			t.Errorf("GIT_SSH_COMMAND lacks %q: %s", want, b)
 		}
 	}
 }

@@ -96,6 +96,10 @@ athome machine rm acme-dev
   pinned tag on the box and reruns the bootstrap; it is idempotent. `--all` runs without a
   terminal, so sudo on the boxes has to work without a password for the steps that need it;
   each box's output is in `~/.local/state/athome/sync-<name>.log`.
+- A box stays on the tag the laptop pinned: `athome update` on a box applies and installs tools
+  at that tag, never fetches a newer one and refuses a different `--to`. Change the pin in
+  `machines.toml` and run `machine sync`. git to GitHub on a box (and `project clone`) reads
+  only GitHub's published host keys in `~/.ssh/athome_github_known_hosts`.
 - `project clone` clones into the scope's directory on the box, creates the `worktrees`
   directory beside it, runs `mise install`, copies `~/.secrets/<repo>/.env*` from the laptop
   and records the repo in the inventory. `--machine` can be left out when there is one

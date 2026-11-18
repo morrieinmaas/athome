@@ -223,3 +223,23 @@ STUB
   bash -n "$TMP/box.sh"
   if grep -q 'timedatectl\|localectl\|locale-gen' "$TMP/box.sh"; then return 1; fi
 }
+
+# render_ssh_config <personal|work|remote> pins the hostname so the output is comparable.
+render_ssh_config() {
+  perl -pe 's/\.chezmoi\.hostname/"fixture"/g' "$ROOT/home/private_dot_ssh/private_config.tmpl" |
+    chezmoi --source "$ROOT/home" --config "$TMP/$1.toml" execute-template
+}
+
+@test "ssh config: remote pins GitHub's host keys for every ssh on the box" {
+  out="$(render_ssh_config remote)"
+  block="$(printf '%s\n' "$out" | awk '/^Host github.com$/{f=1;next} f&&/^Host /{exit} f')"
+  [[ "$block" == *"UserKnownHostsFile ~/.ssh/known_hosts ~/.ssh/athome_github_known_hosts"* ]]
+  [[ "$block" == *"StrictHostKeyChecking yes"* ]]
+}
+
+@test "ssh config: personal and work render exactly the old file" {
+  for t in personal work; do
+    render_ssh_config "$t" >"$TMP/ssh-config.$t"
+    cmp "$TMP/ssh-config.$t" "$ROOT/test/fixtures/ssh-config"
+  done
+}

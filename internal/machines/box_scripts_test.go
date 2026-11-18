@@ -90,3 +90,44 @@ func TestRotateScripts(t *testing.T) {
 		t.Fatal("promote of an unrelated key passed")
 	}
 }
+
+// A box whose athome checkout sits on a newer commit or tag than the laptop
+// pinned goes back to exactly the pinned tag, detached, never to a branch tip.
+func TestCheckoutScriptKeepsBoxOnPinnedTag(t *testing.T) {
+	home := t.TempDir()
+	origin := filepath.Join(t.TempDir(), "origin")
+	git := func(dir string, args ...string) string {
+		t.Helper()
+		c := exec.Command("git", append([]string{"-C", dir, "-c", "user.name=t", "-c", "user.email=t@example.com", "-c", "commit.gpgsign=false", "-c", "tag.gpgsign=false"}, args...)...)
+		c.Env = append(os.Environ(), "HOME="+home, "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
+		out, err := c.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %s %v", args, out, err)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	if err := os.MkdirAll(origin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	git(origin, "init", "-q", "-b", "main")
+	git(origin, "commit", "-q", "--allow-empty", "-m", "one")
+	git(origin, "tag", "v1.4.0")
+	pinned := git(origin, "rev-parse", "HEAD")
+	git(origin, "commit", "-q", "--allow-empty", "-m", "two")
+	git(origin, "tag", "v1.5.0")
+
+	d := filepath.Join(home, ".local", "share", "athome")
+	if err := os.MkdirAll(filepath.Dir(d), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	git(home, "clone", "-q", origin, d) // on main, at the newest commit
+	if out, err := shRun(t, home, checkoutScript, "", "v1.4.0"); err != nil {
+		t.Fatal(out, err)
+	}
+	if got := git(d, "rev-parse", "HEAD"); got != pinned {
+		t.Errorf("HEAD %s, want the pinned tag %s", got, pinned)
+	}
+	if b := git(d, "branch", "--show-current"); b != "" {
+		t.Errorf("box is on branch %q, want detached", b)
+	}
+}

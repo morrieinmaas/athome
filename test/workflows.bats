@@ -27,38 +27,52 @@ pr_workflows() {
   done
 }
 
+# block prints the lines under the given header up to the next line at the
+# header's indent, without comments. "job test" is the test job's block.
+block() {
+  awk -v h="$1" '
+    $0 == h { p = 1; ind = match(h, /[^ ]/); next }
+    p && /^ *#/ { next }
+    p && /[^ ]/ && match($0, /[^ ]/) <= ind { exit }
+    p { print }
+  ' "$2"
+}
+
 @test "a newer run of the same pull request cancels the older one" {
+  want="  group: \${{ github.workflow }}-\${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: \${{ github.event_name == 'pull_request' }}"
   for f in $(pr_workflows); do
-    grep -q '^concurrency:' "$f" || { echo "$f: no concurrency"; return 1; }
-    grep -q 'group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}' "$f" || { echo "$f: group"; return 1; }
-    grep -q "cancel-in-progress: \${{ github.event_name == 'pull_request' }}" "$f" || { echo "$f: cancel-in-progress"; return 1; }
+    [ "$(block 'concurrency:' "$f")" = "$want" ] || { echo "$f: concurrency is not exactly:"; echo "$want"; return 1; }
   done
 }
 
 # go test runs about GOMAXPROCS packages at a time, so two waves of hung
 # packages must each reach the 5m test timeout before the 20m job limit.
-@test "go test jobs have a job limit and a test timeout that fits twice in it" {
+@test "go test jobs have a 20m job limit and a 5m test timeout" {
   for f in "$WF/go.yml" "$WF/release.yml"; do
-    run awk '/^  test:/ { p = 1; next } p && /^  [a-z-]+:/ { exit } p' "$f"
-    [[ "$output" == *'timeout-minutes: 20'* ]] || { echo "$f: job limit"; return 1; }
-    [[ "$output" == *'go test -timeout 5m ./...'* ]] || { echo "$f: test timeout"; return 1; }
+    run block '  test:' "$f"
+    grep -qx '    timeout-minutes: 20' <<<"$output" || { echo "$f: job limit"; return 1; }
+    grep -qx '      - run: go test -timeout 5m ./...' <<<"$output" || { echo "$f: test timeout"; return 1; }
   done
 }
 
 @test "secrets-scan still runs on a push to any branch" {
   grep -qx '  push:' "$WF/secrets-scan.yml"
-  run awk '/^  push:/ { p = 1; next } p && /^  [a-z_]+:/ { exit } p && !/^ *#/ { print }' "$WF/secrets-scan.yml"
-  [ -z "$output" ]
+  [ -z "$(block '  push:' "$WF/secrets-scan.yml")" ]
 }
 
+# A job-level name: would rename the check; e2e's is the name it always had.
 @test "the job names other checks refer to are unchanged" {
-  grep -q '^  test:' "$WF/go.yml"
-  grep -q 'os: \[ubuntu-latest, macos-latest\]' "$WF/go.yml"
-  grep -q '^  release-check:' "$WF/go.yml"
-  grep -q '^  shellcheck:' "$WF/lint.yml"
-  grep -q '^  bats:' "$WF/lint.yml"
-  grep -q 'name: bootstrap-${{ matrix.distro }}' "$WF/e2e.yml"
-  grep -q '^  drill:' "$WF/sshd.yml"
-  grep -q '^  gitleaks:' "$WF/secrets-scan.yml"
-  grep -q '^  chezmoi-verify:' "$WF/secrets-scan.yml"
+  for job in go.yml:test go.yml:release-check lint.yml:shellcheck lint.yml:bats sshd.yml:drill \
+    secrets-scan.yml:gitleaks secrets-scan.yml:chezmoi-verify e2e.yml:bootstrap; do
+    f="$WF/${job%%:*}"
+    grep -qx "  ${job#*:}:" "$f" || { echo "$job: missing"; return 1; }
+    names=$(block "  ${job#*:}:" "$f" | grep -E '^    name:' || true)
+    if [ "$job" = e2e.yml:bootstrap ]; then
+      [ "$names" = '    name: bootstrap-${{ matrix.distro }}' ] || { echo "$job: name $names"; return 1; }
+    else
+      [ -z "$names" ] || { echo "$job: name $names"; return 1; }
+    fi
+  done
+  grep -qx '        os: \[ubuntu-latest, macos-latest\]' "$WF/go.yml"
 }

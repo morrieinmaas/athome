@@ -86,8 +86,8 @@ the target: `--to` (`vX.Y.Z` or `X.Y.Z`, which must be a tag `git ls-remote` lis
    `[data]` answer is kept, a key the new template adds gets its default, and the `sourceDir`
    line athome pinned is put back. Skipped when the template is unchanged, so chezmoi no
    longer warns "config file template has changed".
-4. `apply`: `chezmoi apply`, which installs new packages and moves grofe and canopy when
-   their pins changed.
+4. `apply`: `chezmoi apply`, which installs new packages, moves grofe and canopy when
+   their pins changed, and raises athome to `pins.athome` when it is below it.
 5. `mise`: `mise install`, skipped when `mise ls --missing` lists nothing.
 
 It ends with `athome: applied N, skipped M`. Exit codes: 0 done or cancelled; 1 a step

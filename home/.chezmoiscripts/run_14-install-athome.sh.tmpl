@@ -20,8 +20,6 @@
 # run_, not run_onchange: chezmoi would record a failed download as done and
 # never try again until the pin changed. Every apply runs it instead, and once
 # athome is at or above the pin it stops after one `athome version`, silently.
-#
-# athome pin: {{ .pins.athome }}
 set -euo pipefail
 
 pin="{{ .pins.athome }}"

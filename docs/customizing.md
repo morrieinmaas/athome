@@ -131,6 +131,10 @@ One edit: change `grofe` (a release tag such as `v0.3.1`) or `canopy` (a tag or 
 `home/.chezmoidata/pins.toml`. The install scripts render the pins, so the next `chezmoi apply`
 (or `athome update`) reinstalls the tool; `athome status` compares what is installed with the pin.
 
+`pins.athome` is different: it is a floor, not a version to bump with every release.
+`run_14-install-athome` installs it only where athome is missing or older, so raise it
+only when every machine must have at least that athome; `athome update` does the rest.
+
 ## What athome owns vs what you own
 
 Some files in your home folder are yours, and tools append to them too (an

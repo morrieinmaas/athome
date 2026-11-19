@@ -230,11 +230,12 @@ fake_uname() {
   if command -v shfmt >/dev/null; then shfmt -i 2 -ci -bn -d "$SCRIPT"; fi
 }
 
-@test "a pin change changes the rendered script" {
-  src="$BATS_TEST_TMPDIR/src"
-  cp -R "$ROOT/home" "$src"
-  perl -pi -e 's/^athome = ".*"/athome = "v9.9.9"/' "$src/.chezmoidata/pins.toml"
-  chezmoi --source "$src" --config "$BATS_TEST_TMPDIR/empty.toml" execute-template <"$TMPL" >"$BATS_TEST_TMPDIR/changed.sh"
-  run ! cmp -s "$SCRIPT" "$BATS_TEST_TMPDIR/changed.sh"
-  grep -qx 'pin="v9.9.9"' "$BATS_TEST_TMPDIR/changed.sh"
+@test "macOS /bin/bash 3.2 installs and then skips" {
+  [[ "$(/bin/bash --version 2>/dev/null)" == *"version 3."* ]] || skip "/bin/bash is not bash 3"
+  HOME="$FAKEHOME" run /bin/bash "$SCRIPT"
+  [ "$status" -eq 0 ]
+  [ "$("$DEST" version)" = "athome ${PIN#v} (abc1234)" ]
+  HOME="$FAKEHOME" run /bin/bash "$SCRIPT"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
 }

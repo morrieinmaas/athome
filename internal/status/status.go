@@ -52,7 +52,7 @@ func Collect(ctx context.Context, r run.Runner, version, commit, home, repo stri
 		Repo:    repo,
 		Ref:     repoRef(ctx, r, repo),
 		Components: []Component{
-			athomeStatus(ctx, r, version, repo),
+			athomeStatus(ctx, r, version, repo, pins["athome"]),
 			dotfilesStatus(ctx, r),
 			miseStatus(ctx, r, home),
 			grofeStatus(ctx, r, home, pins["grofe"]),
@@ -102,7 +102,20 @@ func readPins(repo string) map[string]string {
 	return f.Pins
 }
 
-func athomeStatus(ctx context.Context, r run.Runner, version, repo string) Component {
+// athomeStatus compares the running athome with the highest release tag on origin.
+// Below pins.athome it is not current even offline: that is the floor chezmoi apply
+// installs (run_onchange_14-install-athome), which athome update then moves beyond.
+func athomeStatus(ctx context.Context, r run.Runner, version, repo, pin string) Component {
+	c := tagStatus(ctx, r, version, repo)
+	_, isRel := selfupdate.Parse(version)
+	if _, pinRel := selfupdate.Parse(pin); isRel && pinRel && selfupdate.Compare(version, pin) < 0 {
+		c.Status = NotCurrent
+		c.Detail = version + " (below pins.athome " + pin + "; chezmoi apply installs it)"
+	}
+	return c
+}
+
+func tagStatus(ctx context.Context, r run.Runner, version, repo string) Component {
 	c := Component{Name: "athome", Installed: version}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()

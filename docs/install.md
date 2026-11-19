@@ -10,6 +10,7 @@ it takes.
 - [Bootstrap flags](#bootstrap-flags)
 - [Unattended installs](#unattended-installs)
 - [What bootstrap does](#what-bootstrap-does)
+- [A machine set up before the athome binary](#a-machine-set-up-before-the-athome-binary)
 - [Second machine: reusing an SSH key](#second-machine-reusing-an-ssh-key)
 
 On macOS the OS is already there, so skip straight to the README.
@@ -189,6 +190,24 @@ Bootstrap is safe to re-run; every step checks what's already done.
 That's the quick baseline. `mise run apply` then does the slow part: the full
 package list, all the mise tools, and the desktop setup. Keeping them apart
 means the heavy step can be re-run on its own at any time.
+
+## A machine set up before the athome binary
+
+A new machine gets `~/.local/bin/athome` from `scripts/bootstrap.sh`. A machine set
+up before the binary existed does not need bootstrap again: a plain `chezmoi apply`
+(or `mise run apply`) runs `run_onchange_14-install-athome`, which downloads
+`athome_<os>_<arch>` and `checksums.txt` for `pins.athome` in
+`home/.chezmoidata/pins.toml` (from `ATHOME_RELEASE_BASE`, as bootstrap does), checks
+the sha256 and moves the binary into place. From then on `athome update` keeps it
+current.
+
+The pin is a floor. The script installs only when `athome` is missing, older than the
+pin, or its `athome version` fails; a newer release, or a `dev` build, is left alone,
+so it never undoes `athome update`. A failed download prints a note and the apply goes
+on without athome; the script runs again when the pin changes, and until then
+`scripts/bootstrap.sh` installs it.
+A checksum mismatch fails the apply and installs nothing. It works the same on macOS
+and Linux, on amd64 and arm64, and on a remote box.
 
 ## Replacement laptop: restoring from Bitwarden
 

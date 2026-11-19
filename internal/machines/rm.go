@@ -44,39 +44,10 @@ type remover struct {
 // the inventory changes. With force each failing step is a note and the run
 // exits 0.
 func Remove(ctx context.Context, d Deps, name string, force bool) error {
-	ms, err := Load(d.Home)
+	rm, err := newRemover(d, name, force)
 	if err != nil {
 		return err
 	}
-	var m *Machine
-	inInventory := hasMachine(ms, name)
-	for i := range ms {
-		if ms[i].Name == name {
-			m = &ms[i]
-		}
-	}
-	if m == nil {
-		if m, err = LoadPending(d.Home, name); err != nil {
-			var bad *InvalidPendingError
-			if !errors.As(err, &bad) || !force {
-				return err
-			}
-			d.say("note: %v; removing by name only", err)
-			m = nil
-		}
-	}
-	known := m != nil
-	if m == nil {
-		if !force {
-			return fmt.Errorf("machine %s not found", name)
-		}
-		if !config.MachineNameRe.MatchString(name) {
-			return fmt.Errorf("machine %s: name: must match %s", name, config.MachineNameRe)
-		}
-		m = &Machine{Name: name}
-	}
-	rm := &remover{d: d, name: name, m: m, known: known, inInventory: inInventory, r: d.remote(), gh: d.gh(*m)}
-
 	list := []rmStep{
 		{"GitHub keys", rm.deleteGitHubKeys},
 		{"gh auth logout on the box", rm.ghLogout},
@@ -97,6 +68,43 @@ func Remove(ctx context.Context, d Deps, name string, force bool) error {
 	}
 	d.say("✓ machine %s removed", name)
 	return nil
+}
+
+// newRemover finds what is known about name: its inventory entry, else its
+// pending add, else (force only) just the name.
+func newRemover(d Deps, name string, force bool) (*remover, error) {
+	ms, err := Load(d.Home)
+	if err != nil {
+		return nil, err
+	}
+	var m *Machine
+	inInventory := hasMachine(ms, name)
+	for i := range ms {
+		if ms[i].Name == name {
+			m = &ms[i]
+		}
+	}
+	if m == nil {
+		if m, err = LoadPending(d.Home, name); err != nil {
+			var bad *InvalidPendingError
+			if !errors.As(err, &bad) || !force {
+				return nil, err
+			}
+			d.say("note: %v; removing by name only", err)
+			m = nil
+		}
+	}
+	known := m != nil
+	if m == nil {
+		if !force {
+			return nil, fmt.Errorf("machine %s not found", name)
+		}
+		if !config.MachineNameRe.MatchString(name) {
+			return nil, fmt.Errorf("machine %s: name: must match %s", name, config.MachineNameRe)
+		}
+		m = &Machine{Name: name}
+	}
+	return &remover{d: d, name: name, m: m, known: known, inInventory: inInventory, r: d.remote(), gh: d.gh(*m)}, nil
 }
 
 // boxReady gates both box steps: with no entry to say where the box is, or
@@ -153,7 +161,7 @@ func (rm *remover) dropBreakGlass(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	res, err := rm.r.Exec(ctx, rm.name, dropKeyScript, "", blobOf(pub))
+	res, err := rm.r.Exec(ctx, rm.name, dropKeyScript, "", keys.PubBlob(pub))
 	return okOrErr("remove the break-glass key", rm.name, res, err)
 }
 

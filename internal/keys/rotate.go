@@ -276,7 +276,7 @@ func derivedBlob(ctx context.Context, o Options, key string) string {
 	if err != nil || res.Code != 0 {
 		return ""
 	}
-	return pubBlob(res.Stdout)
+	return PubBlob(res.Stdout)
 }
 
 func exists(path string) bool {

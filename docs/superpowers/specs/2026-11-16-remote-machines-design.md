@@ -834,7 +834,8 @@ Acceptance criteria:
 7. `chezmoi managed` for a remote machine lists `.local/bin/theme`,
    `.config/themes/registry.sh` and `.config/themes/apply-tmux.sh`, as for a laptop.
 8. `machine add 0` exits 1 before any command runs, because canopy refuses the name (a
-   status format reads `0` as unset). An inventory that already holds a `0` still loads, so
+   status format reads `0` as unset), and `athome init` on a box refuses `machineName = "0"`
+   with a usage error (exit 2) for the same reason. An inventory that already holds a `0` still loads, so
    it can be listed and removed.
 9. Every laptop golden in `test/fixtures` still matches.
 

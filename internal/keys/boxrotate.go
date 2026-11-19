@@ -11,35 +11,6 @@ import (
 	"github.com/morrieinmaas/athome/internal/run"
 )
 
-// ghEnvRunner adds env to every command, so a box's GitHub account token
-// reaches gh without ever being an argument.
-type ghEnvRunner struct {
-	run.Runner
-	env []string
-}
-
-func (r ghEnvRunner) Run(ctx context.Context, c run.Cmd) (run.Result, error) {
-	c.Env = append(append([]string(nil), c.Env...), r.env...)
-	return r.Runner.Run(ctx, c)
-}
-
-// ghRunnerFor is o.Run, or o.Run with GH_TOKEN of the box's account.
-func ghRunnerFor(ctx context.Context, o Options, b KeyBox) (run.Runner, error) {
-	account := b.GitHubAccount()
-	if account == "" {
-		return o.Run, nil
-	}
-	res, err := o.Run.Run(ctx, run.Cmd{Name: "gh", Args: []string{"auth", "token", "--hostname", "github.com", "--user", account}})
-	if err != nil {
-		return nil, err
-	}
-	token := strings.TrimSpace(res.Stdout)
-	if res.Code != 0 || token == "" {
-		return nil, fmt.Errorf("gh has no token for GitHub account %s (run: gh auth login)", account)
-	}
-	return ghEnvRunner{o.Run, []string{"GH_TOKEN=" + token}}, nil
-}
-
 const kindBox = "box"
 
 func boxSkipTarget(name string) string { return "box:" + name }
@@ -117,7 +88,7 @@ func (b *boxRotation) skip(err error) error {
 // its token stops the run rather than skipping the box.
 func (b *boxRotation) ghRunner(ctx context.Context) (run.Runner, error) {
 	if b.gh == nil {
-		gh, err := ghRunnerFor(ctx, b.o, b.kb)
+		gh, err := GHTokenRunner(ctx, b.o.Run, b.kb.GitHubAccount())
 		if err != nil {
 			return nil, err
 		}
@@ -160,7 +131,7 @@ func (b *boxRotation) createNew(ctx context.Context) error {
 // refuseSameKey: the old key's GitHub entries are deleted at the end, so a new
 // key that is the old one would leave the box with no registered key.
 func (b *boxRotation) refuseSameKey(context.Context) error {
-	if pubBlob(b.j.NewPub) == pubBlob(b.j.OldPub) {
+	if PubBlob(b.j.NewPub) == PubBlob(b.j.OldPub) {
 		return b.skip(errors.New("the box's new key is its current key; refusing, so its only registered key is never removed"))
 	}
 	return nil
@@ -174,7 +145,7 @@ func (b *boxRotation) addToGitHub(ctx context.Context) error {
 		return err
 	}
 	b.o.say("==> %s: adding its key to GitHub", b.j.Item)
-	if err := ghAddPub(ctx, gh, b.j.NewPub, "athome-"+b.j.Item); err != nil {
+	if err := WithPubFile(b.j.NewPub, func(path string) error { return ghAdd(ctx, gh, path, "athome-"+b.j.Item) }); err != nil {
 		return err
 	}
 	b.j.Targets["github"] = phaseAdded
@@ -228,7 +199,7 @@ var boxPubLine = regexp.MustCompile(`^ssh-ed25519 [A-Za-z0-9+/]+=*( [^\r\n]*)?$`
 func protectedBlobs(o Options) map[string]bool {
 	out := map[string]bool{}
 	if b, err := os.ReadFile(LaptopKey(o.Home, o.Host) + ".pub"); err == nil {
-		if blob := pubBlob(string(b)); blob != "" {
+		if blob := PubBlob(string(b)); blob != "" {
 			out[blob] = true
 		}
 	}
@@ -241,27 +212,10 @@ func checkBoxPub(what, pub string, protected map[string]bool) error {
 	if !boxPubLine.MatchString(pub) {
 		return fmt.Errorf("the box's %s is not one ssh-ed25519 public key line", what)
 	}
-	if protected[pubBlob(pub)] {
+	if protected[PubBlob(pub)] {
 		return fmt.Errorf("the box's %s is the laptop key; refusing", what)
 	}
 	return nil
-}
-
-// ghAddPub writes pub to a temp file for gh ssh-key add and removes it again.
-func ghAddPub(ctx context.Context, r run.Runner, pub, title string) error {
-	f, err := os.CreateTemp("", "athome-box-*.pub")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(f.Name())
-	if _, err := f.WriteString(pub + "\n"); err != nil {
-		f.Close()
-		return err
-	}
-	if err := f.Close(); err != nil {
-		return err
-	}
-	return ghAdd(ctx, r, f.Name(), title)
 }
 
 // boxJobs is one job per box that can rotate its own key.

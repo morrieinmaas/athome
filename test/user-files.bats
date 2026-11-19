@@ -1,8 +1,9 @@
 #!/usr/bin/env bats
 # Files the user owns: ~/.zshrc, ~/.ssh/config, ~/.gitconfig and the themed
-# configs. chezmoi keeps one athome line in the first two (modify_ scripts) and
-# writes the rest only when missing (create_), so an apply never drops a line the
-# user or a tool added. Every target is rendered with `chezmoi cat` against a
+# configs. chezmoi keeps one athome line in the first two (modify_ scripts),
+# only appends missing identity includes to ~/.gitconfig (modify_), and writes
+# the themed configs only when missing (create_), so an apply never drops a
+# line the user or a tool added. Every target is rendered with `chezmoi cat` against a
 # temp destination, never applied.
 
 bats_require_minimum_version 1.5.0

@@ -26,7 +26,7 @@ refute "tmux plugins removed"               test -d "$HOME/.config/tmux/plugins"
 
 # ── USER DATA must SURVIVE (the safety guard) ──
 check  "your .zshrc kept (modify_ target)"  test -f "$HOME/.zshrc"
-check  "your .gitconfig kept (create_)"     test -f "$HOME/.gitconfig"
+check  "your .gitconfig kept (modify_)"     test -f "$HOME/.gitconfig"
 check  "secrets .env file preserved"        test -f "$HOME/.secrets/canary/.env"
 check  "project-dir file preserved"         test -f "$HOME/personal/canary-repo/keepme"
 check  "source repo preserved"              test -f "$HOME/athome/scripts/bootstrap.sh"

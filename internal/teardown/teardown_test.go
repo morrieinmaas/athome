@@ -3,6 +3,7 @@ package teardown_test
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -279,6 +280,37 @@ func TestDotfilesExecuteRemovesPlannedKeepsUserData(t *testing.T) {
 			t.Errorf("%s was removed", p)
 		}
 	}
+}
+
+// The user's own files (modify_ and create_ targets) survive --dotfiles; the
+// files athome owns whole go.
+func TestDotfilesKeepsUserOwnedFiles(t *testing.T) {
+	r := newRig(t)
+	r.fake.Have("chezmoi")
+	zshrc := r.touch(t, ".zshrc")
+	gitconfig := r.touch(t, ".gitconfig")
+	athome := r.touch(t, ".zsh/athome.zsh")
+	r.fake.On("chezmoi", "managed", "--path-style=absolute", "--include=files").
+		Return(run.Result{Stdout: strings.Join([]string{gitconfig, zshrc, athome}, "\n") + "\n"})
+	listing := fmt.Sprintf(`{
+  ".gitconfig": {"absolute": %q, "sourceRelative": "create_dot_gitconfig"},
+  ".zsh/athome.zsh": {"absolute": %q, "sourceRelative": "dot_zsh/athome.zsh"},
+  ".zshrc": {"absolute": %q, "sourceRelative": "modify_dot_zshrc.tmpl"}
+}`, gitconfig, athome, zshrc)
+	r.fake.On("chezmoi", "managed", "--path-style=all", "--format=json", "--include=files").
+		Return(run.Result{Stdout: listing})
+	if code := r.run("linux", " dotfiles \n", "--dotfiles", "--execute"); code != 0 {
+		t.Fatalf("exit = %d: %s", code, r.err.String())
+	}
+	if exists(athome) {
+		t.Errorf("%s survived", athome)
+	}
+	for _, p := range []string{zshrc, gitconfig} {
+		if !exists(p) {
+			t.Errorf("%s was removed", p)
+		}
+	}
+	contains(t, r.out.String(), "kept (yours; athome only keeps a line in it or wrote it once): "+zshrc, "(1 managed files)")
 }
 
 func TestYesSkipsQuestion(t *testing.T) {

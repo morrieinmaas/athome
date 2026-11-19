@@ -160,13 +160,20 @@ consequences worth knowing:
 
 Migrating from an older athome, where it owned these files whole: the first
 apply recognises the old body (by its "managed by chezmoi" header) and swaps it
-for the one line, keeping whatever you or a tool added around it. An existing
+for the one line, dropping only lines some athome version wrote and keeping
+whatever you or a tool added in or around it. An existing
 `~/.gitconfig` is left exactly as it is, old athome settings included; they
 match `~/.config/git/config`, and you can delete them from `~/.gitconfig` so
 later repo changes are not shadowed. Run `chezmoi init` before that apply when
 chezmoi warns that the config template changed.
 
 Every other file under `home/` is athome's, whole, which the next section is about.
+Some of those are files a tool can write too, so an apply would undo such a
+write: `~/.zshenv` (rustup adds `. "$HOME/.cargo/env"`), `~/.config/mise/config.toml`
+(`mise use -g`), `~/.config/gh/config.yml` (`gh config set`),
+`~/.config/zed/settings.json` (Zed's settings UI), `~/.config/opencode/opencode.json`
+and `~/.config/containers/containers.conf`. Capture such a change with `mise run
+save`, or move it somewhere the tool also reads that athome does not manage.
 
 ## Managing drift (don't lose live edits!)
 

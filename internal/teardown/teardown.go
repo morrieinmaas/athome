@@ -6,9 +6,11 @@ package teardown
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -40,7 +42,9 @@ cumulative, each includes the ones above it:
   --state      chezmoi persistent state + cache only. Nothing is deleted from
                $HOME; this makes every run_once_ script run again and the
                config re-prompt.
-  --dotfiles   --state + remove every chezmoi-managed file from $HOME and the
+  --dotfiles   --state + remove every chezmoi-managed file from $HOME (except
+               the ones that are yours: ~/.zshrc, ~/.ssh/config, ~/.gitconfig and
+               the other modify_/create_ targets) and the
                generated chezmoi config. Leaves a bare shell. The source repo
                is kept so you can re-bootstrap.
   --all        --dotfiles + uninstall the tool layers: mise tools, nanobrew
@@ -281,7 +285,13 @@ func (p *plan) dotfiles(ctx context.Context) {
 	if p.hasChezmoi() {
 		count := 0
 		res, _ := p.env.Run.Run(ctx, run.Cmd{Name: "chezmoi", Args: []string{"managed", "--path-style=absolute", "--include=files"}})
-		for _, f := range strings.Split(res.Stdout, "\n") {
+		targets := strings.Split(strings.TrimSpace(res.Stdout), "\n")
+		yours := p.userOwned(ctx)
+		for _, f := range targets {
+			if yours[f] {
+				p.note("kept (yours; athome only keeps a line in it or wrote it once): " + f)
+				continue
+			}
 			if fi, err := os.Stat(f); f != "" && err == nil && fi.Mode().IsRegular() {
 				p.rm("-f", f)
 				count++
@@ -299,6 +309,27 @@ func (p *plan) dotfiles(ctx context.Context) {
 		src = "?"
 	}
 	p.note(fmt.Sprintf("kept: source repo %s (needed to re-bootstrap)", src))
+}
+
+// userOwned reports which managed targets are the user's files: chezmoi only
+// keeps a hook line in them (modify_) or wrote them once (create_). When
+// chezmoi's listing can't be read it holds nothing back, as before.
+func (p *plan) userOwned(ctx context.Context) map[string]bool {
+	res, _ := p.env.Run.Run(ctx, run.Cmd{Name: "chezmoi", Args: []string{"managed", "--path-style=all", "--format=json", "--include=files"}})
+	var entries map[string]struct {
+		Absolute       string `json:"absolute"`
+		SourceRelative string `json:"sourceRelative"`
+	}
+	yours := map[string]bool{}
+	if json.Unmarshal([]byte(res.Stdout), &entries) != nil {
+		return yours
+	}
+	for _, e := range entries {
+		if b := path.Base(e.SourceRelative); strings.HasPrefix(b, "modify_") || strings.HasPrefix(b, "create_") {
+			yours[e.Absolute] = true
+		}
+	}
+	return yours
 }
 
 func (p *plan) all(ctx context.Context) {

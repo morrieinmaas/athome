@@ -30,7 +30,7 @@ chmod 600 "$HOME/.ssh/config"
 
 if ! grep -qs '{{ .chezmoi.hostname }}_ed25519' "$HOME/.ssh/config" "$HOME/.ssh/athome/base.conf"; then
   echo "==> seeding github.com Host → {{ .chezmoi.hostname }}_ed25519 in ~/.ssh/config"
-  echo "    (canonical ~/.ssh/config replaces this idempotently in the same apply)"
+  echo "    (dropped again later in this apply, once ~/.ssh/athome/base.conf carries it)"
   cat >> "$HOME/.ssh/config" <<'SSHSEED'
 
 # === chezmoi run_before_00 seed — overwritten by canonical config later in this same apply ===

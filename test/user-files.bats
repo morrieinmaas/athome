@@ -30,7 +30,14 @@ through() {
 
 # old_zshrc / old_ssh: what athome used to render as the whole file.
 old_zshrc() { cat "$ROOT/test/fixtures/zshrc"; }
-old_ssh() { cat "$ROOT/test/fixtures/ssh-config"; }
+# The old ssh file is base.conf's body under the old header (templates.bats
+# checks that against test/fixtures/ssh-config), rendered for this host.
+old_ssh() {
+  printf '# ~/.ssh/config — managed by chezmoi\n\n'
+  chezmoi --source "$ROOT/home" --config "$TMP/${1:-personal}.toml" execute-template \
+    <"$ROOT/home/private_dot_ssh/private_athome/private_base.conf.tmpl" | tail -n +8 |
+    perl -pe 's{see ~/.config/git/config includeIf}{see ~/.gitconfig includeIf}'
+}
 
 # ── ~/.zshrc ─────────────────────────────────────────────────────────────────
 
@@ -138,12 +145,7 @@ Host *
 Host mine
     HostName mine.example" ]
   printf '[data]\n  machineType = "remote"\n  machineName = "box"\n  scope = "work/x"\n' >"$TMP/remote.toml"
-  # The old remote file: base.conf's body under the old header.
-  {
-    printf '# ~/.ssh/config — managed by chezmoi\n\n'
-    perl -pe 's/\.chezmoi\.hostname/"fixture"/g' "$ROOT/home/private_dot_ssh/private_athome/private_base.conf.tmpl" |
-      chezmoi --source "$ROOT/home" --config "$TMP/remote.toml" execute-template | tail -n +8
-  } >"$DEST/.ssh/config"
+  old_ssh remote >"$DEST/.ssh/config"
   grep -q 'StrictHostKeyChecking yes' "$DEST/.ssh/config"
   [ "$(through .ssh/config remote)" = "$SSH_HOOK" ]
 }
@@ -267,4 +269,52 @@ Host a
   [ -f "$ROOT/home/dot_config/containers/registries.conf.d/athome.conf" ]
   [ ! -e "$ROOT/home/dot_config/containers/registries.conf" ]
   grep -qx 'unqualified-search-registries = \["docker.io"\]' "$ROOT/home/dot_config/containers/registries.conf.d/athome.conf"
+}
+
+# ── review follow-ups: lines athome never wrote survive migration ───────────
+
+@test "zshrc: a line that only names athome.zsh is not the hook" {
+  printf '%s\n' "alias ea='nvim ~/.zsh/athome.zsh'" 'source ~/.zsh/athome.zsh' >"$DEST/.zshrc"
+  [ "$(through .zshrc)" = "alias ea='nvim ~/.zsh/athome.zsh'
+source ~/.zsh/athome.zsh" ]
+  printf '%s\n' "alias ea='nvim ~/.zsh/athome.zsh'" >"$DEST/.zshrc"
+  [ "$(through .zshrc)" = "$ZSH_HOOK
+alias ea='nvim ~/.zsh/athome.zsh'" ]
+}
+
+@test "zshrc: a line the user put inside the old body stays" {
+  old_zshrc | awk 'NR == 50 { print "export MINE=1" } { print }' >"$DEST/.zshrc"
+  [ "$(through .zshrc)" = "$ZSH_HOOK
+export MINE=1" ]
+}
+
+@test "zshrc: an older athome body (different source loop) and a truncated one migrate too" {
+  old_zshrc | perl -pe 's/ ssh-nudge.zsh canopy-theme.zsh//' >"$DEST/.zshrc"
+  printf 'eval "$(scw autocomplete script shell=zsh)"\n' >>"$DEST/.zshrc"
+  [ "$(through .zshrc)" = "$ZSH_HOOK
+eval \"\$(scw autocomplete script shell=zsh)\"" ]
+  { old_zshrc | head -60; printf 'alias mine=1\n'; } >"$DEST/.zshrc"
+  [ "$(through .zshrc)" = "$ZSH_HOOK
+alias mine=1" ]
+}
+
+@test "ssh config: a Host the user put inside the old body stays, with its options" {
+  old_ssh | awk '/^Include config.local$/ { print; print "Host mine"; print "    HostName 192.0.2.1"; next } { print }' >"$DEST/.ssh/config"
+  [ "$(through .ssh/config)" = "$SSH_HOOK
+Host mine
+    HostName 192.0.2.1" ]
+}
+
+@test "ssh config: an option the user added under the old github.com block keeps its Host line" {
+  { old_ssh; printf '    Port 443\n'; } >"$DEST/.ssh/config"
+  [ "$(through .ssh/config)" = "$SSH_HOOK
+Host github.com
+    Port 443" ]
+}
+
+@test "ssh config: Host=x counts as a Host line" {
+  printf 'Host=x\n    User y\nInclude athome/*.conf\n' >"$DEST/.ssh/config"
+  [ "$(through .ssh/config)" = "$SSH_HOOK
+Host=x
+    User y" ]
 }

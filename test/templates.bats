@@ -266,10 +266,11 @@ render_ssh_config() {
 
 # test/fixtures/ssh-config is the whole ~/.ssh/config athome rendered before
 # base.conf existed; base.conf carries the same settings under a new header.
-@test "ssh config: personal and work base.conf is the old file under a new header" {
+@test "ssh config: personal and work base.conf is the old file under a new header, one comment updated" {
   tail -n +3 "$ROOT/test/fixtures/ssh-config" >"$TMP/old-body"
   for t in personal work; do
-    render_ssh_config "$t" | tail -n +8 >"$TMP/ssh-config.$t"
+    render_ssh_config "$t" | tail -n +8 |
+      perl -pe 's{see ~/.config/git/config includeIf}{see ~/.gitconfig includeIf}' >"$TMP/ssh-config.$t"
     cmp "$TMP/ssh-config.$t" "$TMP/old-body"
   done
 }

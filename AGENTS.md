@@ -40,7 +40,8 @@ chezmoi apply --force
 
 | Path on disk | Managed by chezmoi? |
 | --- | --- |
-| `~/.zsh/athome.zsh`, `~/.config/git/config`, `~/.ssh/athome/base.conf`, `~/.config/ghostty/config`, `~/.config/niri/config.kdl`, `~/.config/tmux/tmux.conf`, etc. | Yes — sources are under `home/dot_*` |
+| `~/.zsh/athome.zsh`, `~/.config/git/config`, `~/.ssh/athome/base.conf`, `~/.config/ghostty/config`, `~/.config/tmux/tmux.conf`, etc. | Yes — sources are under `home/dot_*` |
+| `~/.zshrc`, `~/.ssh/config`, `~/.gitconfig`, `~/.config/{gh-dash,slk,niri}/…` | The user's. chezmoi keeps one hook line (`modify_`) or writes the file once when missing (`create_`); see docs/customizing.md |
 | `~/Pictures/Wallpapers/` | Yes — ships a plain black default (`black.png`); the user drops their own images in and picks via Noctalia's UI |
 | `~/.config/noctalia/athome.toml` | Yes — athome's Noctalia defaults (builtin scheme, dark, gtk/qt templates, bar). Noctalia merges every `*.toml` there |
 | `~/.local/state/noctalia/settings.toml` | **No** — Noctalia's settings window and `noctalia msg` write it, and it loads LAST, so the user's choices win over `athome.toml`. Never ship it (athome once did, `create_`-once, and its `[theme]` blocked every later default) |
@@ -59,7 +60,7 @@ some of its contents differ. Two ways, and which one depends on who reads it:
   the value is decided at apply time and the reader is a plain config file.
   `dot_zsh/path.zsh.tmpl` and `dot_zsh/exports.zsh.tmpl` do this.
 - **A runtime conditional in the shell itself**, `case "$OSTYPE"`, when the
-  reader is a shell that already knows which OS it is on. `dot_zshrc.tmpl`
+  reader is a shell that already knows which OS it is on. `dot_zsh/athome.zsh`
   picks between `dot_zsh/aliases-darwin.zsh` and `dot_zsh/aliases-linux.zsh`
   that way, and both files ship to both machines.
 

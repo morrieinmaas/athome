@@ -59,14 +59,6 @@ func checkPub(pub string) error {
 	return nil
 }
 
-func blobOf(pub string) string {
-	f := strings.Fields(pub)
-	if len(f) < 2 {
-		return ""
-	}
-	return f[1]
-}
-
 // sh runs script on the box; a non-zero exit is an error naming the box.
 func (b *Box) sh(ctx context.Context, what, script, stdin string, args ...string) (run.Result, error) {
 	res, err := b.r.Exec(ctx, b.m.Name, script, stdin, args...)
@@ -136,10 +128,20 @@ func (b *Box) CurrentPub(ctx context.Context) (string, error) {
 	return strings.TrimSpace(res.Stdout), err
 }
 
-const newKeyScript = prepareSSH + `k="$HOME/.ssh/$1_ed25519.rotate"
+// keyScript creates ~/.ssh/<$1>_ed25519<suffix> on the box unless it exists,
+// comment athome@<$2>, and prints its public key.
+func keyScript(suffix string) string {
+	return prepareSSH + `k="$HOME/.ssh/$1_ed25519` + suffix + `"
 [ -f "$k" ] || ssh-keygen -q -t ed25519 -N '' -C "athome@$2" -f "$k" || exit 1
 [ -f "$k.pub" ] || ssh-keygen -y -f "$k" > "$k.pub" || exit 1
 cat "$k.pub"`
+}
+
+// boxKeyScript is machine add's box key; newKeyScript is a rotation's staging key.
+var (
+	boxKeyScript = keyScript("")
+	newKeyScript = keyScript(".rotate")
+)
 
 // NewKey creates ~/.ssh/<hostname>_ed25519.rotate unless it exists and returns its public key.
 func (b *Box) NewKey(ctx context.Context) (string, error) {
@@ -211,6 +213,6 @@ func (b *Box) PromoteKey(ctx context.Context, newPub string) error {
 	if err := checkPub(newPub); err != nil {
 		return fmt.Errorf("promote on %s: %w", b.m.Name, err)
 	}
-	_, err := b.sh(ctx, "promote key", promoteScript, "", b.m.Hostname, blobOf(newPub))
+	_, err := b.sh(ctx, "promote key", promoteScript, "", b.m.Hostname, keys.PubBlob(newPub))
 	return err
 }

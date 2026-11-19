@@ -150,3 +150,133 @@ func TestCheckoutScriptKeepsBoxOnPinnedTag(t *testing.T) {
 		t.Errorf("local edit survived the checkout: %q", got)
 	}
 }
+
+func TestCheckGitHubScriptOnDisk(t *testing.T) {
+	home := t.TempDir()
+	bin := t.TempDir()
+	stub := "#!/bin/sh\necho \"$@\" > \"$HOME/ssh.args\"\ncat \"$HOME/.ssh/athome_github_known_hosts\" > \"$HOME/ssh.kh\"\n" +
+		"echo 'Hi x! You have successfully authenticated' >&2\nexit 1\n"
+	if err := os.WriteFile(filepath.Join(bin, "ssh"), []byte(stub), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	out, err := shRun(t, home, checkGitHubScript, githubKnownHosts, "dev", ".rotate")
+	if err == nil || !strings.Contains(out, "successfully authenticated") {
+		t.Fatalf("%q %v", out, err)
+	}
+	kh := filepath.Join(home, ".ssh", "athome_github_known_hosts")
+	if b, _ := os.ReadFile(kh); string(b) != githubKnownHosts {
+		t.Errorf("known_hosts on the box: %q", b)
+	}
+	if fi, err := os.Stat(kh); err != nil || fi.Mode().Perm() != 0o600 {
+		t.Errorf("known_hosts mode: %v %v", fi, err)
+	}
+	args, _ := os.ReadFile(filepath.Join(home, "ssh.args"))
+	for _, want := range []string{"-o UserKnownHostsFile=" + kh, "-o StrictHostKeyChecking=yes", "-i " + filepath.Join(home, ".ssh", "dev_ed25519.rotate"), "-T git@github.com"} {
+		if !strings.Contains(string(args), want) {
+			t.Errorf("ssh args lack %q: %s", want, args)
+		}
+	}
+}
+
+func TestAuthorizeScriptIgnoresCommentLines(t *testing.T) {
+	home := t.TempDir()
+	ak := filepath.Join(home, ".ssh", "authorized_keys")
+	os.MkdirAll(filepath.Dir(ak), 0o700)
+	os.WriteFile(ak, []byte("# "+pub1+"\n   #"+pub1+"\n"), 0o600)
+	if out, err := shRun(t, home, authorizeScript, pub1+"\n"); err != nil {
+		t.Fatal(out, err)
+	}
+	b, _ := os.ReadFile(ak)
+	if !strings.Contains(string(b), "\n"+pub1+"\n") {
+		t.Fatalf("the key behind a comment was not authorized:\n%s", b)
+	}
+	if out, err := shRun(t, home, authorizeScript, pub1+"\n"); err != nil { // now present for real
+		t.Fatal(out, err)
+	}
+	if b2, _ := os.ReadFile(ak); string(b2) != string(b) {
+		t.Errorf("appended twice:\n%s", b2)
+	}
+}
+
+func TestPromoteScriptResumesAfterAnInterruption(t *testing.T) {
+	needKeygen(t)
+	setup := func(t *testing.T) (home, pub string) {
+		home = t.TempDir()
+		out, err := shRun(t, home, newKeyScript, "", "dev", "acme-dev")
+		if err != nil {
+			t.Fatal(out, err)
+		}
+		return home, strings.TrimSpace(out)
+	}
+	assertPromoted := func(t *testing.T, home, pub string) {
+		t.Helper()
+		ssh := filepath.Join(home, ".ssh")
+		for _, gone := range []string{"dev_ed25519.rotate", "dev_ed25519.rotate.pub"} {
+			if _, err := os.Stat(filepath.Join(ssh, gone)); err == nil {
+				t.Errorf("%s left", gone)
+			}
+		}
+		if b, _ := os.ReadFile(filepath.Join(ssh, "dev_ed25519.pub")); strings.TrimSpace(string(b)) != pub {
+			t.Errorf("pub = %s", b)
+		}
+		o, err := exec.Command("ssh-keygen", "-y", "-f", filepath.Join(ssh, "dev_ed25519")).Output()
+		out := string(o)
+		if err != nil || !strings.HasPrefix(pub, strings.TrimSpace(out)) {
+			t.Errorf("private key is not the new one: %q %v", out, err)
+		}
+	}
+
+	t.Run("the pub moved first, the private key still waits", func(t *testing.T) {
+		home, pub := setup(t)
+		ssh := filepath.Join(home, ".ssh")
+		if err := os.Rename(filepath.Join(ssh, "dev_ed25519.rotate.pub"), filepath.Join(ssh, "dev_ed25519.pub")); err != nil {
+			t.Fatal(err)
+		}
+		if out, err := shRun(t, home, promoteScript, "", "dev", blobOf(pub)); err != nil {
+			t.Fatal(out, err)
+		}
+		assertPromoted(t, home, pub)
+	})
+	t.Run("a .rotate.pub is left behind", func(t *testing.T) {
+		home, pub := setup(t)
+		ssh := filepath.Join(home, ".ssh")
+		if err := os.Rename(filepath.Join(ssh, "dev_ed25519.rotate"), filepath.Join(ssh, "dev_ed25519")); err != nil {
+			t.Fatal(err)
+		}
+		if out, err := shRun(t, home, promoteScript, "", "dev", blobOf(pub)); err != nil {
+			t.Fatal(out, err)
+		}
+		assertPromoted(t, home, pub)
+	})
+	t.Run("the order is pub first", func(t *testing.T) {
+		pubMove := strings.Index(promoteScript, `"$k.rotate.pub" "$k.pub"`)
+		keyMove := strings.Index(promoteScript, `"$k.rotate" "$k"`)
+		if pubMove < 0 || keyMove < 0 || pubMove > keyMove {
+			t.Errorf("the .rotate.pub move must come before the .rotate move:\n%s", promoteScript)
+		}
+	})
+}
+
+// The box's own ~/.ssh/config must not widen the check: -F /dev/null drops it,
+// so only the one -i key is offered.
+func TestCheckGitHubScriptOffersOnlyTheGivenKey(t *testing.T) {
+	home := t.TempDir()
+	bin := t.TempDir()
+	stub := "#!/bin/sh\necho \"$@\" > \"$HOME/ssh.args\"\nexit 1\n"
+	if err := os.WriteFile(filepath.Join(bin, "ssh"), []byte(stub), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	shRun(t, home, checkGitHubScript, githubKnownHosts, "dev", "")
+	b, _ := os.ReadFile(filepath.Join(home, "ssh.args"))
+	args := string(b)
+	for _, want := range []string{"-F /dev/null", "-o IdentitiesOnly=yes", "-o BatchMode=yes", "-o StrictHostKeyChecking=yes", "-o UserKnownHostsFile="} {
+		if !strings.Contains(args, want) {
+			t.Errorf("ssh args lack %q: %s", want, args)
+		}
+	}
+	if n := strings.Count(args, "-i "); n != 1 {
+		t.Errorf("%d identity files offered: %s", n, args)
+	}
+}

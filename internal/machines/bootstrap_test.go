@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/BurntSushi/toml"
 )
 
 func laptopData() map[string]any {
@@ -125,6 +127,60 @@ func TestBootstrapTOMLForcesNetbirdWhateverTheLaptopUses(t *testing.T) {
 		got := BootstrapTOML(data, Machine{Name: "b", Scope: "work/acme"}, "", "")
 		if !strings.Contains(got, `meshProvider = "netbird"`+"\n") || strings.Count(got, "meshProvider") != 1 {
 			t.Errorf("laptop %v:\n%s", laptop, got)
+		}
+	}
+}
+
+func TestBootstrapTOMLEscapesAndFiltersValues(t *testing.T) {
+	data := laptopData()
+	data["personalName"] = "A \"B\" \\ C\nD\te\x01"
+	data["githubHandle"] = `x" = "y`
+	m := Machine{Name: "acme-dev", Scope: "work/acme"}
+	got := BootstrapTOML(data, m, "Europe/Amsterdam", "en_US.UTF-8")
+	var back map[string]string
+	if _, err := toml.Decode(got, &back); err != nil {
+		t.Fatalf("not valid TOML: %v\n%s", err, got)
+	}
+	if back["personalName"] != data["personalName"] || back["githubHandle"] != data["githubHandle"] {
+		t.Errorf("round trip: %q %q", back["personalName"], back["githubHandle"])
+	}
+	if back["githubId"] != "42" || back["timezone"] != "Europe/Amsterdam" || back["locale"] != "en_US.UTF-8" {
+		t.Errorf("other values changed: %v", back)
+	}
+
+	for _, tz := range []string{`Europe/"x`, "a b", "x\ny", "a\\b"} {
+		if s := BootstrapTOML(data, m, tz, ""); strings.Contains(s, "timezone") {
+			t.Errorf("timezone %q written:\n%s", tz, s)
+		}
+	}
+	for _, loc := range []string{`en"x`, "a b", "x\ny", "a/b"} {
+		if s := BootstrapTOML(data, m, "", loc); strings.Contains(s, "locale") {
+			t.Errorf("locale %q written:\n%s", loc, s)
+		}
+	}
+	if s := BootstrapTOML(data, m, "Etc/GMT+5", "de_DE@euro"); !strings.Contains(s, `timezone = "Etc/GMT+5"`) || !strings.Contains(s, `locale = "de_DE@euro"`) {
+		t.Errorf("valid values dropped:\n%s", s)
+	}
+}
+
+func TestBootstrapBoxNotesWhenTimezoneOrLocaleIsLeftOut(t *testing.T) {
+	w, d, out := newWorld(t)
+	link := filepath.Join(t.TempDir(), "localtime")
+	os.Symlink(`/usr/share/zoneinfo/Bad"Zone`, link)
+	old := localtimePath
+	localtimePath = link
+	t.Cleanup(func() { localtimePath = old })
+	t.Setenv("LANG", "en US")
+	if err := bootstrapBox(t.Context(), d, acme(), true, d.Out); err != nil {
+		t.Fatal(err)
+	}
+	got := w.boxes["acme-dev"].bootstrap
+	if strings.Contains(got, "timezone") || strings.Contains(got, "locale") {
+		t.Errorf("bad values sent:\n%s", got)
+	}
+	for _, want := range []string{"note: timezone", "note: locale"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("no %q:\n%s", want, out)
 		}
 	}
 }

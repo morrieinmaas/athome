@@ -1,10 +1,18 @@
 name: e2e
 on:
+  # push runs on main only: a PR branch is tested by its pull_request run, not twice.
   push:
+    branches: [main]
   pull_request:
   # Heavy (full distro bootstrap) — also run it weekly to catch upstream drift.
   schedule:
     - cron: '23 6 * * 1'
+
+# A newer push to the same pull request cancels its older run. Other events group by commit,
+# so every main commit gets its own run instead of a queued one being dropped.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read

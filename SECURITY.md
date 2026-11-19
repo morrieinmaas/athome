@@ -52,7 +52,7 @@ reasonable for you.
   extra rules for age, OpenPGP and OpenSSH private-key material. The allowlist is limited to
   literal placeholder strings.
 - **shellcheck** and **shfmt** run in CI over every tracked shell script.
-- An **end-to-end bootstrap** runs in Arch and Fedora containers on every push.
+- An **end-to-end bootstrap** runs in Arch and Fedora containers on every pull request and every push to main.
 
 None of that proves the repo is safe to run on your machine. It proves it is internally
 consistent. Read the scripts.

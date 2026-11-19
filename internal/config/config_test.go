@@ -380,6 +380,7 @@ func TestRemoteMachine(t *testing.T) {
 		"leading dash":   "machine = \"remote\"\nscope = \"work/a\"\nmachineName = \"-x\"\n",
 		"dotted name":    "machine = \"remote\"\nscope = \"work/a\"\nmachineName = \"a.b\"\n",
 		"local name":     "machine = \"remote\"\nscope = \"work/a\"\nmachineName = \"local\"\n",
+		"zero name":      "machine = \"remote\"\nscope = \"work/a\"\nmachineName = \"0\"\n",
 		"trailing slash": "machine = \"remote\"\nscope = \"work/a/\"\nmachineName = \"a\"\n",
 	} {
 		t.Run("refused: "+name, func(t *testing.T) {
@@ -421,5 +422,27 @@ func TestRemoteTimezoneLocaleValidated(t *testing.T) {
 	env := map[string]string{"ATHOME_TIMEZONE": "America/Port-au-Prince", "ATHOME_LOCALE": "sr_RS@latin"}
 	if _, err := config.Load(config.Options{ConfigPath: p, Home: dir, Env: env}); err != nil {
 		t.Errorf("valid values refused: %v", err)
+	}
+}
+
+func TestRemoteNameZeroSaysWhy(t *testing.T) {
+	dir := t.TempDir()
+	p := writeFile(t, filepath.Join(dir, "a.toml"), "machine = \"remote\"\nscope = \"work/acme\"\n")
+	_, err := config.Load(config.Options{ConfigPath: p, Home: dir, Env: map[string]string{"ATHOME_MACHINE_NAME": "0"}})
+	if !errors.Is(err, config.ErrUsage) || !strings.Contains(err.Error(), "canopy reads 0 as unset") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestCheckNewMachineName(t *testing.T) {
+	for _, name := range []string{"a", "acme-dev", "box_1", "00", "10"} {
+		if err := config.CheckNewMachineName(name); err != nil {
+			t.Errorf("%q: %v", name, err)
+		}
+	}
+	for _, name := range []string{"", "0", "local", "Box", "-x", "a.b"} {
+		if err := config.CheckNewMachineName(name); err == nil {
+			t.Errorf("%q accepted", name)
+		}
 	}
 }

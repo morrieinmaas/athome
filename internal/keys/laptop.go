@@ -80,7 +80,7 @@ func laptopNewKey(ctx context.Context, o Options, j *job, save func() error) (st
 	}
 	// A crash inside or after the file swap leaves the new key at j.Key: finish
 	// the swap instead of asking for a fresh start.
-	if !j.Installed && !exists(staged) && derivedBlob(ctx, o, j.Key) == pubBlob(j.NewPub) {
+	if !j.Installed && !exists(staged) && derivedBlob(ctx, o, j.Key) == PubBlob(j.NewPub) {
 		if exists(staged + ".pub") {
 			if err := os.Rename(staged+".pub", j.Key+".pub"); err != nil {
 				return "", err

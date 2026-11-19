@@ -53,26 +53,10 @@ func Clone(ctx context.Context, d Deps, repo, machine string) error {
 	if err != nil {
 		return err
 	}
-	idx := -1
-	if machine == "" {
-		if len(ms) != 1 {
-			var names []string
-			for _, m := range ms {
-				names = append(names, m.Name)
-			}
-			if len(ms) == 0 {
-				return UsageError("no machines; add one with athome machine add")
-			}
-			return UsageError("more than one machine (" + strings.Join(names, ", ") + "); pick one with --machine")
-		}
-		idx = 0
-	} else {
-		idx = slices.IndexFunc(ms, func(m Machine) bool { return m.Name == machine })
-		if idx < 0 {
-			return fmt.Errorf("machine %s not found", machine)
-		}
+	m, err := pickMachine(ms, machine)
+	if err != nil {
+		return err
 	}
-	m := ms[idx]
 	if m.Home == "" || m.Hostname == "" {
 		return fmt.Errorf("machine %s has no home recorded; rerun athome machine add %s", m.Name, m.Name)
 	}
@@ -81,8 +65,43 @@ func Clone(ctx context.Context, d Deps, repo, machine string) error {
 	}
 	r := d.remote()
 	scopeDir := m.Home + "/" + m.Scope
-	out := d.outOrDiscard()
+	if err := cloneOnBox(ctx, r, m, scopeDir, url, name); err != nil {
+		return err
+	}
+	if err := copyEnv(ctx, d, r.Exec, m, name, d.outOrDiscard()); err != nil {
+		return err
+	}
+	if err := recordRepo(ctx, d, m.Name, name); err != nil {
+		return err
+	}
+	d.say("✓ %s on %s: %s/%s", name, m.Name, scopeDir, name)
+	return nil
+}
 
+// pickMachine is the machine named machine, or the only one when machine is "".
+func pickMachine(ms []Machine, machine string) (Machine, error) {
+	if machine != "" {
+		idx := slices.IndexFunc(ms, func(m Machine) bool { return m.Name == machine })
+		if idx < 0 {
+			return Machine{}, fmt.Errorf("machine %s not found", machine)
+		}
+		return ms[idx], nil
+	}
+	if len(ms) == 1 {
+		return ms[0], nil
+	}
+	if len(ms) == 0 {
+		return Machine{}, UsageError("no machines; add one with athome machine add")
+	}
+	var names []string
+	for _, m := range ms {
+		names = append(names, m.Name)
+	}
+	return Machine{}, UsageError("more than one machine (" + strings.Join(names, ", ") + "); pick one with --machine")
+}
+
+// cloneOnBox clones url into scopeDir/name on the box and installs its mise tools.
+func cloneOnBox(ctx context.Context, r Remote, m Machine, scopeDir, url, name string) error {
 	res, err := r.Exec(ctx, m.Name, mkWorktreesScript, "", scopeDir)
 	if err := okOrErr("create "+scopeDir+"/worktrees", m.Name, res, err); err != nil {
 		return err
@@ -95,24 +114,24 @@ func Clone(ctx context.Context, d Deps, repo, machine string) error {
 	if err := okOrErr("look for mise config", m.Name, res, err); err != nil {
 		return err
 	}
-	if strings.TrimSpace(res.Stdout) == "yes" {
-		res, err = r.Exec(ctx, m.Name, miseInstallScript, "", scopeDir, name)
-		if err := okOrErr("mise install", m.Name, res, err); err != nil {
-			return err
-		}
+	if strings.TrimSpace(res.Stdout) != "yes" {
+		return nil
 	}
-	if err := copyEnv(ctx, d, r.Exec, m, name, out); err != nil {
-		return err
-	}
+	res, err = r.Exec(ctx, m.Name, miseInstallScript, "", scopeDir, name)
+	return okOrErr("mise install", m.Name, res, err)
+}
+
+// recordRepo adds repo to the machine's repos and backs the inventory up when that changed it.
+func recordRepo(ctx context.Context, d Deps, machine, repo string) error {
 	changed, err := d.updateInventory(func(ms []Machine) ([]Machine, bool, error) {
-		i := slices.IndexFunc(ms, func(x Machine) bool { return x.Name == m.Name })
+		i := slices.IndexFunc(ms, func(x Machine) bool { return x.Name == machine })
 		if i < 0 {
-			return nil, false, fmt.Errorf("machine %s was removed while %s was being cloned", m.Name, name)
+			return nil, false, fmt.Errorf("machine %s was removed while %s was being cloned", machine, repo)
 		}
-		if slices.Contains(ms[i].Repos, name) {
+		if slices.Contains(ms[i].Repos, repo) {
 			return ms, false, nil
 		}
-		ms[i].Repos = append(ms[i].Repos, name)
+		ms[i].Repos = append(ms[i].Repos, repo)
 		return ms, true, nil
 	})
 	if err != nil {
@@ -121,6 +140,5 @@ func Clone(ctx context.Context, d Deps, repo, machine string) error {
 	if changed {
 		d.backup(ctx)
 	}
-	d.say("✓ %s on %s: %s/%s", name, m.Name, scopeDir, name)
 	return nil
 }

@@ -3,9 +3,10 @@ package machines
 import (
 	"context"
 	"fmt"
-	"os"
+	"slices"
 	"strings"
 
+	"github.com/morrieinmaas/athome/internal/keys"
 	"github.com/morrieinmaas/athome/internal/run"
 )
 
@@ -16,67 +17,51 @@ const scopeHint = "gh auth refresh -h github.com -s admin:public_key,admin:ssh_s
 type ghClient struct {
 	r       run.Runner
 	account string
-	token   string
+	tokened run.Runner // r with the account's GH_TOKEN, once fetched
+}
+
+func (g *ghClient) runner(ctx context.Context) (run.Runner, error) {
+	if g.account == "" {
+		return g.r, nil
+	}
+	if g.tokened == nil {
+		r, err := keys.GHTokenRunner(ctx, g.r, g.account)
+		if err != nil {
+			return nil, err
+		}
+		g.tokened = r
+	}
+	return g.tokened, nil
 }
 
 func (g *ghClient) run(ctx context.Context, args ...string) (run.Result, error) {
-	c := run.Cmd{Name: "gh", Args: args}
-	if g.account != "" {
-		if g.token == "" {
-			res, err := g.r.Run(ctx, run.Cmd{Name: "gh", Args: []string{"auth", "token", "--hostname", "github.com", "--user", g.account}})
-			if err != nil {
-				return res, err
-			}
-			g.token = strings.TrimSpace(res.Stdout)
-			if res.Code != 0 || g.token == "" {
-				return res, fmt.Errorf("no gh token for account %s: %s", g.account, strings.TrimSpace(res.Stderr))
-			}
-		}
-		c.Env = []string{"GH_TOKEN=" + g.token}
+	r, err := g.runner(ctx)
+	if err != nil {
+		return run.Result{}, err
 	}
-	return g.r.Run(ctx, c)
+	return r.Run(ctx, run.Cmd{Name: "gh", Args: args})
 }
 
-type ghKey struct{ ID, Blob, Title string }
-
-var ghEndpoints = []string{"user/keys", "user/ssh_signing_keys"}
-
-// keys lists the account's keys at endpoint (user/keys or user/ssh_signing_keys).
-func (g *ghClient) keys(ctx context.Context, endpoint string) ([]ghKey, error) {
-	res, err := g.run(ctx, "api", "--paginate", endpoint, "--jq", `.[] | "\(.id) \(.key) \(.title)"`)
+// keys lists the account's keys, with titles, at endpoint (one of keys.GHKeyEndpoints).
+func (g *ghClient) keys(ctx context.Context, endpoint string) ([]keys.GHKey, error) {
+	r, err := g.runner(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if res.Code != 0 {
-		return nil, fmt.Errorf("gh api %s failed: %s", endpoint, strings.TrimSpace(res.Stderr))
-	}
-	var out []ghKey
-	for _, line := range strings.Split(res.Stdout, "\n") {
-		f := strings.Fields(line)
-		if len(f) < 3 {
-			continue
-		}
-		out = append(out, ghKey{ID: f[0], Blob: f[2], Title: strings.Join(f[3:], " ")})
-	}
-	return out, nil
+	return keys.GHKeys(ctx, r, endpoint, true)
 }
 
-func hasBlob(ks []ghKey, blob string) bool {
-	for _, k := range ks {
-		if k.Blob == blob {
-			return true
-		}
-	}
-	return false
+func hasBlob(ks []keys.GHKey, blob string) bool {
+	return slices.ContainsFunc(ks, func(k keys.GHKey) bool { return k.Blob == blob })
 }
 
 // registered reports whether blob is on GitHub as an authentication and as a signing key.
 func (g *ghClient) registered(ctx context.Context, blob string) (auth, sign bool, err error) {
-	ak, err := g.keys(ctx, ghEndpoints[0])
+	ak, err := g.keys(ctx, keys.GHKeyEndpoints[0])
 	if err != nil {
 		return false, false, err
 	}
-	sk, err := g.keys(ctx, ghEndpoints[1])
+	sk, err := g.keys(ctx, keys.GHKeyEndpoints[1])
 	if err != nil {
 		return false, false, err
 	}
@@ -89,38 +74,32 @@ func (g *ghClient) register(ctx context.Context, name, pub string) error {
 	if err != nil {
 		return err
 	}
-	f, err := os.CreateTemp("", "athome-box-*.pub")
+	err = keys.WithPubFile(pub, func(path string) error {
+		for _, a := range []struct {
+			have  bool
+			title string
+			extra []string
+		}{
+			{auth, "athome-" + name, nil},
+			{sign, "athome-" + name + "-sign", []string{"--type", "signing"}},
+		} {
+			if a.have {
+				continue
+			}
+			args := append([]string{"ssh-key", "add", path, "--title", a.title}, a.extra...)
+			res, err := g.run(ctx, args...)
+			if err != nil {
+				return err
+			}
+			// "already" may mean the key is on another account, so the listing decides below.
+			if res.Code != 0 && !strings.Contains(res.Stderr, "already") {
+				return fmt.Errorf("gh ssh-key add --title %s failed: %s (missing scopes? run: %s)", a.title, strings.TrimSpace(res.Stderr), scopeHint)
+			}
+		}
+		return nil
+	})
 	if err != nil {
 		return err
-	}
-	defer os.Remove(f.Name())
-	if _, err := f.WriteString(pub + "\n"); err != nil {
-		f.Close()
-		return err
-	}
-	if err := f.Close(); err != nil {
-		return err
-	}
-	for _, a := range []struct {
-		have  bool
-		title string
-		extra []string
-	}{
-		{auth, "athome-" + name, nil},
-		{sign, "athome-" + name + "-sign", []string{"--type", "signing"}},
-	} {
-		if a.have {
-			continue
-		}
-		args := append([]string{"ssh-key", "add", f.Name(), "--title", a.title}, a.extra...)
-		res, err := g.run(ctx, args...)
-		if err != nil {
-			return err
-		}
-		// "already" may mean the key is on another account, so the listing decides below.
-		if res.Code != 0 && !strings.Contains(res.Stderr, "already") {
-			return fmt.Errorf("gh ssh-key add --title %s failed: %s (missing scopes? run: %s)", a.title, strings.TrimSpace(res.Stderr), scopeHint)
-		}
 	}
 	auth, sign, err = g.registered(ctx, blobOf(pub))
 	if err != nil {
@@ -159,8 +138,8 @@ func (g *ghClient) login(ctx context.Context) (string, error) {
 func (g *ghClient) deleteByTitle(ctx context.Context, name string) (int, error) {
 	n := 0
 	for _, e := range []struct{ endpoint, title string }{
-		{ghEndpoints[0], "athome-" + name},
-		{ghEndpoints[1], "athome-" + name + "-sign"},
+		{keys.GHKeyEndpoints[0], "athome-" + name},
+		{keys.GHKeyEndpoints[1], "athome-" + name + "-sign"},
 	} {
 		ks, err := g.keys(ctx, e.endpoint)
 		if err != nil {
@@ -170,12 +149,12 @@ func (g *ghClient) deleteByTitle(ctx context.Context, name string) (int, error) 
 			if k.Title != e.title {
 				continue
 			}
-			res, err := g.run(ctx, "api", "-X", "DELETE", e.endpoint+"/"+k.ID)
+			r, err := g.runner(ctx)
 			if err != nil {
 				return n, err
 			}
-			if res.Code != 0 {
-				return n, fmt.Errorf("gh api -X DELETE %s/%s failed: %s", e.endpoint, k.ID, strings.TrimSpace(res.Stderr))
+			if err := keys.GHDeleteKey(ctx, r, e.endpoint, k.ID); err != nil {
+				return n, err
 			}
 			n++
 		}

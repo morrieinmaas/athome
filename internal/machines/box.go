@@ -136,10 +136,20 @@ func (b *Box) CurrentPub(ctx context.Context) (string, error) {
 	return strings.TrimSpace(res.Stdout), err
 }
 
-const newKeyScript = prepareSSH + `k="$HOME/.ssh/$1_ed25519.rotate"
+// keyScript creates ~/.ssh/<$1>_ed25519<suffix> on the box unless it exists,
+// comment athome@<$2>, and prints its public key.
+func keyScript(suffix string) string {
+	return prepareSSH + `k="$HOME/.ssh/$1_ed25519` + suffix + `"
 [ -f "$k" ] || ssh-keygen -q -t ed25519 -N '' -C "athome@$2" -f "$k" || exit 1
 [ -f "$k.pub" ] || ssh-keygen -y -f "$k" > "$k.pub" || exit 1
 cat "$k.pub"`
+}
+
+// boxKeyScript is machine add's box key; newKeyScript is a rotation's staging key.
+var (
+	boxKeyScript = keyScript("")
+	newKeyScript = keyScript(".rotate")
+)
 
 // NewKey creates ~/.ssh/<hostname>_ed25519.rotate unless it exists and returns its public key.
 func (b *Box) NewKey(ctx context.Context) (string, error) {

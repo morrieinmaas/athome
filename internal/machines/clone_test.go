@@ -8,6 +8,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/morrieinmaas/athome/internal/run"
 )
 
 func cloneBox(t *testing.T) (*world, Deps) {
@@ -287,5 +289,34 @@ func TestCloneScriptPinsGitHubHostKeys(t *testing.T) {
 		if !strings.Contains(string(out), want) {
 			t.Errorf("GIT_SSH_COMMAND lacks %q: %s", want, b)
 		}
+	}
+}
+
+func TestCloneAppliesOnlyItsOwnChange(t *testing.T) {
+	w, d := cloneBox(t)
+	added := false
+	h := hookRun{world: w, before: func(c run.Cmd) {
+		if added || !strings.Contains(strings.Join(c.Args, " "), "git clone") {
+			return
+		}
+		added = true
+		ms, err := Load(d.Home)
+		if err != nil {
+			t.Error(err)
+		}
+		if err := Save(d.Home, append(ms, gpu())); err != nil {
+			t.Error(err)
+		}
+	}}
+	d.Run = h
+	if err := Clone(t.Context(), d, "acme/api", "acme-dev"); err != nil {
+		t.Fatal(err)
+	}
+	ms, _ := Load(d.Home)
+	if len(ms) != 2 || ms[0].Name != "acme-dev" || ms[1].Name != "acme-gpu" {
+		t.Fatalf("a machine added meanwhile was lost: %+v", ms)
+	}
+	if !slices.Equal(ms[0].Repos, []string{"api"}) {
+		t.Errorf("repos = %v", ms[0].Repos)
 	}
 }

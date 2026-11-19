@@ -76,43 +76,40 @@ func Sync(ctx context.Context, d Deps, name string, all bool) error {
 	if err := d.boxConfig(); err != nil {
 		return err
 	}
-	if !all {
-		for _, m := range ms {
-			if m.Name == name {
-				if err := syncBox(ctx, d, m, true, d.outOrDiscard()); err != nil {
-					return err
-				}
-				d.say("✓ %s", name)
-				return nil
-			}
-		}
-		return fmt.Errorf("machine %s not found", name)
+	if all {
+		return syncAll(ctx, d, ms)
 	}
+	return syncOne(ctx, d, ms, name)
+}
 
+// syncOne syncs the machine called name, interactively.
+func syncOne(ctx context.Context, d Deps, ms []Machine, name string) error {
+	for _, m := range ms {
+		if m.Name == name {
+			if err := syncBox(ctx, d, m, true, d.outOrDiscard()); err != nil {
+				return err
+			}
+			d.say("✓ %s", name)
+			return nil
+		}
+	}
+	return fmt.Errorf("machine %s not found", name)
+}
+
+// syncAll syncs every machine in parallel, each into its own log, and prints
+// one line per machine in inventory order.
+func syncAll(ctx context.Context, d Deps, ms []Machine) error {
 	lines := make([]string, len(ms))
-	failed := 0
 	var wg sync.WaitGroup
 	for i, m := range ms {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			var buf bytes.Buffer
-			err := syncBox(ctx, d, m, false, &buf)
-			if err != nil {
-				fmt.Fprintf(&buf, "error: %v\n", err)
-			}
-			log := filepath.Join(d.Home, ".local", "state", "athome", "sync-"+m.Name+".log")
-			if werr := writeAtomic(log, buf.Bytes()); werr != nil && err == nil {
-				err = fmt.Errorf("write log: %w", werr)
-			}
-			if err != nil {
-				lines[i] = fmt.Sprintf("✗ %s: %v (log: %s)", m.Name, firstLine(err.Error()), log)
-			} else {
-				lines[i] = "✓ " + m.Name
-			}
+			lines[i] = syncLogged(ctx, d, m)
 		}()
 	}
 	wg.Wait()
+	failed := 0
 	for _, l := range lines {
 		d.say("%s", l)
 		if strings.HasPrefix(l, "✗") {
@@ -123,6 +120,24 @@ func Sync(ctx context.Context, d Deps, name string, all bool) error {
 		return fmt.Errorf("sync failed on %d of %d machines", failed, len(ms))
 	}
 	return nil
+}
+
+// syncLogged syncs m without a terminal into ~/.local/state/athome/sync-<name>.log
+// and returns its summary line.
+func syncLogged(ctx context.Context, d Deps, m Machine) string {
+	var buf bytes.Buffer
+	err := syncBox(ctx, d, m, false, &buf)
+	if err != nil {
+		fmt.Fprintf(&buf, "error: %v\n", err)
+	}
+	log := filepath.Join(d.Home, ".local", "state", "athome", "sync-"+m.Name+".log")
+	if werr := writeAtomic(log, buf.Bytes()); werr != nil && err == nil {
+		err = fmt.Errorf("write log: %w", werr)
+	}
+	if err != nil {
+		return fmt.Sprintf("✗ %s: %v (log: %s)", m.Name, firstLine(err.Error()), log)
+	}
+	return "✓ " + m.Name
 }
 
 func firstLine(s string) string {

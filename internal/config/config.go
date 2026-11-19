@@ -149,6 +149,19 @@ var (
 	LocaleRe      = regexp.MustCompile(`^[A-Za-z0-9_.@-]+$`)
 )
 
+// CheckNewMachineName checks the name a new remote machine gets: the inventory
+// pattern, not local, and not 0, which canopy reads as unset. The inventory
+// itself still loads a 0, so an existing one can be listed and removed.
+func CheckNewMachineName(name string) error {
+	if !MachineNameRe.MatchString(name) || name == "local" {
+		return fmt.Errorf("must match %s and not be local", MachineNameRe)
+	}
+	if name == "0" {
+		return errors.New("canopy reads 0 as unset, so the box could not name itself; pick another name")
+	}
+	return nil
+}
+
 // validateRemote checks the answers a remote box needs; the same rules the
 // machine inventory applies, so a value is safe in a path and a shell word.
 func validateRemote(d map[string]string) error {
@@ -162,8 +175,8 @@ func validateRemote(d map[string]string) error {
 	if !ok {
 		return fmt.Errorf("%w: scope must be work|personal|sidebiz/<path> for a remote machine (got: %q; set ATHOME_SCOPE or scope in the config file)", ErrUsage, scope)
 	}
-	if !MachineNameRe.MatchString(d["machineName"]) || d["machineName"] == "local" {
-		return fmt.Errorf("%w: machineName must match %s and not be local for a remote machine (got: %q; set ATHOME_MACHINE_NAME or machineName in the config file)", ErrUsage, MachineNameRe, d["machineName"])
+	if err := CheckNewMachineName(d["machineName"]); err != nil {
+		return fmt.Errorf("%w: remote machine name: %v (got: %q; set ATHOME_MACHINE_NAME or machineName in the config file)", ErrUsage, err, d["machineName"])
 	}
 	if tz := d["timezone"]; tz != "" && !TimezoneRe.MatchString(tz) {
 		return fmt.Errorf("%w: timezone must match %s (got: %q)", ErrUsage, TimezoneRe, tz)

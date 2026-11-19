@@ -204,6 +204,10 @@ func TestCheckInclude(t *testing.T) {
 	if err := CheckInclude(home); err != nil {
 		t.Fatal(err)
 	}
+	os.WriteFile(cfg, []byte("Include athome/*.conf\nHost *\n    Include config.d/*\n"), 0o600)
+	if err := CheckInclude(home); err != nil {
+		t.Fatalf("the chezmoi hook line: %v", err)
+	}
 }
 
 func TestProjects(t *testing.T) {

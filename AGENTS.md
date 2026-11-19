@@ -40,7 +40,7 @@ chezmoi apply --force
 
 | Path on disk | Managed by chezmoi? |
 | --- | --- |
-| `~/.zshrc`, `~/.gitconfig`, `~/.ssh/config`, `~/.config/ghostty/config`, `~/.config/niri/config.kdl`, `~/.config/tmux/tmux.conf`, etc. | Yes — sources are under `home/dot_*` |
+| `~/.zsh/athome.zsh`, `~/.config/git/config`, `~/.ssh/athome/base.conf`, `~/.config/ghostty/config`, `~/.config/niri/config.kdl`, `~/.config/tmux/tmux.conf`, etc. | Yes — sources are under `home/dot_*` |
 | `~/Pictures/Wallpapers/` | Yes — ships a plain black default (`black.png`); the user drops their own images in and picks via Noctalia's UI |
 | `~/.config/noctalia/athome.toml` | Yes — athome's Noctalia defaults (builtin scheme, dark, gtk/qt templates, bar). Noctalia merges every `*.toml` there |
 | `~/.local/state/noctalia/settings.toml` | **No** — Noctalia's settings window and `noctalia msg` write it, and it loads LAST, so the user's choices win over `athome.toml`. Never ship it (athome once did, `create_`-once, and its `[theme]` blocked every later default) |
@@ -68,15 +68,28 @@ file that `.chezmoiignore` filtered out look identical on disk and are very
 different problems, so shipping both and letting the shell choose keeps
 `chezmoi diff` showing the whole picture on either machine.
 
-## Theme-aware configs are `modify_` scripts
+## Files the user owns: one hook line, or written once
+
+`~/.zshrc`, `~/.ssh/config` and `~/.gitconfig` belong to the user and to the
+tools that append to them. athome's content lives in `~/.zsh/athome.zsh`,
+`~/.ssh/athome/base.conf` and `~/.config/git/config`. `home/modify_dot_zshrc` and
+`home/private_dot_ssh/modify_private_config` keep exactly one hook line in the
+user's file and pass every other line through (and strip the old whole-file
+athome body on first run); `home/create_dot_gitconfig` is written only when
+missing. Never turn these back into plain managed files. The table in
+`docs/customizing.md` ("What athome owns vs what you own") is the contract;
+keep it current when a file moves between the two.
+
+## Theme-aware configs are `create_` files
 
 `~/.config/niri/config.kdl`, `~/.config/slk/config.toml` and
 `~/.config/gh-dash/config.yml` are recoloured at runtime by `theme`. Their real
 content lives in `home/.chezmoitemplates/{niri,slk,gh-dash}/`; the files under
-`home/dot_config/` are `modify_*.tmpl` scripts that render that content and
-re-apply the active theme. Edit the `.chezmoitemplates` copy. Don't turn them
-back into plain managed files, and don't `chezmoi add` them: that brings back
-the apply-vs-theme fight. Ghostty uses an unmanaged `~/.config/ghostty/theme`
+`home/dot_config/` are `create_*.tmpl`, written only when the target is missing,
+so apply never resets a theme pick or a user edit. The cost: repo changes reach
+new installs only. Edit the `.chezmoitemplates` copy. Don't turn them back into
+plain managed files, and don't `chezmoi add` them: that brings back the
+apply-vs-theme fight. Ghostty uses an unmanaged `~/.config/ghostty/theme`
 include instead.
 
 ## Tag discipline

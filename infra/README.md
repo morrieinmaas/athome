@@ -149,7 +149,7 @@ pyinfra infra/inventory.py path/to/script.py
 | --- | --- |
 | "Install a user-level CLI tool on every machine" | chezmoi — add to `home/.chezmoidata/packages.yaml` |
 | "Create a new system user" | pyinfra — root-level, can't do in chezmoi |
-| "Change my zshrc" | chezmoi — `home/dot_zshrc.tmpl` |
+| "Change my zshrc" | chezmoi — `home/dot_zsh/athome.zsh` (athome's part; `~/.zshrc` itself is yours) |
 | "Add a system-wide nginx config" | pyinfra — root file under `/etc/` |
 | "Sync ~/.claude/skills to a fresh machine" | chezmoi external |
 | "Provision a brand-new VM" | pyinfra (initial) + chezmoi (after first login) |

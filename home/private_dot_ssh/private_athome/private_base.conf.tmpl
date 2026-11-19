@@ -1,4 +1,9 @@
-# ~/.ssh/config — managed by chezmoi
+# ~/.ssh/athome/base.conf — athome's ssh settings, managed by chezmoi; apply
+# replaces edits here. ~/.ssh/config is yours: chezmoi only keeps one line,
+# `Include athome/*.conf`, at its top, which pulls this file in before your own
+# Host blocks. ssh takes the first value it finds for an option, so the Host *
+# defaults below win over a later Host block; override them per host in
+# ~/.ssh/config.local, which is read first.
 
 # ── Machine-local hosts (untracked, NOT synced) ──────────────────────────────
 # Confidential / per-machine SSH hosts — work jumphosts, internal infra, anything

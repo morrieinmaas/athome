@@ -87,14 +87,16 @@ func SSHConfig(ms []Machine, laptopKeyFile string) string {
 	return b.String()
 }
 
-// CheckInclude fails unless ~/.ssh/config pulls in the generated config.
+// CheckInclude fails unless ~/.ssh/config pulls in the generated config, either
+// directly or through `Include athome/*.conf`, the line chezmoi keeps there
+// (athome/base.conf then includes athome/config).
 func CheckInclude(home string) error {
 	data, err := os.ReadFile(filepath.Join(home, ".ssh", "config"))
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
 	for _, l := range strings.Split(string(data), "\n") {
-		if f := strings.Fields(l); len(f) == 2 && strings.EqualFold(f[0], "Include") && f[1] == "athome/config" {
+		if f := strings.Fields(l); len(f) == 2 && strings.EqualFold(f[0], "Include") && (f[1] == "athome/config" || f[1] == "athome/*.conf") {
 			return nil
 		}
 	}

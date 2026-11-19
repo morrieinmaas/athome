@@ -1,0 +1,5 @@
+# ~/.gitconfig: yours. chezmoi wrote this file once, because it was missing,
+# and never touches it again; `git config --global` writes here.
+#
+# athome's git settings live in ~/.config/git/config, managed by chezmoi. git
+# reads that file first and this one after, so a value set here wins.

@@ -1,4 +1,4 @@
-# ~/.config/gh-dash/config.yml — managed by chezmoi
+# ~/.config/gh-dash/config.yml — written by chezmoi only when missing, then yours
 # gh-dash: a rich terminal UI for GitHub PRs & issues. Installed as the
 # standalone `gh-dash` binary via mise (github:dlvhdr/gh-dash), NOT as a gh
 # extension. Auth is inherited from the `gh` CLI (run `gh auth login` once) —
@@ -45,7 +45,7 @@ keybindings:
 # Committed DEFAULT only (gruvbox light, derived from registry.sh::theme_tmux).
 # The `theme` picker + `prefix g` popup rewrite this block to the active scheme +
 # current dark/light via ~/.config/themes/apply-ghdash.sh, so edit it with
-# `theme <name>`, not by hand. chezmoi apply resets it to this default.
+# `theme <name>`, not by hand. chezmoi apply leaves this file alone.
 theme:
   colors:
     text:

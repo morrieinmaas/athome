@@ -31,7 +31,7 @@ Three places decide what ends up on a machine:
 
 | What | Where | Examples |
 | --- | --- | --- |
-| Config files | [`home/`](../home), deployed by chezmoi | `~/.zshrc`, `~/.config/tmux/…`, `~/.gitconfig` |
+| Config files | [`home/`](../home), deployed by chezmoi | `~/.zsh/athome.zsh`, `~/.config/tmux/…`, `~/.config/git/config` (your `~/.zshrc`, `~/.ssh/config` and `~/.gitconfig` stay yours, see [customizing](customizing.md#what-athome-owns-vs-what-you-own)) |
 | Portable CLI tools and language runtimes | [`home/dot_config/mise/config.toml`](../home/dot_config/mise/config.toml) | ripgrep, fd, bat, lazygit, node, go, rust |
 | Everything native | [`home/.chezmoidata/packages.yaml`](../home/.chezmoidata/packages.yaml) | apps, fonts, the niri desktop, podman, system services |
 
@@ -59,7 +59,7 @@ Where a repo lives decides who you commit as:
 | `~/work/` | `workEmail` / `workName` |
 | `~/sidebiz/` | `sidebizEmail` / `sidebizName` |
 
-This is plain git `includeIf` in [`dot_gitconfig.tmpl`](../home/dot_gitconfig.tmpl).
+This is plain git `includeIf` in [`dot_config/git/config.tmpl`](../home/dot_config/git/config.tmpl).
 There are no per-repo overrides to forget. A side-business repo cloned into
 `~/personal/` looks wrong when you `ls`, which is the point. Emails come from
 your answers at install time and are never written to the repo. Repos outside
@@ -84,7 +84,7 @@ laptop writes a `bootstrap.toml` with it, the box's `scope` (e.g. `work/acme`) a
   the laptop's timezone and locale, and enables `grofe-restore.service`, which starts
   `grofe start-server --restore` at boot.
 
-On the laptop, `~/.ssh/config` includes `~/.ssh/athome/config`, which athome writes from the
+On the laptop, `~/.ssh/config` includes `~/.ssh/athome/*.conf`, whose `base.conf` includes `~/.ssh/athome/config`, which athome writes from the
 inventory (`~/.config/athome/machines.toml`, mirrored into the secrets vault): one `Host`
 block per machine, with the host key pinned in `~/.ssh/athome/known_hosts`.
 
@@ -92,7 +92,7 @@ block per machine, with the host key pinned in `~/.ssh/athome/known_hosts`.
 
 Each machine gets one passphrase-less ed25519 key, `~/.ssh/<hostname>_ed25519`,
 named after the host so GitHub's key list shows which machine is which.
-`~/.ssh/config` points GitHub at it, so no ssh-agent is needed.
+`~/.ssh/athome/base.conf` points GitHub at it, so no ssh-agent is needed.
 
 Commits in the three identity folders are signed with SSH
 (`gpg.format = ssh`), using `~/.ssh/id_ed25519.pub` if you have one (it's
@@ -206,9 +206,9 @@ athome/
     ├── .chezmoidata/pins.toml     the grofe and canopy versions
     ├── .chezmoiexternal.toml.tmpl   things cloned from elsewhere (zinit, tmux plugins…)
     ├── .chezmoiscripts/       numbered setup scripts
-    ├── dot_zshrc.tmpl, dot_zsh/     the shell
-    ├── dot_gitconfig*.tmpl    git, identities, signing
-    ├── private_dot_ssh/       SSH config
+    ├── modify_dot_zshrc, dot_zsh/   the shell (~/.zsh/athome.zsh)
+    ├── dot_gitconfig-*.tmpl   git identities and signing (settings: dot_config/git/)
+    ├── private_dot_ssh/       SSH config (athome/base.conf + the ~/.ssh/config hook)
     └── dot_config/            ghostty, tmux, canopy, nvim, niri, mise, direnv, …
 ```
 

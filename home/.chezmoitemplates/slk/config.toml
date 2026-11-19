@@ -25,9 +25,8 @@ default_workspace  = {{ .slack_default_workspace | quote }}   # open this worksp
 # default_workspace MUST reference a committed [workspaces.<key>] block: slk looks
 # up c.Workspaces[key] and silently FALLS BACK to first-workspace-to-connect when
 # the value is just a bare team id with no block. One theme-less block fixes it;
-# team_id maps the slug → the real team. Kept THEME-LESS on purpose so chezmoi
-# apply wipes any per-workspace `theme =` slk writes at runtime, keeping the
-# picker-driven [appearance] theme authoritative across machines.
+# team_id maps the slug → the real team. Kept THEME-LESS on purpose so the
+# picker-driven [appearance] theme is the only one a new install starts with.
 [workspaces.{{ .slack_default_workspace }}]
 team_id = {{ .slack_team_id | quote }}
 {{- end }}
@@ -38,8 +37,8 @@ team_id = {{ .slack_team_id | quote }}
 # `prefix M` launch (see registry.sh::theme_slk). The value below is just the
 # committed default (matches gruvbox-light) — change it with `theme <name>`, not
 # by hand. NOTE: slk's in-app theme switcher writes a per-workspace `theme =`
-# override which would beat this; chezmoi apply wipes those back out so the
-# picker keeps winning.
+# override which would beat this; delete that line to let the picker win again.
+# chezmoi writes this file only when it is missing, so apply never resets it.
 theme          = "Gruvbox Light"
 # FORCE kitty true-pixel graphics. "auto" detection is unreliable through tmux and
 # silently falls back to half-block — the blocky/"pixelated" look. ghostty speaks

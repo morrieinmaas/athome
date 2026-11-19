@@ -2,19 +2,20 @@
 # Seed the github.com SSH Host → key mapping BEFORE chezmoi deploys any files,
 # to avoid a chicken-and-egg deadlock:
 #
-#   • dot_gitconfig.tmpl (depth 1) ships `url."git@github.com:" insteadOf
+#   • the git config ships `url."git@github.com:" insteadOf
 #     https://github.com/`, so any github.com clone/pull becomes SSH.
 #   • Our key is ~/.ssh/<hostname>_ed25519 — NOT a default ssh identity name,
 #     so ssh only offers it if ~/.ssh/config pins it via IdentityFile.
-#   • chezmoi writes dot_gitconfig.tmpl BEFORE private_dot_ssh/private_config.tmpl
-#     (depth 2). If an apply crashes between the two, `git pull` in the chezmoi
+#   • chezmoi writes ~/.config/git/config BEFORE ~/.ssh/athome/base.conf
+#     (alphabetical). If an apply crashes between the two, `git pull` in the chezmoi
 #     repo rewrites to git@github.com but ssh has no IdentityFile yet → you
 #     can't pull the fix.
 #
 # Solution: this runs on EVERY apply, before any file deploys. If ~/.ssh/config
-# doesn't already pin github.com to our key, append a minimal Host block. The
-# canonical private_dot_ssh/private_config.tmpl overwrites it idempotently later in the
-# same apply; subsequent applies match the marker and no-op.
+# doesn't already pin github.com to our key (directly, or through
+# ~/.ssh/athome/base.conf, which it includes), append a minimal Host block. Later in
+# the same apply chezmoi writes base.conf and the ~/.ssh/config modify_ script
+# drops this block again; subsequent applies find the key in base.conf and no-op.
 #
 # This MIRRORS scripts/lib/ssh.sh::seed_github_ssh_config (used by bootstrap.sh).
 # It can't source that lib — it runs rendered-standalone in chezmoi's apply
@@ -27,7 +28,7 @@ chmod 700 "$HOME/.ssh"
 touch "$HOME/.ssh/config"
 chmod 600 "$HOME/.ssh/config"
 
-if ! grep -q '{{ .chezmoi.hostname }}_ed25519' "$HOME/.ssh/config"; then
+if ! grep -qs '{{ .chezmoi.hostname }}_ed25519' "$HOME/.ssh/config" "$HOME/.ssh/athome/base.conf"; then
   echo "==> seeding github.com Host → {{ .chezmoi.hostname }}_ed25519 in ~/.ssh/config"
   echo "    (canonical ~/.ssh/config replaces this idempotently in the same apply)"
   cat >> "$HOME/.ssh/config" <<'SSHSEED'

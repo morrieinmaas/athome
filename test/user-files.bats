@@ -1,0 +1,270 @@
+#!/usr/bin/env bats
+# Files the user owns: ~/.zshrc, ~/.ssh/config, ~/.gitconfig and the themed
+# configs. chezmoi keeps one athome line in the first two (modify_ scripts) and
+# writes the rest only when missing (create_), so an apply never drops a line the
+# user or a tool added. Every target is rendered with `chezmoi cat` against a
+# temp destination, never applied.
+
+bats_require_minimum_version 1.5.0
+
+setup() {
+  unset TMUX GROFE ATHOME_CI
+  ROOT="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
+  command -v chezmoi >/dev/null || skip "chezmoi not installed"
+  TMP="$BATS_TEST_TMPDIR"
+  DEST="$TMP/home"
+  mkdir -p "$DEST/.ssh"
+  for t in personal work; do
+    printf '[data]\n  machineType = "%s"\n' "$t" >"$TMP/$t.toml"
+  done
+  ZSH_HOOK='[[ -f "$HOME/.zsh/athome.zsh" ]] && source "$HOME/.zsh/athome.zsh"'
+  SSH_HOOK='Include athome/*.conf'
+}
+
+# through <target under home> [config]: what apply would write there, given the
+# file currently in $DEST.
+through() {
+  chezmoi --source "$ROOT/home" --config "$TMP/${2:-personal}.toml" \
+    --destination "$DEST" --persistent-state "$TMP/state.db" cat "$DEST/$1"
+}
+
+# old_zshrc / old_ssh: what athome used to render as the whole file.
+old_zshrc() { cat "$ROOT/test/fixtures/zshrc"; }
+old_ssh() { cat "$ROOT/test/fixtures/ssh-config"; }
+
+# ── ~/.zshrc ─────────────────────────────────────────────────────────────────
+
+@test "zshrc: a missing or empty file gets the hook line alone" {
+  for t in personal work; do
+    rm -f "$DEST/.zshrc"
+    [ "$(through .zshrc "$t")" = "$ZSH_HOOK" ]
+    : >"$DEST/.zshrc"
+    [ "$(through .zshrc "$t")" = "$ZSH_HOOK" ]
+  done
+}
+
+@test "zshrc: the old athome body becomes the hook, and lines a tool appended stay verbatim" {
+  { old_zshrc; printf '\n# Scaleway CLI autocomplete initialization.\neval "$(scw autocomplete script shell=zsh)"\n'; } >"$DEST/.zshrc"
+  run through .zshrc
+  [ "$status" -eq 0 ]
+  [ "$output" = "$ZSH_HOOK
+
+# Scaleway CLI autocomplete initialization.
+eval \"\$(scw autocomplete script shell=zsh)\"" ]
+}
+
+@test "zshrc: lines above the old body stay above the hook" {
+  { printf 'export EARLY=1\n'; old_zshrc; printf 'alias late=1\n'; } >"$DEST/.zshrc"
+  [ "$(through .zshrc)" = "export EARLY=1
+$ZSH_HOOK
+alias late=1" ]
+}
+
+@test "zshrc: the pre-bootstrap mise line install-mise.sh adds goes, the user's own stays" {
+  grep -q 'activate zsh)"   # athome: pre-bootstrap stopgap' "$ROOT/scripts/install-mise.sh"
+  printf '%s\n' 'eval "$(/usr/bin/mise activate zsh)"   # athome: pre-bootstrap stopgap' 'eval "$(mise activate zsh)"' >"$DEST/.zshrc"
+  [ "$(through .zshrc)" = "$ZSH_HOOK
+eval \"\$(mise activate zsh)\"" ]
+}
+
+@test "zshrc: a file of the user's own gets the hook on top, everything else verbatim" {
+  printf 'export A=1\n\n  # indented comment\neval "$(tool init zsh)"\n' >"$DEST/.zshrc"
+  [ "$(through .zshrc)" = "$ZSH_HOOK
+export A=1
+
+  # indented comment
+eval \"\$(tool init zsh)\"" ]
+}
+
+@test "zshrc: a hook already there, anywhere, is left alone and never doubled" {
+  printf 'export A=1\nsource ~/.zsh/athome.zsh\neval "$(x)"\nsource ~/.zsh/athome.zsh\n' >"$DEST/.zshrc"
+  [ "$(through .zshrc)" = 'export A=1
+source ~/.zsh/athome.zsh
+eval "$(x)"' ]
+}
+
+@test "zshrc: a commented-out hook does not count" {
+  printf '# source ~/.zsh/athome.zsh\n' >"$DEST/.zshrc"
+  [ "$(through .zshrc)" = "$ZSH_HOOK
+# source ~/.zsh/athome.zsh" ]
+}
+
+@test "zshrc: idempotent, a second apply changes nothing" {
+  for input in "" "$(old_zshrc)" "$(printf 'x=1\n%s\ny=2' "$(old_zshrc)")" 'eval "$(scw autocomplete script shell=zsh)"'; do
+    printf '%s\n' "$input" >"$DEST/.zshrc"
+    through .zshrc >"$TMP/once"
+    cp "$TMP/once" "$DEST/.zshrc"
+    through .zshrc >"$TMP/twice"
+    cmp "$TMP/once" "$TMP/twice"
+    [ "$(grep -c 'zsh/athome.zsh' "$TMP/once")" -eq 1 ]
+  done
+}
+
+@test "zshrc: the hook output parses, and athome.zsh is the old body" {
+  command -v zsh >/dev/null || skip "zsh not installed"
+  rm -f "$DEST/.zshrc"
+  through .zshrc >"$TMP/zshrc"
+  zsh -n "$TMP/zshrc"
+  # Same body as the old ~/.zshrc, apart from the header comment.
+  diff <(tail -n +6 "$ROOT/home/dot_zsh/athome.zsh") <(tail -n +4 "$ROOT/test/fixtures/zshrc")
+}
+
+# ── ~/.ssh/config ────────────────────────────────────────────────────────────
+
+@test "ssh config: a missing or empty file gets the Include line alone" {
+  for t in personal work; do
+    rm -f "$DEST/.ssh/config"
+    [ "$(through .ssh/config "$t")" = "$SSH_HOOK" ]
+    : >"$DEST/.ssh/config"
+    [ "$(through .ssh/config "$t")" = "$SSH_HOOK" ]
+  done
+}
+
+@test "ssh config: the old athome body goes, the user's Host * / Include config.d stays verbatim" {
+  { old_ssh; printf '\nHost *\n    Include config.d/*\n'; } >"$DEST/.ssh/config"
+  [ "$(through .ssh/config)" = "$SSH_HOOK
+
+Host *
+    Include config.d/*" ]
+}
+
+@test "ssh config: the old remote body and the bootstrap's seeded blocks go too" {
+  {
+    printf 'Host mine\n    HostName mine.example\n'
+    printf '\n# === seeded by scripts/lib/ssh.sh — the chezmoi-managed ~/.ssh/config replaces this ===\nHost github.com\n    HostName github.com\n    User git\n    IdentityFile ~/.ssh/id_ed25519\n    IdentityFile ~/.ssh/h_ed25519\n'
+    printf '\n# === chezmoi run_before_00 seed — overwritten by canonical config later in this same apply ===\nHost github.com\n    HostName github.com\n    IdentityFile ~/.ssh/h_ed25519\n'
+  } >"$DEST/.ssh/config"
+  [ "$(through .ssh/config)" = "$SSH_HOOK
+Host mine
+    HostName mine.example" ]
+  printf '[data]\n  machineType = "remote"\n  machineName = "box"\n  scope = "work/x"\n' >"$TMP/remote.toml"
+  # The old remote file: base.conf's body under the old header.
+  {
+    printf '# ~/.ssh/config — managed by chezmoi\n\n'
+    perl -pe 's/\.chezmoi\.hostname/"fixture"/g' "$ROOT/home/private_dot_ssh/private_athome/private_base.conf.tmpl" |
+      chezmoi --source "$ROOT/home" --config "$TMP/remote.toml" execute-template | tail -n +8
+  } >"$DEST/.ssh/config"
+  grep -q 'StrictHostKeyChecking yes' "$DEST/.ssh/config"
+  [ "$(through .ssh/config remote)" = "$SSH_HOOK" ]
+}
+
+@test "ssh config: the Include line goes above the first Host or Match, once" {
+  printf '# mine\nHost a\n    User me\nInclude athome/*.conf\nMatch all\n' >"$DEST/.ssh/config"
+  [ "$(through .ssh/config)" = "$SSH_HOOK
+# mine
+Host a
+    User me
+Match all" ]
+}
+
+@test "ssh config: an Include line already above every Host block is left where it is" {
+  printf 'Include config.d/*\ninclude athome/*.conf\nHost a\n    User me\nInclude athome/*.conf\n' >"$DEST/.ssh/config"
+  [ "$(through .ssh/config)" = 'Include config.d/*
+include athome/*.conf
+Host a
+    User me' ]
+}
+
+@test "ssh config: idempotent, a second apply changes nothing" {
+  for input in "" "$(old_ssh)" "$(printf '%s\n\nHost *\n    Include config.d/*' "$(old_ssh)")" 'Host a'; do
+    printf '%s\n' "$input" >"$DEST/.ssh/config"
+    through .ssh/config >"$TMP/once"
+    cp "$TMP/once" "$DEST/.ssh/config"
+    through .ssh/config >"$TMP/twice"
+    cmp "$TMP/once" "$TMP/twice"
+    [ "$(grep -ci '^include athome/\*\.conf$' "$TMP/once")" -eq 1 ]
+  done
+}
+
+@test "ssh config: ssh resolves athome's github.com and the user's config.d hosts through the chain" {
+  command -v ssh >/dev/null || skip "ssh not installed"
+  mkdir -p "$DEST/.ssh/athome" "$DEST/.ssh/config.d"
+  perl -pe 's/\.chezmoi\.hostname/"fixture"/g' "$ROOT/home/private_dot_ssh/private_athome/private_base.conf.tmpl" |
+    chezmoi --source "$ROOT/home" --config "$TMP/personal.toml" execute-template >"$DEST/.ssh/athome/base.conf"
+  printf 'Host acme-dev\n    HostName dev.acme.example\n' >"$DEST/.ssh/athome/config"
+  printf 'Host mybox\n    HostName mybox.example\n' >"$DEST/.ssh/config.d/mine"
+  { old_ssh; printf '\nHost *\n    Include config.d/*\n'; } >"$DEST/.ssh/config"
+  through .ssh/config >"$TMP/config"
+  cp "$TMP/config" "$DEST/.ssh/config"
+  # Relative Includes resolve against the config file's own ~/.ssh: HOME for ssh alone.
+  ssh_g() { HOME="$DEST" ssh -G -F "$DEST/.ssh/config" "$1"; }
+  run ssh_g github.com
+  [[ "$output" == *$'\nidentitiesonly yes\n'* ]]
+  echo "$output" | grep -q '^identityfile .*/.ssh/fixture_ed25519$'
+  run ssh_g acme-dev
+  echo "$output" | grep -qx 'hostname dev.acme.example'
+  run ssh_g mybox
+  echo "$output" | grep -qx 'hostname mybox.example'
+}
+
+# ── git ──────────────────────────────────────────────────────────────────────
+
+@test "git: athome's settings render into ~/.config/git/config on both OSes" {
+  for t in personal work; do
+    for os in darwin linux; do
+      printf '[data]\n  machineType = "%s"\n  name_personal = "P"\n  email_personal = "p@example.org"\n' "$t" >"$TMP/g.toml"
+      perl -pe "s/\.chezmoi\.os/\"$os\"/g" "$ROOT/home/dot_config/git/config.tmpl" |
+        chezmoi --source "$ROOT/home" --config "$TMP/g.toml" execute-template >"$TMP/gitconfig"
+      [ "$(git config -f "$TMP/gitconfig" user.email)" = "p@example.org" ]
+      # shellcheck disable=SC2088 # the literal value git stores
+      [ "$(git config -f "$TMP/gitconfig" includeIf.gitdir:~/work/.path)" = "~/.gitconfig-work" ]
+      [ "$(git config -f "$TMP/gitconfig" url.git@github.com:.pushInsteadOf)" = "https://github.com/" ]
+    done
+  done
+}
+
+@test "git: ~/.gitconfig is written only when missing, and a user's file is never read or changed" {
+  [ ! -e "$ROOT/home/dot_gitconfig.tmpl" ]
+  [ -f "$ROOT/home/create_dot_gitconfig" ]
+  [ -z "$(git config -f "$ROOT/home/create_dot_gitconfig" --list)" ]
+  # chezmoi cat of a create_ target prints the template; apply skips an existing file.
+  printf '[url "git@github.com:"]\n\tinsteadOf = https://github.com/\n' >"$DEST/.gitconfig"
+  chezmoi --source "$ROOT/home" --config "$TMP/personal.toml" --destination "$DEST" \
+    --persistent-state "$TMP/state.db" status "$DEST/.gitconfig" >"$TMP/status"
+  [ ! -s "$TMP/status" ]
+}
+
+@test "git: a value in ~/.gitconfig wins over athome's, and git config --global writes there" {
+  mkdir -p "$DEST/.config/git"
+  printf '[pull]\n\trebase = true\n' >"$DEST/.config/git/config"
+  cp "$ROOT/home/create_dot_gitconfig" "$DEST/.gitconfig"
+  HOME="$DEST" XDG_CONFIG_HOME="$DEST/.config" git config --global pull.rebase false
+  grep -q 'rebase = false' "$DEST/.gitconfig"
+  run ! grep -q 'rebase = false' "$DEST/.config/git/config"
+  [ "$(HOME="$DEST" XDG_CONFIG_HOME="$DEST/.config" git config pull.rebase)" = "false" ]
+}
+
+# ── themed configs ───────────────────────────────────────────────────────────
+
+@test "themed configs: create_ only, so apply never resets a theme pick" {
+  for f in gh-dash/config.yml slk/config.toml niri/config.kdl; do
+    d="$ROOT/home/dot_config/${f%/*}"
+    [ -f "$d/create_${f#*/}.tmpl" ]
+    [ -z "$(ls "$d"/modify_* 2>/dev/null)" ]
+  done
+  mkdir -p "$DEST/.config/slk" "$DEST/.config/gh-dash"
+  printf 'theme = "Everforest Light"\n' >"$DEST/.config/slk/config.toml"
+  printf 'theme: mine\n' >"$DEST/.config/gh-dash/config.yml"
+  chezmoi --source "$ROOT/home" --config "$TMP/personal.toml" --destination "$DEST" \
+    --persistent-state "$TMP/state.db" status "$DEST/.config/slk/config.toml" "$DEST/.config/gh-dash/config.yml" >"$TMP/status"
+  [ ! -s "$TMP/status" ]
+}
+
+@test "themed configs: a missing file gets the repo's version" {
+  for t in personal work; do
+    for f in gh-dash/config.yml niri/config.kdl; do
+      chezmoi --source "$ROOT/home" --config "$TMP/$t.toml" execute-template <"$ROOT/home/dot_config/${f%/*}/create_${f#*/}.tmpl" >"$TMP/out"
+      cmp "$TMP/out" "$ROOT/home/.chezmoitemplates/$f"
+    done
+    { cat "$TMP/$t.toml"; printf '  slack_default_workspace = ""\n  slack_team_id = ""\n'; } >"$TMP/slk.toml"
+    chezmoi --source "$ROOT/home" --config "$TMP/slk.toml" execute-template <"$ROOT/home/dot_config/slk/create_config.toml.tmpl" | grep -q '^theme *= '
+  done
+}
+
+# ── containers ───────────────────────────────────────────────────────────────
+
+@test "containers: athome's registry settings are a drop-in, registries.conf stays the user's" {
+  [ -f "$ROOT/home/dot_config/containers/registries.conf.d/athome.conf" ]
+  [ ! -e "$ROOT/home/dot_config/containers/registries.conf" ]
+  grep -qx 'unqualified-search-registries = \["docker.io"\]' "$ROOT/home/dot_config/containers/registries.conf.d/athome.conf"
+}

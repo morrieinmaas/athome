@@ -56,12 +56,12 @@ layer on top, remembered in `~/.config/themes/active`.
 
 Your pick survives `chezmoi apply`. Ghostty reads it from its own unmanaged
 file (`~/.config/ghostty/theme`, loaded last via `config-file = ?theme`). The
-niri, slk and gh-dash configs are chezmoi `modify_` scripts: they render the
-repo's version and re-apply the picked theme with the same `apply-*.sh`
-script `theme` uses, so repo updates still land and `chezmoi status` stays
-clean. To change one of those three configs, edit it under
+niri, slk and gh-dash configs are chezmoi `create_` files: chezmoi writes the
+repo's version once, when the file is missing, and never again, so `theme`
+(and you) own them from then on. The repo's version lives under
 `home/.chezmoitemplates/` (`niri/config.kdl`, `slk/config.toml`,
-`gh-dash/config.yml`), not the `modify_` script.
+`gh-dash/config.yml`). To take a newer repo version, move the file aside,
+`chezmoi apply` it, and run `theme` again.
 
 ## Adding a theme
 

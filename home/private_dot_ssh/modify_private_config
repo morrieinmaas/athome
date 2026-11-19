@@ -1,0 +1,49 @@
+#!/bin/sh
+# chezmoi modify_ script for ~/.ssh/config, which is yours. athome's settings
+# live in ~/.ssh/athome/*.conf; this script only makes sure the one line that
+# pulls them in, `Include athome/*.conf`, sits above every Host and Match line
+# (an Include below one would apply to that host only). Every other line is
+# passed through verbatim.
+#
+# Migration: an ~/.ssh/config that athome rendered whole (it starts with the old
+# "managed by chezmoi" header) loses that body, from the header through the end
+# of its `Host github.com` block, and the bootstrap's seeded github.com block
+# goes too. That content now lives in ~/.ssh/athome/base.conf. Lines you added
+# around it stay.
+set -eu
+
+awk '
+function is_hook(s) { s = tolower(s); return s ~ /^[ \t]*include[ \t]+athome\/\*\.conf[ \t]*$/ }
+function is_block(s) { s = tolower(s); return s ~ /^[ \t]*(host|match)[ \t]/ }
+function is_github(s) { return s ~ /^Host[ \t]+github\.com[ \t]*$/ }
+{ line[NR] = $0 }
+END {
+  n = NR
+  # The old athome-rendered body.
+  for (i = 1; i <= n; i++) if (index(line[i], "# ~/.ssh/config — managed by chezmoi") == 1) { hs = i; break }
+  if (hs) {
+    for (i = hs + 1; i <= n; i++) if (is_github(line[i])) { he = i; break }
+    if (he) {
+      while (he < n && line[he + 1] ~ /^[ \t]+[^ \t]/) he++
+      for (i = hs; i <= he; i++) drop[i] = 1
+    }
+  }
+  # Blocks bootstrap and run_before_00 append while the key is not pinned yet.
+  for (i = 1; i <= n; i++) {
+    if (drop[i] || (index(line[i], "# === seeded by scripts/lib/ssh.sh") != 1 && index(line[i], "# === chezmoi run_before_00 seed") != 1) || !is_github(line[i + 1])) continue
+    if (i > 1 && line[i - 1] == "" && !drop[i - 1]) drop[i - 1] = 1
+    drop[i] = drop[i + 1] = 1
+    for (j = i + 2; j <= n && line[j] ~ /^[ \t]+[^ \t]/; j++) drop[j] = 1
+  }
+  # Keep a hook that already sits above every Host/Match line; drop the rest.
+  ok = 0
+  for (i = 1; i <= n; i++) {
+    if (drop[i]) continue
+    if (is_block(line[i])) break
+    if (is_hook(line[i])) { ok = i; break }
+  }
+  for (i = 1; i <= n; i++) if (!drop[i] && is_hook(line[i]) && i != ok) drop[i] = 1
+  if (!ok) print "Include athome/*.conf"
+  for (i = 1; i <= n; i++) if (!drop[i]) print line[i]
+}
+'

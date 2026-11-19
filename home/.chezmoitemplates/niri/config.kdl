@@ -1,4 +1,4 @@
-// ~/.config/niri/config.kdl — managed by chezmoi
+// ~/.config/niri/config.kdl — written by chezmoi only when missing, then yours
 // Tweak interactively with `nirimod` (live-validates and preserves comments).
 // Validate manually: `niri validate -c ~/.config/niri/config.kdl`
 //

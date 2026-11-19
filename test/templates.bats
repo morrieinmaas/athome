@@ -253,7 +253,7 @@ STUB
 
 # render_ssh_config <personal|work|remote> pins the hostname so the output is comparable.
 render_ssh_config() {
-  perl -pe 's/\.chezmoi\.hostname/"fixture"/g' "$ROOT/home/private_dot_ssh/private_config.tmpl" |
+  perl -pe 's/\.chezmoi\.hostname/"fixture"/g' "$ROOT/home/private_dot_ssh/private_athome/private_base.conf.tmpl" |
     chezmoi --source "$ROOT/home" --config "$TMP/$1.toml" execute-template
 }
 
@@ -264,10 +264,13 @@ render_ssh_config() {
   [[ "$block" == *"StrictHostKeyChecking yes"* ]]
 }
 
-@test "ssh config: personal and work render exactly the old file" {
+# test/fixtures/ssh-config is the whole ~/.ssh/config athome rendered before
+# base.conf existed; base.conf carries the same settings under a new header.
+@test "ssh config: personal and work base.conf is the old file under a new header" {
+  tail -n +3 "$ROOT/test/fixtures/ssh-config" >"$TMP/old-body"
   for t in personal work; do
-    render_ssh_config "$t" >"$TMP/ssh-config.$t"
-    cmp "$TMP/ssh-config.$t" "$ROOT/test/fixtures/ssh-config"
+    render_ssh_config "$t" | tail -n +8 >"$TMP/ssh-config.$t"
+    cmp "$TMP/ssh-config.$t" "$TMP/old-body"
   done
 }
 
@@ -521,9 +524,9 @@ PermitRootLogin no
 AcceptEnv CANOPY_THEME"' ]
 }
 
-@test "zshrc: every machine type sources canopy-theme.zsh" {
+@test "athome.zsh: every machine type sources canopy-theme.zsh" {
   for t in personal work remote; do
-    render "$t" dot_zshrc.tmpl | grep -q 'ssh-nudge.zsh canopy-theme.zsh; do'
+    render "$t" dot_zsh/athome.zsh | grep -q 'ssh-nudge.zsh canopy-theme.zsh; do'
   done
 }
 

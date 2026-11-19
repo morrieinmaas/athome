@@ -189,9 +189,17 @@ func GHTokenRunner(ctx context.Context, r run.Runner, account string) (run.Runne
 	}
 	token := strings.TrimSpace(res.Stdout)
 	if res.Code != 0 || token == "" {
-		return nil, fmt.Errorf("gh has no token for GitHub account %s (run: gh auth login)", account)
+		return nil, &NoTokenError{Account: account, Stderr: strings.TrimSpace(res.Stderr)}
 	}
 	return ghEnvRunner{r, []string{"GH_TOKEN=" + token}}, nil
+}
+
+// NoTokenError is GHTokenRunner's error when gh has no token for Account;
+// Stderr is what gh auth token said.
+type NoTokenError struct{ Account, Stderr string }
+
+func (e *NoTokenError) Error() string {
+	return fmt.Sprintf("gh has no token for GitHub account %s (run: gh auth login)", e.Account)
 }
 
 // pubBlob is the base64 part of an ssh public key line.

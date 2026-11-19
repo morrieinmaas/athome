@@ -2,6 +2,7 @@ package machines
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -26,6 +27,10 @@ func (g *ghClient) runner(ctx context.Context) (run.Runner, error) {
 	}
 	if g.tokened == nil {
 		r, err := keys.GHTokenRunner(ctx, g.r, g.account)
+		var nt *keys.NoTokenError
+		if errors.As(err, &nt) {
+			return nil, fmt.Errorf("no gh token for account %s: %s", nt.Account, nt.Stderr)
+		}
 		if err != nil {
 			return nil, err
 		}

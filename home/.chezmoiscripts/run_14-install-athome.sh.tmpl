@@ -17,8 +17,9 @@
 # (offline, release not published yet) prints a note and installs nothing; a
 # checksum that does not match fails the apply.
 #
-# run_onchange, keyed on the pin: change `pins.athome` in home/.chezmoidata/pins.toml,
-# and the next `chezmoi apply` runs this again.
+# run_, not run_onchange: chezmoi would record a failed download as done and
+# never try again until the pin changed. Every apply runs it instead, and once
+# athome is at or above the pin it stops after one `athome version`, silently.
 #
 # athome pin: {{ .pins.athome }}
 set -euo pipefail
@@ -65,13 +66,9 @@ if [ -x "${dest}" ] && have="$("${dest}" version 2>/dev/null)"; then
   # `athome version` prints "athome <version> (<commit>)".
   have="$(printf '%s\n' "${have}" | awk 'NR == 1 { print $2 }')"
   if ! semver "${have}" >/dev/null; then
-    printf 'athome: %s is a %s build, not a release; leaving it\n' "${dest}" "${have:-unknown}"
-    exit 0
+    exit 0 # a dev, e2e or snapshot build: not ours to replace
   fi
-  if ! older "${have}" "${pin}"; then
-    printf 'athome: %s is at or above the pin %s\n' "${have}" "${pin}"
-    exit 0
-  fi
+  older "${have}" "${pin}" || exit 0
 fi
 
 case "$(uname -s)" in
@@ -107,12 +104,17 @@ fi
 asset="athome_${os}_${arch}"
 url="${base%/}/${pin}"
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/athome-install.XXXXXX")"
+# An https base never follows a redirect to anything but https.
+proto=()
+case "${base}" in https://*) proto=(--proto "=https" --proto-redir "=https") ;; esac
 # A failed download (offline, or the release is not published yet) keeps the
-# apply going; nothing is installed and the next pin change tries again.
+# apply going; nothing is installed and the next apply tries again.
 for f in "${asset}" checksums.txt; do
-  if ! curl -fsSL "${url}/${f}" -o "${tmp}/${f}" 2>/dev/null; then
-    printf 'athome: cannot download %s, so athome %s is not installed (scripts/bootstrap.sh installs it)\n' \
-      "${url}/${f}" "${pin}" >&2
+  if ! curl -fsSL ${proto[@]+"${proto[@]}"} --connect-timeout 10 --max-time 300 \
+    "${url}/${f}" -o "${tmp}/${f}" 2>"${tmp}/curl.err"; then
+    err="$(tr '\n' ' ' <"${tmp}/curl.err")"
+    printf "athome: cannot download %s (%s), so athome %s is not installed; the next apply tries again\n" \
+      "${url}/${f}" "${err% }" "${pin}" >&2
     exit 0
   fi
 done
@@ -126,7 +128,7 @@ fi
 
 # Written next to the target and renamed over it, so nothing ever runs half a file.
 mkdir -p "${dest_dir}"
-part="${dest_dir}/.athome.$$"
+part="$(mktemp "${dest_dir}/.athome.XXXXXX")"
 cp "${tmp}/${asset}" "${part}"
 chmod 0755 "${part}"
 mv -f "${part}" "${dest}"

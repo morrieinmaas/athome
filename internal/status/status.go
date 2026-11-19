@@ -29,6 +29,7 @@ type Component struct {
 	Status    string `json:"status"`
 	Installed string `json:"installed"`
 	Wanted    string `json:"wanted"`
+	Pin       string `json:"pin,omitempty"`
 	Detail    string `json:"detail"`
 }
 
@@ -104,9 +105,10 @@ func readPins(repo string) map[string]string {
 
 // athomeStatus compares the running athome with the highest release tag on origin.
 // Below pins.athome it is not current even offline: that is the floor chezmoi apply
-// installs (run_onchange_14-install-athome), which athome update then moves beyond.
+// installs (run_14-install-athome), which athome update then moves beyond.
 func athomeStatus(ctx context.Context, r run.Runner, version, repo, pin string) Component {
 	c := tagStatus(ctx, r, version, repo)
+	c.Pin = pin
 	_, isRel := selfupdate.Parse(version)
 	if _, pinRel := selfupdate.Parse(pin); isRel && pinRel && selfupdate.Compare(version, pin) < 0 {
 		c.Status = NotCurrent

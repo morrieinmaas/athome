@@ -72,9 +72,11 @@ the target: `--to` (`vX.Y.Z` or `X.Y.Z`, which must be a tag `git ls-remote` lis
    when already at the target, or newer without `--to` (no downgrade); `--to` installs an
    older version too. A `dev` or snapshot build skips it unless `--to` is given.
    This is the step that moves athome past `pins.athome`; the `apply` step's
-   `run_onchange_14-install-athome` only installs that pin when athome is missing or
-   older, so it never undoes this one. A machine without the binary yet gets it from
-   `chezmoi apply`, a new one from `scripts/bootstrap.sh` ([installing](install.md#a-machine-set-up-before-the-athome-binary)).
+   `run_14-install-athome` only installs that pin when athome is missing or older, so it
+   never undoes an upgrade. The pin is a floor: `--to` a version below it is raised back to
+   the pin by the `apply` step when the checked-out source still pins higher. A machine
+   without the binary yet gets it from `chezmoi apply`, a new one from
+   `scripts/bootstrap.sh` ([installing](install.md#a-machine-set-up-before-the-athome-binary)).
 2. `source`: `git pull --ff-only` on a branch; on a detached HEAD at a tag, checks out the
    target tag; at an untagged detached commit changes nothing and says so.
 3. `config`: when `home/.chezmoi.toml.tmpl` differs from the template chezmoi last generated
@@ -244,7 +246,8 @@ athome status [--json]
 
 Reads, never writes, and reports five components: `athome` (the running version
 against the highest `vX.Y.Z` tag on `origin`; below `pins.athome` it is `not current`
-even offline, with `(below pins.athome <pin>; chezmoi apply installs it)`), `dotfiles` (`chezmoi status
+even offline, with `(below pins.athome <pin>; chezmoi apply installs it)`, and
+its JSON carries `"pin"`), `dotfiles` (`chezmoi status
 --exclude=scripts` prints nothing), `mise` (`mise ls --missing` lists nothing),
 `grofe` (its version against `pins.grofe`) and `canopy` (its checkout against
 `pins.canopy`). The pins live in `home/.chezmoidata/pins.toml`.

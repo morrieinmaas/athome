@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Tests for home/.chezmoiscripts/run_onchange_14-install-athome.sh.tmpl. The
+# Tests for home/.chezmoiscripts/run_14-install-athome.sh.tmpl. The
 # template is rendered against home/.chezmoidata/pins.toml, then run with a
 # fake HOME and a file:// release base. No network.
 
@@ -14,7 +14,7 @@ setup() {
   DEST="$FAKEHOME/.local/bin/athome"
   mkdir -p "$TMPDIR" "$FAKEHOME"
   : >"$BATS_TEST_TMPDIR/empty.toml"
-  TMPL="$ROOT/home/.chezmoiscripts/run_onchange_14-install-athome.sh.tmpl"
+  TMPL="$ROOT/home/.chezmoiscripts/run_14-install-athome.sh.tmpl"
   SCRIPT="$BATS_TEST_TMPDIR/install.sh"
   chezmoi --source "$ROOT/home" --config "$BATS_TEST_TMPDIR/empty.toml" execute-template <"$TMPL" >"$SCRIPT"
   PIN="$(awk -F'"' '/^athome/ { print $2 }' "$ROOT/home/.chezmoidata/pins.toml")"
@@ -55,7 +55,7 @@ install_athome() {
   rm -rf "$REL"
   install_athome
   [ "$status" -eq 0 ]
-  [[ "$output" == *"at or above the pin $PIN"* ]]
+  [ -z "$output" ]
   grep -q '^# mine$' "$DEST"
 }
 
@@ -89,7 +89,7 @@ install_athome() {
   fake_athome "$DEST" dev
   install_athome
   [ "$status" -eq 0 ]
-  [[ "$output" == *"is a dev build, not a release; leaving it"* ]]
+  [ -z "$output" ]
   [ "$("$DEST" version)" = "athome dev (abc1234)" ]
 }
 
@@ -125,7 +125,8 @@ install_athome() {
   rm "$REL/$PIN/$ASSET"
   install_athome
   [ "$status" -eq 0 ]
-  [[ "$output" == *"athome: cannot download file://$REL/$PIN/$ASSET, so athome $PIN is not installed"* ]]
+  [[ "$output" == *"athome: cannot download file://$REL/$PIN/$ASSET ("* ]]
+  [[ "$output" == *"), so athome $PIN is not installed; the next apply tries again"* ]]
   [ ! -e "$DEST" ]
   [ -z "$(ls -A "$TMPDIR")" ]
 }
@@ -145,18 +146,85 @@ install_athome() {
   [ ! -e "$DEST" ]
 }
 
-@test "renders for personal, work and remote on darwin and linux, shellcheck and shfmt clean" {
+# shim_path <dir> <tool...>: a PATH of only the named tools, plus fakes already in dir.
+shim_path() {
+  local dir="$1" tool
+  shift
+  mkdir -p "$dir"
+  for tool in "$@"; do ln -sf "$(command -v "$tool")" "$dir/$tool"; done
+}
+
+BASE_TOOLS=(bash curl awk cut mktemp cp chmod mv mkdir rm tr cat)
+
+# fake_uname <dir> <kernel> <machine>
+fake_uname() {
+  printf '#!/bin/sh\ncase "$1" in -s) echo %s ;; -m) echo %s ;; esac\n' "$2" "$3" >"$1/uname"
+  chmod 0755 "$1/uname"
+}
+
+@test "aarch64 maps to the arm64 asset" {
+  bin="$BATS_TEST_TMPDIR/bin"
+  shim_path "$bin" "${BASE_TOOLS[@]}" shasum
+  fake_uname "$bin" Linux aarch64
+  fake_athome "$REL/$PIN/athome_linux_arm64" "${PIN#v}"
+  (cd "$REL/$PIN" && shasum -a 256 athome_linux_arm64 >checksums.txt)
+  HOME="$FAKEHOME" PATH="$bin" run bash "$SCRIPT"
+  [ "$status" -eq 0 ]
+  [ "$("$DEST" version)" = "athome ${PIN#v} (abc1234)" ]
+}
+
+@test "without sha256sum, shasum -a 256 checks the download" {
+  bin="$BATS_TEST_TMPDIR/bin"
+  shim_path "$bin" "${BASE_TOOLS[@]}" shasum uname
+  [ ! -e "$bin/sha256sum" ]
+  HOME="$FAKEHOME" PATH="$bin" run bash "$SCRIPT"
+  [ "$status" -eq 0 ]
+  [ -x "$DEST" ]
+  echo "$(printf '0%.0s' $(seq 64))  $ASSET" >"$REL/$PIN/checksums.txt"
+  rm "$DEST"
+  HOME="$FAKEHOME" PATH="$bin" run bash "$SCRIPT"
+  [ "$status" -eq 1 ]
+  [ ! -e "$DEST" ]
+}
+
+@test "with neither sha256sum nor shasum, exits 1 and installs nothing" {
+  bin="$BATS_TEST_TMPDIR/bin"
+  shim_path "$bin" "${BASE_TOOLS[@]}" uname
+  HOME="$FAKEHOME" PATH="$bin" run bash "$SCRIPT"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"neither sha256sum nor shasum found"* ]]
+  [ ! -e "$DEST" ]
+}
+
+@test "an unsupported os or arch exits 0 with a note" {
+  bin="$BATS_TEST_TMPDIR/bin"
+  shim_path "$bin" "${BASE_TOOLS[@]}" shasum
+  fake_uname "$bin" Linux riscv64
+  HOME="$FAKEHOME" PATH="$bin" run bash "$SCRIPT"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"no release for riscv64"* ]]
+  fake_uname "$bin" FreeBSD amd64
+  HOME="$FAKEHOME" PATH="$bin" run bash "$SCRIPT"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"no release for FreeBSD"* ]]
+  [ ! -e "$DEST" ]
+}
+
+@test "a pin that is not vX.Y.Z exits 1" {
+  perl -pi -e 's/^pin=".*"/pin="main"/' "$SCRIPT"
+  install_athome
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"pins.athome main is not a vX.Y.Z release"* ]]
+  [ ! -e "$DEST" ]
+}
+
+@test "personal, work and remote machines all run it; shellcheck and shfmt clean" {
   printf '[data]\n  machineType = "remote"\n  machineName = "box"\n  scope = "work/x"\n' >"$BATS_TEST_TMPDIR/remote.toml"
   for t in personal work remote; do
     [ -f "$BATS_TEST_TMPDIR/$t.toml" ] || printf '[data]\n  machineType = "%s"\n' "$t" >"$BATS_TEST_TMPDIR/$t.toml"
-    for os in darwin linux; do
-      out="$BATS_TEST_TMPDIR/$t.$os.sh"
-      perl -pe "s/\.chezmoi\.os/\"$os\"/g" "$TMPL" |
-        chezmoi --source "$ROOT/home" --config "$BATS_TEST_TMPDIR/$t.toml" execute-template >"$out"
-      # The script does not branch on the machine: every rendering is the same.
-      cmp "$out" "$SCRIPT"
-      grep -qx "pin=\"$PIN\"" "$out"
-    done
+    chezmoi --source "$ROOT/home" --config "$BATS_TEST_TMPDIR/$t.toml" --destination "$BATS_TEST_TMPDIR/dest-$t" \
+      --persistent-state "$BATS_TEST_TMPDIR/state-$t.boltdb" managed --include=scripts >"$BATS_TEST_TMPDIR/scripts-$t"
+    grep -qx '.chezmoiscripts/14-install-athome.sh' "$BATS_TEST_TMPDIR/scripts-$t"
   done
   if command -v shellcheck >/dev/null; then shellcheck -S style "$SCRIPT"; fi
   if command -v shfmt >/dev/null; then shfmt -i 2 -ci -bn -d "$SCRIPT"; fi

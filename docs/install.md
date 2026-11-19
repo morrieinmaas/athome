@@ -195,7 +195,7 @@ means the heavy step can be re-run on its own at any time.
 
 A new machine gets `~/.local/bin/athome` from `scripts/bootstrap.sh`. A machine set
 up before the binary existed does not need bootstrap again: a plain `chezmoi apply`
-(or `mise run apply`) runs `run_onchange_14-install-athome`, which downloads
+(or `mise run apply`) runs `run_14-install-athome`, which downloads
 `athome_<os>_<arch>` and `checksums.txt` for `pins.athome` in
 `home/.chezmoidata/pins.toml` (from `ATHOME_RELEASE_BASE`, as bootstrap does), checks
 the sha256 and moves the binary into place. From then on `athome update` keeps it
@@ -203,9 +203,9 @@ current.
 
 The pin is a floor. The script installs only when `athome` is missing, older than the
 pin, or its `athome version` fails; a newer release, or a `dev` build, is left alone,
-so it never undoes `athome update`. A failed download prints a note and the apply goes
-on without athome; the script runs again when the pin changes, and until then
-`scripts/bootstrap.sh` installs it.
+so it never undoes `athome update`. It runs on every apply and, once athome is at or
+above the pin, stops after one `athome version` without a word. A failed download
+prints a note and the apply goes on without athome; the next apply tries again.
 A checksum mismatch fails the apply and installs nothing. It works the same on macOS
 and Linux, on amd64 and arm64, and on a remote box.
 

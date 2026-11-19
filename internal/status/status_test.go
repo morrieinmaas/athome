@@ -118,6 +118,9 @@ func TestAthomeBelowPin(t *testing.T) {
 }
 
 func TestAthomeAtOrAbovePinFollowsTags(t *testing.T) {
+	if c := collectPinned(t, "0.5.1", "a\trefs/tags/v0.5.1\n", 0, "v0.5.0"); c.Pin != "v0.5.0" {
+		t.Errorf("pin not reported: %+v", c)
+	}
 	if c := collectPinned(t, "0.5.1", "a\trefs/tags/v0.5.1\n", 0, "v0.5.0"); c.Status != status.Current || c.Detail != "" {
 		t.Errorf("above pin: %+v", c)
 	}

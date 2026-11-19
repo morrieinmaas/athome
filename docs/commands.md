@@ -62,7 +62,7 @@ athome update [--to <version>] [--yes|-y]
 
 Brings this machine up to a release. It first runs `git fetch --tags` on the repo and picks
 the target: `--to` (`vX.Y.Z` or `X.Y.Z`, which must be a tag `git ls-remote` lists on
-`origin`), else the highest local `vX.Y.Z` tag. Then four steps:
+`origin`), else the highest local `vX.Y.Z` tag. Then five steps:
 
 1. `self`: prints the commit subjects between the two tags, asks
    `update athome from <current> to <target>?` on a terminal (not with `--yes`), downloads
@@ -73,9 +73,15 @@ the target: `--to` (`vX.Y.Z` or `X.Y.Z`, which must be a tag `git ls-remote` lis
    older version too. A `dev` or snapshot build skips it unless `--to` is given.
 2. `source`: `git pull --ff-only` on a branch; on a detached HEAD at a tag, checks out the
    target tag; at an untagged detached commit changes nothing and says so.
-3. `apply`: `chezmoi apply`, which installs new packages and moves grofe and canopy when
+3. `config`: when `home/.chezmoi.toml.tmpl` differs from the template chezmoi last generated
+   `~/.config/chezmoi/chezmoi.toml` from (the hash in chezmoi's state), runs
+   `chezmoi init --no-tty --promptDefaults` to regenerate it. It never prompts: every stored
+   `[data]` answer is kept, a key the new template adds gets its default, and the `sourceDir`
+   line athome pinned is put back. Skipped when the template is unchanged, so chezmoi no
+   longer warns "config file template has changed".
+4. `apply`: `chezmoi apply`, which installs new packages and moves grofe and canopy when
    their pins changed.
-4. `mise`: `mise install`, skipped when `mise ls --missing` lists nothing.
+5. `mise`: `mise install`, skipped when `mise ls --missing` lists nothing.
 
 It ends with `athome: applied N, skipped M`. Exit codes: 0 done or cancelled; 1 a step
 failed (named), the fetch failed, or `--to` names a tag `origin` lacks; 2 a usage error

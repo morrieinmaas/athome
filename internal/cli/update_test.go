@@ -140,7 +140,7 @@ func TestUpdateAlreadyCurrent(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("code %d stderr %q", code, stderr)
 	}
-	for _, want := range []string{"skip  self", "apply source", "apply apply", "skip  mise", "athome: applied 2, skipped 2"} {
+	for _, want := range []string{"skip  self", "apply source", "skip  config", "apply apply", "skip  mise", "athome: applied 2, skipped 3"} {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("stdout lacks %q:\n%s", want, stdout)
 		}

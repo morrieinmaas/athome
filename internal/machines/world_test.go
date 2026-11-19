@@ -11,6 +11,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/morrieinmaas/athome/internal/keys"
 	"github.com/morrieinmaas/athome/internal/run"
 )
 
@@ -243,3 +244,6 @@ func (h hookRun) Run(ctx context.Context, c run.Cmd) (run.Result, error) {
 	h.before(c)
 	return h.world.Run(ctx, c)
 }
+
+// blobOf is keys.PubBlob, under the name these tests were written with.
+func blobOf(pub string) string { return keys.PubBlob(pub) }

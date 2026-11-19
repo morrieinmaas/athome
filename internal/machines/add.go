@@ -259,7 +259,7 @@ func (a *addRun) boxKeyCheck(ctx context.Context, e *steps.Env) (bool, error) {
 	if res.Code != 0 {
 		return false, nil
 	}
-	auth, sign, err := a.gh.registered(ctx, blobOf(strings.TrimSpace(res.Stdout)))
+	auth, sign, err := a.gh.registered(ctx, keys.PubBlob(strings.TrimSpace(res.Stdout)))
 	if err != nil || !auth || !sign {
 		return false, err
 	}
@@ -298,7 +298,7 @@ func (a *addRun) breakGlassCheck(ctx context.Context, e *steps.Env) (bool, error
 	if err := reachErr(a.m.Name, res); err != nil {
 		return false, err
 	}
-	return res.Code == 0 && authorizedHas(res.Stdout, blobOf(pub)), nil
+	return res.Code == 0 && authorizedHas(res.Stdout, keys.PubBlob(pub)), nil
 }
 
 func (a *addRun) breakGlassApply(ctx context.Context, e *steps.Env) error {
@@ -448,18 +448,8 @@ func Add(ctx context.Context, d Deps, m Machine) error {
 	if err != nil {
 		return err
 	}
-	if hasMachine(ms, m.Name) {
-		return fmt.Errorf("machine %s already exists", m.Name)
-	}
-	p, err := LoadPending(d.Home, m.Name)
-	if err != nil {
+	if m, err = resumeEntry(d, ms, m); err != nil {
 		return err
-	}
-	if p != nil {
-		if !sameEntry(*p, m) {
-			return fmt.Errorf("machine add %s is pending with other values; finish it with the same flags or run athome machine rm %s --force", m.Name, m.Name)
-		}
-		m = *p
 	}
 	if m.ForwardAgent {
 		d.say("warning: root on %s can use your laptop key while you are attached", m.Name)
@@ -481,6 +471,25 @@ func Add(ctx context.Context, d Deps, m Machine) error {
 		return err
 	}
 	return addFailure(d, m.Name, failed, rep)
+}
+
+// resumeEntry is m, or its pending entry when a rerun with the same values
+// resumes an unfinished add. A machine already in ms is refused.
+func resumeEntry(d Deps, ms []Machine, m Machine) (Machine, error) {
+	if hasMachine(ms, m.Name) {
+		return m, fmt.Errorf("machine %s already exists", m.Name)
+	}
+	p, err := LoadPending(d.Home, m.Name)
+	if err != nil {
+		return m, err
+	}
+	if p == nil {
+		return m, nil
+	}
+	if !sameEntry(*p, m) {
+		return m, fmt.Errorf("machine add %s is pending with other values; finish it with the same flags or run athome machine rm %s --force", m.Name, m.Name)
+	}
+	return *p, nil
 }
 
 // addFailure reports the failed step and what the steps before it left behind.

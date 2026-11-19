@@ -59,14 +59,6 @@ func checkPub(pub string) error {
 	return nil
 }
 
-func blobOf(pub string) string {
-	f := strings.Fields(pub)
-	if len(f) < 2 {
-		return ""
-	}
-	return f[1]
-}
-
 // sh runs script on the box; a non-zero exit is an error naming the box.
 func (b *Box) sh(ctx context.Context, what, script, stdin string, args ...string) (run.Result, error) {
 	res, err := b.r.Exec(ctx, b.m.Name, script, stdin, args...)
@@ -221,6 +213,6 @@ func (b *Box) PromoteKey(ctx context.Context, newPub string) error {
 	if err := checkPub(newPub); err != nil {
 		return fmt.Errorf("promote on %s: %w", b.m.Name, err)
 	}
-	_, err := b.sh(ctx, "promote key", promoteScript, "", b.m.Hostname, blobOf(newPub))
+	_, err := b.sh(ctx, "promote key", promoteScript, "", b.m.Hostname, keys.PubBlob(newPub))
 	return err
 }

@@ -169,7 +169,7 @@ func runBreakGlass(ctx context.Context, o Options, j *job, boxes []Box, jobs []*
 		err := promote(ctx, o, staging, j.Item)
 		// A crash after the staging item was removed: the real item already has the new key.
 		if errors.Is(err, ErrNoItem) {
-			if pub, perr := BreakGlassPub(ctx, o.Run, j.Scope); perr == nil && pubBlob(pub) == pubBlob(j.NewPub) {
+			if pub, perr := BreakGlassPub(ctx, o.Run, j.Scope); perr == nil && PubBlob(pub) == PubBlob(j.NewPub) {
 				err = nil
 			}
 		}
@@ -249,7 +249,7 @@ func laptopKeys(current string, b Box, jobs []*job) []string {
 			continue
 		}
 		for _, k := range []string{j.OldPub, j.NewPub} {
-			if k != "" && !slices.ContainsFunc(keys, func(x string) bool { return pubBlob(x) == pubBlob(k) }) {
+			if k != "" && !slices.ContainsFunc(keys, func(x string) bool { return PubBlob(x) == PubBlob(k) }) {
 				keys = append(keys, k)
 			}
 		}

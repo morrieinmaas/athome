@@ -131,7 +131,7 @@ func (b *boxRotation) createNew(ctx context.Context) error {
 // refuseSameKey: the old key's GitHub entries are deleted at the end, so a new
 // key that is the old one would leave the box with no registered key.
 func (b *boxRotation) refuseSameKey(context.Context) error {
-	if pubBlob(b.j.NewPub) == pubBlob(b.j.OldPub) {
+	if PubBlob(b.j.NewPub) == PubBlob(b.j.OldPub) {
 		return b.skip(errors.New("the box's new key is its current key; refusing, so its only registered key is never removed"))
 	}
 	return nil
@@ -199,7 +199,7 @@ var boxPubLine = regexp.MustCompile(`^ssh-ed25519 [A-Za-z0-9+/]+=*( [^\r\n]*)?$`
 func protectedBlobs(o Options) map[string]bool {
 	out := map[string]bool{}
 	if b, err := os.ReadFile(LaptopKey(o.Home, o.Host) + ".pub"); err == nil {
-		if blob := pubBlob(string(b)); blob != "" {
+		if blob := PubBlob(string(b)); blob != "" {
 			out[blob] = true
 		}
 	}
@@ -212,7 +212,7 @@ func checkBoxPub(what, pub string, protected map[string]bool) error {
 	if !boxPubLine.MatchString(pub) {
 		return fmt.Errorf("the box's %s is not one ssh-ed25519 public key line", what)
 	}
-	if protected[pubBlob(pub)] {
+	if protected[PubBlob(pub)] {
 		return fmt.Errorf("the box's %s is the laptop key; refusing", what)
 	}
 	return nil

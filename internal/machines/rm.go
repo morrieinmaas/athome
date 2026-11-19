@@ -161,7 +161,7 @@ func (rm *remover) dropBreakGlass(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	res, err := rm.r.Exec(ctx, rm.name, dropKeyScript, "", blobOf(pub))
+	res, err := rm.r.Exec(ctx, rm.name, dropKeyScript, "", keys.PubBlob(pub))
 	return okOrErr("remove the break-glass key", rm.name, res, err)
 }
 

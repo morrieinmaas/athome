@@ -11,8 +11,6 @@ import (
 	"github.com/morrieinmaas/athome/internal/run"
 )
 
-const scopeHint = "gh auth refresh -h github.com -s admin:public_key,admin:ssh_signing_key"
-
 // ghClient runs gh for one machine. With a github_account every call carries
 // GH_TOKEN from that account, in the environment only, never in args or output.
 type ghClient struct {
@@ -75,7 +73,7 @@ func (g *ghClient) registered(ctx context.Context, blob string) (auth, sign bool
 
 // register adds whichever of the two keys pub is missing as, titled athome-<name>[-sign].
 func (g *ghClient) register(ctx context.Context, name, pub string) error {
-	auth, sign, err := g.registered(ctx, blobOf(pub))
+	auth, sign, err := g.registered(ctx, keys.PubBlob(pub))
 	if err != nil {
 		return err
 	}
@@ -98,7 +96,7 @@ func (g *ghClient) register(ctx context.Context, name, pub string) error {
 			}
 			// "already" may mean the key is on another account, so the listing decides below.
 			if res.Code != 0 && !strings.Contains(res.Stderr, "already") {
-				return fmt.Errorf("gh ssh-key add --title %s failed: %s (missing scopes? run: %s)", a.title, strings.TrimSpace(res.Stderr), scopeHint)
+				return fmt.Errorf("gh ssh-key add --title %s failed: %s (missing scopes? run: %s)", a.title, strings.TrimSpace(res.Stderr), keys.ScopeHint)
 			}
 		}
 		return nil
@@ -106,7 +104,7 @@ func (g *ghClient) register(ctx context.Context, name, pub string) error {
 	if err != nil {
 		return err
 	}
-	auth, sign, err = g.registered(ctx, blobOf(pub))
+	auth, sign, err = g.registered(ctx, keys.PubBlob(pub))
 	if err != nil {
 		return err
 	}

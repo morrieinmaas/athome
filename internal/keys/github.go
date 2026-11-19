@@ -10,7 +10,8 @@ import (
 	"github.com/morrieinmaas/athome/internal/run"
 )
 
-const scopeHint = "gh auth refresh -h github.com -s admin:public_key,admin:ssh_signing_key"
+// ScopeHint is the gh command that grants the key scopes gh ssh-key add needs.
+const ScopeHint = "gh auth refresh -h github.com -s admin:public_key,admin:ssh_signing_key"
 
 // ghAdd registers pub on GitHub as an authentication and a signing key.
 func ghAdd(ctx context.Context, r run.Runner, pub, host string) error {
@@ -27,7 +28,7 @@ func ghAdd(ctx context.Context, r run.Runner, pub, host string) error {
 			// A retry after a half-finished add finds the key there already,
 			// but GitHub says the same when the key is on a different account.
 			if !strings.Contains(res.Stderr, "already") {
-				return fmt.Errorf("gh %s failed: %s (missing scopes? run: %s)", strings.Join(args, " "), strings.TrimSpace(res.Stderr), scopeHint)
+				return fmt.Errorf("gh %s failed: %s (missing scopes? run: %s)", strings.Join(args, " "), strings.TrimSpace(res.Stderr), ScopeHint)
 			}
 			already = true
 		}
@@ -45,7 +46,7 @@ func ghCheckAdded(ctx context.Context, r run.Runner, pub string) error {
 	if err != nil {
 		return err
 	}
-	blob := pubBlob(string(data))
+	blob := PubBlob(string(data))
 	for _, endpoint := range GHKeyEndpoints {
 		ks, err := GHKeys(ctx, r, endpoint, false)
 		if err != nil {
@@ -83,7 +84,7 @@ func ghRemove(ctx context.Context, r run.Runner, pub string) error {
 // ghRemoveTitled is ghRemove limited, when titles is set, to keys whose title
 // is titles[endpoint]; the listing then carries the title too.
 func ghRemoveTitled(ctx context.Context, r run.Runner, pub string, titles map[string]string) error {
-	blob := pubBlob(pub)
+	blob := PubBlob(pub)
 	if blob == "" {
 		return nil
 	}
@@ -202,8 +203,8 @@ func (e *NoTokenError) Error() string {
 	return fmt.Sprintf("gh has no token for GitHub account %s (run: gh auth login)", e.Account)
 }
 
-// pubBlob is the base64 part of an ssh public key line.
-func pubBlob(pub string) string {
+// PubBlob is the base64 part of an ssh public key line.
+func PubBlob(pub string) string {
 	f := strings.Fields(pub)
 	if len(f) < 2 {
 		return ""

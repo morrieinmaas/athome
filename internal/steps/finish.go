@@ -39,12 +39,7 @@ func sourceDirPinned(_ context.Context, env *Env) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	for _, line := range strings.Split(string(b), "\n") {
-		if strings.HasPrefix(line, "sourceDir") {
-			return true, nil
-		}
-	}
-	return false, nil
+	return sourceDirLine(b) != "", nil
 }
 
 func pinSourceDir(_ context.Context, env *Env) error {
@@ -58,12 +53,7 @@ func pinSourceDir(_ context.Context, env *Env) error {
 		return fmt.Errorf("the source path %q is not valid UTF-8, so chezmoi.toml cannot pin it; move the repo to a UTF-8 path", src)
 	}
 	out := []byte(fmt.Sprintf("sourceDir = \"%s\"\n", tomlStr(src)))
-	out = append(out, b...)
-	tmp := p + ".new"
-	if err := os.WriteFile(tmp, out, 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, p)
+	return writeConfig(p, append(out, b...))
 }
 
 func hookPath(env *Env) string {

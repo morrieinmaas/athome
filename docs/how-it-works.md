@@ -183,9 +183,11 @@ brings the links in line with the lock; pulling the repo
 
 ## Updating
 
-`athome update` runs four steps in a fixed order: `self` (replace the binary from a release,
+`athome update` runs five steps in a fixed order: `self` (replace the binary from a release,
 then continue in the new one, so the rest runs with matching code), `source` (move the repo to
-the release), `apply` (`chezmoi apply`) and `mise` (`mise install`). athome's own version is
+the release), `config` (regenerate `~/.config/chezmoi/chezmoi.toml` with
+`chezmoi init --no-tty --promptDefaults` when `.chezmoi.toml.tmpl` changed, keeping every
+stored answer and the `sourceDir` pin), `apply` (`chezmoi apply`) and `mise` (`mise install`). athome's own version is
 the release tag; grofe and canopy are pinned in `home/.chezmoidata/pins.toml`, and
 `run_onchange_17` and `run_onchange_18` render those pins, so a bump reruns them on the next
 apply. grofe installs from its release tarball after a sha256 check.

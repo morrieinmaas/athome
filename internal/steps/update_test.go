@@ -16,6 +16,7 @@ import (
 
 	"github.com/morrieinmaas/athome/internal/prompt"
 	"github.com/morrieinmaas/athome/internal/run"
+	"github.com/morrieinmaas/athome/internal/run/runtest"
 	"github.com/morrieinmaas/athome/internal/steps"
 )
 
@@ -108,7 +109,7 @@ func TestUpdateStepNames(t *testing.T) {
 	for _, s := range steps.Update() {
 		names = append(names, s.Name)
 	}
-	if !reflect.DeepEqual(names, []string{"self", "source", "apply", "mise"}) {
+	if !reflect.DeepEqual(names, []string{"self", "source", "config", "apply", "mise"}) {
 		t.Fatalf("steps: %v", names)
 	}
 }
@@ -347,7 +348,7 @@ func TestUpdateApplyAndMise(t *testing.T) {
 	}
 	t.Run("apply records chezmoi apply", func(t *testing.T) {
 		fx := newFixture(t)
-		if _, err := fx.runUpdate(o, list[2]); err != nil {
+		if _, err := fx.runUpdate(o, list[3]); err != nil {
 			t.Fatal(err)
 		}
 		if !fx.did("chezmoi", "apply") {
@@ -357,7 +358,7 @@ func TestUpdateApplyAndMise(t *testing.T) {
 	t.Run("mise nothing missing is skipped", func(t *testing.T) {
 		fx := newFixture(t)
 		fx.Fake.On("mise", "ls", "--missing", "--json").Return(run.Result{Stdout: "{}\n"})
-		rep, err := fx.runUpdate(o, list[3])
+		rep, err := fx.runUpdate(o, list[4])
 		if err != nil || len(rep.Skipped) != 1 || fx.did("mise", "install") {
 			t.Fatalf("rep %+v err %v calls %v", rep, err, fx.calls("mise"))
 		}
@@ -365,7 +366,7 @@ func TestUpdateApplyAndMise(t *testing.T) {
 	t.Run("mise missing tool installs in HOME", func(t *testing.T) {
 		fx := newFixture(t)
 		missing(fx)
-		if _, err := fx.runUpdate(o, list[3]); err != nil {
+		if _, err := fx.runUpdate(o, list[4]); err != nil {
 			t.Fatal(err)
 		}
 		if !fx.did("mise", "install") {
@@ -380,7 +381,7 @@ func TestUpdateApplyAndMise(t *testing.T) {
 	t.Run("a failing step is named", func(t *testing.T) {
 		fx := newFixture(t)
 		fx.Fake.On("chezmoi", "apply").Return(run.Result{Code: 1, Stderr: "boom"})
-		_, err := fx.runUpdate(o, list[2])
+		_, err := fx.runUpdate(o, list[3])
 		if err == nil || !strings.Contains(err.Error(), "step apply") {
 			t.Fatalf("err %v", err)
 		}
@@ -428,7 +429,7 @@ func TestReexecEnvironMarksTheNewProcess(t *testing.T) {
 func TestUpdateMiseBadJSONIsAnError(t *testing.T) {
 	fx := newFixture(t)
 	fx.Fake.On("mise", "ls", "--missing", "--json").Return(run.Result{Stdout: "garbage"})
-	_, err := fx.runUpdate(steps.UpdateOpts{Version: "0.5.2", Target: "v0.5.2"}, steps.Update()[3])
+	_, err := fx.runUpdate(steps.UpdateOpts{Version: "0.5.2", Target: "v0.5.2"}, steps.Update()[4])
 	if err == nil || !strings.Contains(err.Error(), "mise ls --missing --json") {
 		t.Fatalf("err %v", err)
 	}
@@ -442,4 +443,161 @@ func TestUpdateStepsErrorWithoutOptions(t *testing.T) {
 			t.Errorf("step %s without WithUpdate: err = %v, want update options not set", s.Name, err)
 		}
 	}
+}
+
+// initSim is the Fake plus what chezmoi init does to the config: it rewrites
+// chezmoi.toml from the template, which renders no sourceDir line.
+type initSim struct {
+	*runtest.Fake
+	config string
+	render string // what init writes; "" means the default below
+}
+
+func (s initSim) Run(ctx context.Context, c run.Cmd) (run.Result, error) {
+	res, err := s.Fake.Run(ctx, c)
+	if c.Name == "chezmoi" && len(c.Args) > 0 && c.Args[0] == "init" && err == nil && res.Code == 0 {
+		out := s.render
+		if out == "" {
+			out = "[data]\n    machineType = \"personal\"\n    newKey = \"default\"\n"
+		}
+		os.WriteFile(s.config, []byte(out), 0o600)
+	}
+	return res, err
+}
+
+func TestUpdateConfigRegeneratesChezmoiConfig(t *testing.T) {
+	o := steps.UpdateOpts{Version: "0.5.2", Target: "v0.5.2"}
+	configStep := steps.Update()[2]
+	const tmpl = "{{- $m := promptStringOnce . \"machineType\" \"Machine type\" \"personal\" -}}\n[data]\n"
+	sum := fmt.Sprintf("%x", sha256.Sum256([]byte(tmpl)))
+	stateGet := []string{"state", "get", "--bucket=configState", "--key=configState"}
+	seeded := func(fx *fixture) string {
+		return "sourceDir = \"" + filepath.Join(fx.Repo, "home") + "\"\n[data]\n    machineType = \"personal\"\n"
+	}
+	setup := func(t *testing.T) (*fixture, string) {
+		fx := newFixture(t)
+		writeFile(t, filepath.Join(fx.Repo, "home", ".chezmoi.toml.tmpl"), tmpl, 0o644)
+		cfg := fx.Path(".config", "chezmoi", "chezmoi.toml")
+		mustMkdir(t, filepath.Dir(cfg))
+		writeFile(t, cfg, seeded(fx), 0o600)
+		fx.Env.Run = initSim{fx.Fake, cfg, ""}
+		return fx, cfg
+	}
+	initArgs := func(fx *fixture) []string {
+		return []string{"init", "--no-tty", "--promptDefaults", "--source=" + filepath.Join(fx.Repo, "home")}
+	}
+
+	t.Run("an unchanged template is skipped", func(t *testing.T) {
+		fx, _ := setup(t)
+		fx.Fake.On("chezmoi", stateGet...).Return(run.Result{Stdout: "{\n  \"configTemplateContentsSHA256\": \"" + sum + "\"\n}\n"})
+		rep, err := fx.runUpdate(o, configStep)
+		if err != nil || len(rep.Skipped) != 1 || fx.did("chezmoi", initArgs(fx)...) {
+			t.Fatalf("rep %+v err %v calls %v", rep, err, fx.calls("chezmoi"))
+		}
+	})
+	t.Run("a changed template regenerates the config without a prompt and keeps the sourceDir pin", func(t *testing.T) {
+		fx, cfg := setup(t)
+		fx.Fake.On("chezmoi", stateGet...).Return(run.Result{Stdout: "{\"configTemplateContentsSHA256\": \"" + strings.Repeat("0", 64) + "\"}\n"})
+		rep, err := fx.runUpdate(o, configStep)
+		if err != nil || len(rep.Applied) != 1 || !fx.did("chezmoi", initArgs(fx)...) {
+			t.Fatalf("rep %+v err %v calls %v", rep, err, fx.calls("chezmoi"))
+		}
+		for _, c := range fx.Fake.Calls() {
+			if c.Name == "chezmoi" && c.Interactive {
+				t.Errorf("chezmoi %v got the terminal", c.Args)
+			}
+		}
+		b, _ := os.ReadFile(cfg)
+		if want := "sourceDir = \"" + filepath.Join(fx.Repo, "home") + "\"\n[data]\n    machineType = \"personal\"\n    newKey = \"default\"\n"; string(b) != want {
+			t.Errorf("config:\n%s\nwant:\n%s", b, want)
+		}
+		if fi, err := os.Stat(cfg); err != nil || fi.Mode().Perm() != 0o600 {
+			t.Errorf("config mode: %v %v", fi, err)
+		}
+	})
+	t.Run("no recorded template hash regenerates", func(t *testing.T) {
+		fx, _ := setup(t)
+		if _, err := fx.runUpdate(o, configStep); err != nil || !fx.did("chezmoi", initArgs(fx)...) {
+			t.Fatalf("err %v calls %v", err, fx.calls("chezmoi"))
+		}
+	})
+	t.Run("a config without a pin gets none", func(t *testing.T) {
+		fx, cfg := setup(t)
+		writeFile(t, cfg, "[data]\n    machineType = \"personal\"\n", 0o600)
+		if _, err := fx.runUpdate(o, configStep); err != nil {
+			t.Fatal(err)
+		}
+		if b, _ := os.ReadFile(cfg); strings.Contains(string(b), "sourceDir") {
+			t.Errorf("config:\n%s", b)
+		}
+	})
+	t.Run("no template in the source is skipped", func(t *testing.T) {
+		fx := newFixture(t)
+		rep, err := fx.runUpdate(o, configStep)
+		if err != nil || len(rep.Skipped) != 1 || len(fx.calls("chezmoi")) != 0 {
+			t.Fatalf("rep %+v err %v calls %v", rep, err, fx.calls("chezmoi"))
+		}
+	})
+	t.Run("a failing chezmoi init is named and leaves the config alone", func(t *testing.T) {
+		fx, cfg := setup(t)
+		fx.Fake.On("chezmoi", initArgs(fx)...).Return(run.Result{Code: 1, Stderr: "boom"})
+		_, err := fx.runUpdate(o, configStep)
+		if err == nil || !strings.Contains(err.Error(), "step config") || !strings.Contains(err.Error(), "boom") {
+			t.Fatalf("err %v", err)
+		}
+		if b, _ := os.ReadFile(cfg); string(b) != seeded(fx) {
+			t.Errorf("config:\n%s", b)
+		}
+	})
+	t.Run("a pin init already rendered is not doubled", func(t *testing.T) {
+		fx, cfg := setup(t)
+		fx.Env.Run = initSim{fx.Fake, cfg, "sourceDir = \"/new/home\"\n[data]\n"}
+		if _, err := fx.runUpdate(o, configStep); err != nil {
+			t.Fatal(err)
+		}
+		if b, _ := os.ReadFile(cfg); string(b) != "sourceDir = \"/new/home\"\n[data]\n" {
+			t.Errorf("config:\n%s", b)
+		}
+	})
+	t.Run("a failing state get regenerates", func(t *testing.T) {
+		fx, _ := setup(t)
+		fx.Fake.On("chezmoi", stateGet...).Return(run.Result{Code: 1, Stderr: "no state"})
+		rep, err := fx.runUpdate(o, configStep)
+		if err != nil || len(rep.Applied) != 1 || !fx.did("chezmoi", initArgs(fx)...) {
+			t.Fatalf("rep %+v err %v calls %v", rep, err, fx.calls("chezmoi"))
+		}
+	})
+	t.Run("a ~/ pin is read under the home", func(t *testing.T) {
+		fx, cfg := setup(t)
+		pinned := fx.Path("src", "athome", "home")
+		mustMkdir(t, pinned)
+		writeFile(t, filepath.Join(pinned, ".chezmoi.toml.tmpl"), tmpl+"# changed\n", 0o644)
+		writeFile(t, cfg, "sourceDir = \"~/src/athome/home\"\n[data]\n", 0o600)
+		fx.Fake.On("chezmoi", stateGet...).Return(run.Result{Stdout: "{\"configTemplateContentsSHA256\": \"" + sum + "\"}"})
+		if _, err := fx.runUpdate(o, configStep); err != nil {
+			t.Fatal(err)
+		}
+		if !fx.did("chezmoi", "init", "--no-tty", "--promptDefaults", "--source="+pinned) {
+			t.Fatalf("calls %v", fx.calls("chezmoi"))
+		}
+		if b, _ := os.ReadFile(cfg); !strings.HasPrefix(string(b), "sourceDir = \"~/src/athome/home\"\n") {
+			t.Errorf("config:\n%s", b)
+		}
+	})
+	t.Run("a pinned source is the one hashed and regenerated from", func(t *testing.T) {
+		fx, cfg := setup(t)
+		pinned := filepath.Join(t.TempDir(), "pinned home")
+		mustMkdir(t, pinned)
+		other := tmpl + "# changed\n"
+		writeFile(t, filepath.Join(pinned, ".chezmoi.toml.tmpl"), other, 0o644)
+		writeFile(t, cfg, "sourceDir = \""+pinned+"\"\n[data]\n", 0o600)
+		// the repo's template matches the state, the pinned one does not
+		fx.Fake.On("chezmoi", stateGet...).Return(run.Result{Stdout: "{\"configTemplateContentsSHA256\": \"" + sum + "\"}"})
+		if _, err := fx.runUpdate(o, configStep); err != nil {
+			t.Fatal(err)
+		}
+		if !fx.did("chezmoi", "init", "--no-tty", "--promptDefaults", "--source="+pinned) {
+			t.Fatalf("calls %v", fx.calls("chezmoi"))
+		}
+	})
 }

@@ -2,12 +2,16 @@ package steps
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"github.com/BurntSushi/toml"
 
 	"github.com/morrieinmaas/athome/internal/run"
 	"github.com/morrieinmaas/athome/internal/selfupdate"
@@ -50,6 +54,7 @@ func Update() []Step {
 	return []Step{
 		{Name: "self", Check: selfCheck, Apply: selfApply},
 		{Name: "source", Check: never, Apply: sourceApply},
+		{Name: "config", Check: configCurrent, Apply: configApply},
 		{Name: "apply", Check: never, Apply: func(ctx context.Context, env *Env) error {
 			return updateRun(ctx, env, run.Cmd{Name: "chezmoi", Args: []string{"apply"}, Interactive: true})
 		}},
@@ -217,4 +222,92 @@ func miseCheck(ctx context.Context, env *Env) (bool, error) {
 		return false, err
 	}
 	return n == 0, nil
+}
+
+// configSource is the source chezmoi apply reads: the sourceDir pinned in
+// chezmoi.toml (a leading ~/ under the home, as chezmoi reads it), else the
+// repo's home.
+func configSource(env *Env) string {
+	var doc struct {
+		SourceDir string `toml:"sourceDir"`
+	}
+	if _, err := toml.DecodeFile(chezmoiConfigPath(env), &doc); err != nil || doc.SourceDir == "" {
+		return sourceDir(env)
+	}
+	if rest, ok := strings.CutPrefix(doc.SourceDir, "~/"); ok {
+		return filepath.Join(env.Home, rest)
+	}
+	return doc.SourceDir
+}
+
+// configCurrent: chezmoi.toml was generated from the source's current config
+// template, by the template hash chezmoi records in its state. Without a
+// template there is nothing to regenerate; an unknown hash regenerates.
+func configCurrent(ctx context.Context, env *Env) (bool, error) {
+	b, err := os.ReadFile(filepath.Join(configSource(env), ".chezmoi.toml.tmpl"))
+	if os.IsNotExist(err) {
+		return true, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	res, err := env.Run.Run(ctx, run.Cmd{Name: "chezmoi", Args: []string{"state", "get", "--bucket=configState", "--key=configState"}})
+	if err != nil {
+		return false, err
+	}
+	var st struct {
+		Hash string `json:"configTemplateContentsSHA256"`
+	}
+	if res.Code != 0 || json.Unmarshal([]byte(res.Stdout), &st) != nil {
+		return false, nil
+	}
+	return st.Hash == fmt.Sprintf("%x", sha256.Sum256(b)), nil
+}
+
+// configApply regenerates chezmoi.toml from the changed template, so new
+// [data] keys are written and chezmoi stops asking for chezmoi init. It never
+// prompts: the template's prompt*Once calls reuse every stored answer, and a
+// key the template adds gets its default. The template renders no sourceDir,
+// so the line athome pinned is put back.
+func configApply(ctx context.Context, env *Env) error {
+	path := chezmoiConfigPath(env)
+	src := configSource(env)
+	old, err := os.ReadFile(path)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	if err := updateRun(ctx, env, run.Cmd{Name: "chezmoi", Args: []string{"init", "--no-tty", "--promptDefaults", "--source=" + src}}); err != nil {
+		return err
+	}
+	pin := sourceDirLine(old)
+	if pin == "" {
+		return nil
+	}
+	cur, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	if sourceDirLine(cur) != "" {
+		return nil
+	}
+	return writeConfig(path, append([]byte(pin+"\n"), cur...))
+}
+
+// sourceDirLine is the config's sourceDir line, "" when it has none.
+func sourceDirLine(config []byte) string {
+	for _, line := range strings.Split(string(config), "\n") {
+		if strings.HasPrefix(line, "sourceDir") {
+			return line
+		}
+	}
+	return ""
+}
+
+// writeConfig replaces chezmoi.toml with b, mode 0600, through a rename.
+func writeConfig(path string, b []byte) error {
+	tmp := path + ".new"
+	if err := os.WriteFile(tmp, b, 0o600); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
 }

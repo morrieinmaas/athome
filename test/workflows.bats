@@ -12,7 +12,7 @@ pr_workflows() {
 }
 
 @test "the workflow list above is every workflow that runs on pull requests" {
-  run grep -l '^  pull_request:' "$WF"/*.yml
+  run grep -lE '^  pull_request(_target)?:|^on:.*pull_request' "$WF"/*.yml
   [ "$status" -eq 0 ]
   [ "$(echo $output)" = "$(pr_workflows)" ]
 }
@@ -53,6 +53,8 @@ block() {
     run block '  test:' "$f"
     grep -qx '    timeout-minutes: 20' <<<"$output" || { echo "$f: job limit"; return 1; }
     grep -qx '      - run: go test -timeout 5m ./...' <<<"$output" || { echo "$f: test timeout"; return 1; }
+    # every go test in the job, not just one of them
+    ! grep 'go test' <<<"$output" | grep -vq -- '-timeout 5m' || { echo "$f: a go test without -timeout 5m"; return 1; }
   done
 }
 

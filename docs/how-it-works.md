@@ -241,9 +241,9 @@ chezmoi apply
 
 | What | Run locally | In CI |
 | --- | --- | --- |
-| shellcheck | `mise run lint` | on every push |
-| bats unit tests | `mise run test` | on every push |
-| Full install in a container, Arch and Fedora | `mise run e2e`, `mise run e2e-fedora` | on every push |
+| shellcheck | `mise run lint` | on every PR and every push to main |
+| bats unit tests | `mise run test` | on every PR and every push to main |
+| Full install in a container, Arch and Fedora | `mise run e2e`, `mise run e2e-fedora` | on every PR and every push to main |
 | gitleaks | every commit | on push, PR and weekly |
 
 The end-to-end test installs athome in a clean container with dummy answers,

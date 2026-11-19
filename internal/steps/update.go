@@ -11,6 +11,8 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/BurntSushi/toml"
+
 	"github.com/morrieinmaas/athome/internal/run"
 	"github.com/morrieinmaas/athome/internal/selfupdate"
 	"github.com/morrieinmaas/athome/internal/status"
@@ -222,13 +224,23 @@ func miseCheck(ctx context.Context, env *Env) (bool, error) {
 	return n == 0, nil
 }
 
-func configTemplatePath(env *Env) string { return filepath.Join(sourceDir(env), ".chezmoi.toml.tmpl") }
+// configSource is the source chezmoi apply reads: the sourceDir pinned in
+// chezmoi.toml, else the repo's home.
+func configSource(env *Env) string {
+	var doc struct {
+		SourceDir string `toml:"sourceDir"`
+	}
+	if _, err := toml.DecodeFile(chezmoiConfigPath(env), &doc); err == nil && doc.SourceDir != "" {
+		return doc.SourceDir
+	}
+	return sourceDir(env)
+}
 
 // configCurrent: chezmoi.toml was generated from the source's current config
 // template, by the template hash chezmoi records in its state. Without a
 // template there is nothing to regenerate; an unknown hash regenerates.
 func configCurrent(ctx context.Context, env *Env) (bool, error) {
-	b, err := os.ReadFile(configTemplatePath(env))
+	b, err := os.ReadFile(filepath.Join(configSource(env), ".chezmoi.toml.tmpl"))
 	if os.IsNotExist(err) {
 		return true, nil
 	}
@@ -255,8 +267,12 @@ func configCurrent(ctx context.Context, env *Env) (bool, error) {
 // so the line athome pinned is put back.
 func configApply(ctx context.Context, env *Env) error {
 	path := chezmoiConfigPath(env)
-	old, _ := os.ReadFile(path)
-	if err := updateRun(ctx, env, run.Cmd{Name: "chezmoi", Args: []string{"init", "--no-tty", "--promptDefaults", "--source=" + sourceDir(env)}}); err != nil {
+	src := configSource(env)
+	old, err := os.ReadFile(path)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	if err := updateRun(ctx, env, run.Cmd{Name: "chezmoi", Args: []string{"init", "--no-tty", "--promptDefaults", "--source=" + src}}); err != nil {
 		return err
 	}
 	pin := sourceDirLine(old)
@@ -270,11 +286,7 @@ func configApply(ctx context.Context, env *Env) error {
 	if sourceDirLine(cur) != "" {
 		return nil
 	}
-	tmp := path + ".new"
-	if err := os.WriteFile(tmp, append([]byte(pin+"\n"), cur...), 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
+	return writeConfig(path, append([]byte(pin+"\n"), cur...))
 }
 
 // sourceDirLine is the config's sourceDir line, "" when it has none.
@@ -285,4 +297,13 @@ func sourceDirLine(config []byte) string {
 		}
 	}
 	return ""
+}
+
+// writeConfig replaces chezmoi.toml with b, mode 0600, through a rename.
+func writeConfig(path string, b []byte) error {
+	tmp := path + ".new"
+	if err := os.WriteFile(tmp, b, 0o600); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
 }

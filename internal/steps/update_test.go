@@ -450,12 +450,17 @@ func TestUpdateStepsErrorWithoutOptions(t *testing.T) {
 type initSim struct {
 	*runtest.Fake
 	config string
+	render string // what init writes; "" means the default below
 }
 
 func (s initSim) Run(ctx context.Context, c run.Cmd) (run.Result, error) {
 	res, err := s.Fake.Run(ctx, c)
 	if c.Name == "chezmoi" && len(c.Args) > 0 && c.Args[0] == "init" && err == nil && res.Code == 0 {
-		os.WriteFile(s.config, []byte("[data]\n    machineType = \"personal\"\n    newKey = \"default\"\n"), 0o600)
+		out := s.render
+		if out == "" {
+			out = "[data]\n    machineType = \"personal\"\n    newKey = \"default\"\n"
+		}
+		os.WriteFile(s.config, []byte(out), 0o600)
 	}
 	return res, err
 }
@@ -466,13 +471,16 @@ func TestUpdateConfigRegeneratesChezmoiConfig(t *testing.T) {
 	const tmpl = "{{- $m := promptStringOnce . \"machineType\" \"Machine type\" \"personal\" -}}\n[data]\n"
 	sum := fmt.Sprintf("%x", sha256.Sum256([]byte(tmpl)))
 	stateGet := []string{"state", "get", "--bucket=configState", "--key=configState"}
+	seeded := func(fx *fixture) string {
+		return "sourceDir = \"" + filepath.Join(fx.Repo, "home") + "\"\n[data]\n    machineType = \"personal\"\n"
+	}
 	setup := func(t *testing.T) (*fixture, string) {
 		fx := newFixture(t)
 		writeFile(t, filepath.Join(fx.Repo, "home", ".chezmoi.toml.tmpl"), tmpl, 0o644)
 		cfg := fx.Path(".config", "chezmoi", "chezmoi.toml")
 		mustMkdir(t, filepath.Dir(cfg))
-		writeFile(t, cfg, "sourceDir = \"/src/athome/home\"\n[data]\n    machineType = \"personal\"\n", 0o600)
-		fx.Env.Run = initSim{fx.Fake, cfg}
+		writeFile(t, cfg, seeded(fx), 0o600)
+		fx.Env.Run = initSim{fx.Fake, cfg, ""}
 		return fx, cfg
 	}
 	initArgs := func(fx *fixture) []string {
@@ -500,7 +508,7 @@ func TestUpdateConfigRegeneratesChezmoiConfig(t *testing.T) {
 			}
 		}
 		b, _ := os.ReadFile(cfg)
-		if want := "sourceDir = \"/src/athome/home\"\n[data]\n    machineType = \"personal\"\n    newKey = \"default\"\n"; string(b) != want {
+		if want := "sourceDir = \"" + filepath.Join(fx.Repo, "home") + "\"\n[data]\n    machineType = \"personal\"\n    newKey = \"default\"\n"; string(b) != want {
 			t.Errorf("config:\n%s\nwant:\n%s", b, want)
 		}
 		if fi, err := os.Stat(cfg); err != nil || fi.Mode().Perm() != 0o600 {
@@ -537,8 +545,42 @@ func TestUpdateConfigRegeneratesChezmoiConfig(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), "step config") || !strings.Contains(err.Error(), "boom") {
 			t.Fatalf("err %v", err)
 		}
-		if b, _ := os.ReadFile(cfg); !strings.HasPrefix(string(b), "sourceDir = ") {
+		if b, _ := os.ReadFile(cfg); string(b) != seeded(fx) {
 			t.Errorf("config:\n%s", b)
+		}
+	})
+	t.Run("a pin init already rendered is not doubled", func(t *testing.T) {
+		fx, cfg := setup(t)
+		fx.Env.Run = initSim{fx.Fake, cfg, "sourceDir = \"/new/home\"\n[data]\n"}
+		if _, err := fx.runUpdate(o, configStep); err != nil {
+			t.Fatal(err)
+		}
+		if b, _ := os.ReadFile(cfg); string(b) != "sourceDir = \"/new/home\"\n[data]\n" {
+			t.Errorf("config:\n%s", b)
+		}
+	})
+	t.Run("a failing state get regenerates", func(t *testing.T) {
+		fx, _ := setup(t)
+		fx.Fake.On("chezmoi", stateGet...).Return(run.Result{Code: 1, Stderr: "no state"})
+		rep, err := fx.runUpdate(o, configStep)
+		if err != nil || len(rep.Applied) != 1 || !fx.did("chezmoi", initArgs(fx)...) {
+			t.Fatalf("rep %+v err %v calls %v", rep, err, fx.calls("chezmoi"))
+		}
+	})
+	t.Run("a pinned source is the one hashed and regenerated from", func(t *testing.T) {
+		fx, cfg := setup(t)
+		pinned := filepath.Join(t.TempDir(), "pinned home")
+		mustMkdir(t, pinned)
+		other := tmpl + "# changed\n"
+		writeFile(t, filepath.Join(pinned, ".chezmoi.toml.tmpl"), other, 0o644)
+		writeFile(t, cfg, "sourceDir = \""+pinned+"\"\n[data]\n", 0o600)
+		// the repo's template matches the state, the pinned one does not
+		fx.Fake.On("chezmoi", stateGet...).Return(run.Result{Stdout: "{\"configTemplateContentsSHA256\": \"" + sum + "\"}"})
+		if _, err := fx.runUpdate(o, configStep); err != nil {
+			t.Fatal(err)
+		}
+		if !fx.did("chezmoi", "init", "--no-tty", "--promptDefaults", "--source="+pinned) {
+			t.Fatalf("calls %v", fx.calls("chezmoi"))
 		}
 	})
 }

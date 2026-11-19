@@ -75,7 +75,8 @@ the target: `--to` (`vX.Y.Z` or `X.Y.Z`, which must be a tag `git ls-remote` lis
    target tag; at an untagged detached commit changes nothing and says so.
 3. `config`: when `home/.chezmoi.toml.tmpl` differs from the template chezmoi last generated
    `~/.config/chezmoi/chezmoi.toml` from (the hash in chezmoi's state), runs
-   `chezmoi init --no-tty --promptDefaults` to regenerate it. It never prompts: every stored
+   `chezmoi init --no-tty --promptDefaults` on the pinned `sourceDir` (else the repo's `home`)
+   to regenerate it. It never prompts: every stored
    `[data]` answer is kept, a key the new template adds gets its default, and the `sourceDir`
    line athome pinned is put back. Skipped when the template is unchanged, so chezmoi no
    longer warns "config file template has changed".

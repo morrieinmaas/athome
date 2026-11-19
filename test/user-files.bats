@@ -215,21 +215,46 @@ Host a
   done
 }
 
-@test "git: ~/.gitconfig is written only when missing, and a user's file is never read or changed" {
+@test "git: ~/.gitconfig lines pass through verbatim; only missing identity includes are appended" {
   [ ! -e "$ROOT/home/dot_gitconfig.tmpl" ]
-  [ -f "$ROOT/home/create_dot_gitconfig" ]
-  [ "$(git config -f "$ROOT/home/create_dot_gitconfig" --get-regexp '^includeif\.' | wc -l)" -eq 3 ]
-  # chezmoi cat of a create_ target prints the template; apply skips an existing file.
-  printf '[url "git@github.com:"]\n\tinsteadOf = https://github.com/\n' >"$DEST/.gitconfig"
-  chezmoi --source "$ROOT/home" --config "$TMP/personal.toml" --destination "$DEST" \
-    --persistent-state "$TMP/state.db" status "$DEST/.gitconfig" >"$TMP/status"
-  [ ! -s "$TMP/status" ]
+  # The old athome body already has [user] above its includeIf blocks: unchanged.
+  printf '[data]\n  machineType = "personal"\n  name_personal = "P"\n  email_personal = "p@example.org"\n' >"$TMP/g.toml"
+  { chezmoi --source "$ROOT/home" --config "$TMP/g.toml" execute-template <"$ROOT/test/fixtures/gitconfig.tmpl"
+    printf '\tinsteadOf = https://github.com/\n'; } >"$DEST/.gitconfig"
+  through .gitconfig >"$TMP/out"
+  diff "$TMP/out" "$DEST/.gitconfig"
+  # A file with no [user] (gh auth setup-git wrote it): [user] + all three appended.
+  printf '[credential "https://github.com"]\n\thelper = !gh auth git-credential\n' >"$DEST/.gitconfig"
+  through .gitconfig >"$TMP/out"
+  [ "$(head -2 "$TMP/out")" = "$(cat "$DEST/.gitconfig")" ]
+  [ "$(git config -f "$TMP/out" --get-regexp '^includeif\.' | wc -l)" -eq 3 ]
+  grep -qx '\[user\]' "$TMP/out"
+  # Idempotent.
+  cp "$TMP/out" "$DEST/.gitconfig"
+  through .gitconfig | cmp - "$DEST/.gitconfig"
+  # Missing file: a header, an empty [user], the three includes.
+  rm -f "$DEST/.gitconfig"
+  through .gitconfig >"$TMP/out"
+  [ "$(git config -f "$TMP/out" --get-regexp '^includeif\.' | wc -l)" -eq 3 ]
+}
+
+@test "git: a user.email set before the first apply does not beat the per-directory identity" {
+  mkdir -p "$DEST/.config/git" "$DEST/work/r"
+  printf '[data]\n  machineType = "personal"\n  name_personal = "P"\n  email_personal = "p@example.org"\n' >"$TMP/g.toml"
+  chezmoi --source "$ROOT/home" --config "$TMP/g.toml" execute-template <"$ROOT/home/dot_config/git/config.tmpl" >"$DEST/.config/git/config"
+  printf '[user]\n\temail = w@example.org\n' >"$DEST/.gitconfig-work"
+  printf '[user]\n\temail = pre@example.org\n' >"$DEST/.gitconfig"
+  through .gitconfig >"$TMP/out"
+  cp "$TMP/out" "$DEST/.gitconfig"
+  g() { HOME="$DEST" XDG_CONFIG_HOME="$DEST/.config" GIT_CONFIG_NOSYSTEM=1 git "$@"; }
+  g -C "$DEST/work/r" init -q
+  [ "$(g -C "$DEST/work/r" config user.email)" = "w@example.org" ]
 }
 
 @test "git: a value in ~/.gitconfig wins over athome's, and git config --global writes there" {
   mkdir -p "$DEST/.config/git"
   printf '[pull]\n\trebase = true\n' >"$DEST/.config/git/config"
-  cp "$ROOT/home/create_dot_gitconfig" "$DEST/.gitconfig"
+  rm -f "$DEST/.gitconfig"; through .gitconfig >"$TMP/gc" && cp "$TMP/gc" "$DEST/.gitconfig"
   HOME="$DEST" XDG_CONFIG_HOME="$DEST/.config" git config --global pull.rebase false
   grep -q 'rebase = false' "$DEST/.gitconfig"
   run ! grep -q 'rebase = false' "$DEST/.config/git/config"
@@ -357,7 +382,7 @@ Host gitlab.com
   printf '[data]\n  machineType = "personal"\n  name_personal = "P"\n  email_personal = "p@example.org"\n' >"$TMP/g.toml"
   chezmoi --source "$ROOT/home" --config "$TMP/g.toml" execute-template <"$ROOT/home/dot_config/git/config.tmpl" >"$DEST/.config/git/config"
   printf '[user]\n\temail = w@example.org\n' >"$DEST/.gitconfig-work"
-  cp "$ROOT/home/create_dot_gitconfig" "$DEST/.gitconfig"
+  rm -f "$DEST/.gitconfig"; through .gitconfig >"$TMP/gc" && cp "$TMP/gc" "$DEST/.gitconfig"
   g() { HOME="$DEST" XDG_CONFIG_HOME="$DEST/.config" GIT_CONFIG_NOSYSTEM=1 git "$@"; }
   g -C "$DEST/work/r" init -q
   g config --global user.email me@example.org

@@ -296,7 +296,7 @@ func TestDotfilesKeepsUserOwnedFiles(t *testing.T) {
 	r.fake.On("chezmoi", "managed", "--path-style=absolute", "--include=files").
 		Return(run.Result{Stdout: strings.Join([]string{gitconfig, zshrc, athome}, "\n") + "\n"})
 	listing := fmt.Sprintf(`{
-  ".gitconfig": {"absolute": %q, "sourceRelative": "create_dot_gitconfig"},
+  ".gitconfig": {"absolute": %q, "sourceRelative": "modify_dot_gitconfig"},
   ".zsh/athome.zsh": {"absolute": %q, "sourceRelative": "dot_zsh/athome.zsh"},
   ".zshrc": {"absolute": %q, "sourceRelative": "modify_dot_zshrc.tmpl"}
 }`, gitconfig, athome, zshrc)

@@ -143,7 +143,7 @@ script) or writes your file once, when it is missing (a `create_` file).
 | --- | --- | --- |
 | `~/.zshrc` | `~/.zsh/athome.zsh` | keeps one `source "$HOME/.zsh/athome.zsh"` line, at the top when it adds it |
 | `~/.ssh/config` | `~/.ssh/athome/base.conf` (and the generated `~/.ssh/athome/config`) | keeps one `Include athome/*.conf` line above every `Host`/`Match` |
-| `~/.gitconfig` | `~/.config/git/config` | written once when missing, then never touched |
+| `~/.gitconfig` | `~/.config/git/config` | every line kept; chezmoi only appends the per-directory `includeIf` blocks (and an empty `[user]`) when no `[user]` section has them after it, so `git config --global user.email` cannot beat them |
 | `~/.config/containers/registries.conf` | `~/.config/containers/registries.conf.d/athome.conf` | not managed |
 | `~/.zprofile` | none | not managed |
 | `~/.config/gh-dash/config.yml`, `~/.config/slk/config.toml`, `~/.config/niri/config.kdl` | none (the `theme` command recolours them) | written once when missing, then never touched |
@@ -152,10 +152,10 @@ Every other line in a file of yours passes through `apply` verbatim. Two
 consequences worth knowing:
 
 - **Precedence.** git reads `~/.config/git/config` first and `~/.gitconfig` after,
-  so your value wins. That includes `user.*`: keep it in the `[user]` section
-  at the top of `~/.gitconfig`, above its `includeIf` blocks, so the
-  per-directory identities for `~/personal`, `~/work` and `~/sidebiz` still win
-  inside those trees (`git config --global user.email` writes it there). ssh
+  so your value wins. For `user.*` that would beat the per-directory
+  identities for `~/personal`, `~/work` and `~/sidebiz`, so chezmoi keeps their
+  `includeIf` blocks after your last `[user]` section (`git config --global
+  user.email` writes into that section, above them). ssh
   takes the first value it finds, and athome's `Host *` defaults come first,
   so override them per host in `~/.ssh/config.local` (read before them), not
   in a later block.

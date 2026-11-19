@@ -1,0 +1,39 @@
+#!/bin/sh
+# chezmoi modify_ script for ~/.gitconfig, which is yours: `git config --global`
+# writes here, and every line passes through verbatim. athome's git settings
+# live in ~/.config/git/config, which git reads first, so a value here wins.
+#
+# That includes user.email, which would beat the per-directory identities
+# (~/personal, ~/work, ~/sidebiz) set by includeIf in ~/.config/git/config. So
+# this script only ever appends: when a [user] section has no includeIf for a
+# tree after it, it adds that includeIf at the end, and when there is no [user]
+# section yet it adds an empty one first (so a later `git config --global
+# user.email` lands above the includeIf blocks). Nothing is changed or removed.
+set -eu
+
+awk '
+function header(s) { return s ~ /^[ \t]*\[/ }
+{ line[++n] = $0 }
+header($0) && tolower($0) ~ /^[ \t]*\[user\][ \t]*$/ { user = n }
+header($0) {
+  for (d in dirs) if (index($0, "[includeIf \"gitdir:~/" d "/\"]")) inc[d] = n
+}
+BEGIN { dirs["personal"]; dirs["work"]; dirs["sidebiz"]; order[1] = "personal"; order[2] = "work"; order[3] = "sidebiz" }
+END {
+  if (n == 0) {
+    print "# ~/.gitconfig: yours; `git config --global` writes here. athome\047s git"
+    print "# settings live in ~/.config/git/config, which git reads first, so a value"
+    print "# here wins. Keep user.* in [user] above the includeIf blocks, so the"
+    print "# per-directory identities still win inside those trees."
+  }
+  for (i = 1; i <= n; i++) print line[i]
+  if (!user) { print ""; print "[user]" }
+  for (k = 1; k <= 3; k++) {
+    d = order[k]
+    if (user && inc[d] > user) continue
+    print ""
+    print "[includeIf \"gitdir:~/" d "/\"]"
+    print "    path = ~/.gitconfig-" d
+  }
+}
+'

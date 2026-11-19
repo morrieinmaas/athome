@@ -41,7 +41,7 @@ chezmoi apply --force
 | Path on disk | Managed by chezmoi? |
 | --- | --- |
 | `~/.zsh/athome.zsh`, `~/.config/git/config`, `~/.ssh/athome/base.conf`, `~/.config/ghostty/config`, `~/.config/tmux/tmux.conf`, etc. | Yes — sources are under `home/dot_*` |
-| `~/.zshrc`, `~/.ssh/config`, `~/.gitconfig`, `~/.config/{gh-dash,slk,niri}/…` | The user's. chezmoi keeps one hook line (`modify_`) or writes the file once when missing (`create_`); see docs/customizing.md |
+| `~/.zshrc`, `~/.ssh/config`, `~/.gitconfig`, `~/.config/{gh-dash,slk,niri}/…` | The user's. chezmoi keeps one hook line (`modify_`), appends only missing identity includes (`~/.gitconfig`) or writes the file once when missing (`create_`); see docs/customizing.md |
 | `~/Pictures/Wallpapers/` | Yes — ships a plain black default (`black.png`); the user drops their own images in and picks via Noctalia's UI |
 | `~/.config/noctalia/athome.toml` | Yes — athome's Noctalia defaults (builtin scheme, dark, gtk/qt templates, bar). Noctalia merges every `*.toml` there |
 | `~/.local/state/noctalia/settings.toml` | **No** — Noctalia's settings window and `noctalia msg` write it, and it loads LAST, so the user's choices win over `athome.toml`. Never ship it (athome once did, `create_`-once, and its `[theme]` blocked every later default) |
@@ -73,11 +73,13 @@ different problems, so shipping both and letting the shell choose keeps
 
 `~/.zshrc`, `~/.ssh/config` and `~/.gitconfig` belong to the user and to the
 tools that append to them. athome's content lives in `~/.zsh/athome.zsh`,
-`~/.ssh/athome/base.conf` and `~/.config/git/config`. `home/modify_dot_zshrc` and
-`home/private_dot_ssh/modify_private_config` keep exactly one hook line in the
-user's file and pass every other line through (and strip the old whole-file
-athome body on first run); `home/create_dot_gitconfig` is written only when
-missing. Never turn these back into plain managed files. The table in
+`~/.ssh/athome/base.conf` and `~/.config/git/config`. `home/modify_dot_zshrc.tmpl` and
+`home/private_dot_ssh/modify_private_config.tmpl` keep exactly one hook line in
+the user's file and pass every other line through (and strip the old
+whole-file athome body on first run). `home/modify_dot_gitconfig` passes every
+line through and only appends the per-directory includeIf blocks after the
+last [user] section when they are missing there, so a global user.email cannot
+beat them. Never turn these back into plain managed files. The table in
 `docs/customizing.md` ("What athome owns vs what you own") is the contract;
 keep it current when a file moves between the two.
 

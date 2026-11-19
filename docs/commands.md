@@ -72,7 +72,7 @@ the target: `--to` (`vX.Y.Z` or `X.Y.Z`, which must be a tag `git ls-remote` lis
    when already at the target, or newer without `--to` (no downgrade); `--to` installs an
    older version too. A `dev` or snapshot build skips it unless `--to` is given.
    This is the step that moves athome past `pins.athome`; the `apply` step's
-   `run_14-install-athome` only installs that pin when athome is missing or older, so it
+   `run_14-install-athome` only installs that pin when athome is missing, older or broken, so it
    never undoes an upgrade. The pin is a floor: `--to` a version below it is raised back to
    the pin by the `apply` step when the checked-out source still pins higher. A machine
    without the binary yet gets it from `chezmoi apply`, a new one from

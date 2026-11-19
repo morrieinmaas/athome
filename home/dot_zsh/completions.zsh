@@ -84,6 +84,6 @@ _zcache task      task --completion zsh
 _zcache scw       scw autocomplete script shell=zsh   # Scaleway CLI
 _zcache leaf      leaf --auto-complete zsh:dump       # markdown previewer (dump = stdout, no install side effect)
 
-# compinit runs in dot_zshrc.tmpl (before zinit plugins); cdreplay there replays
+# compinit runs in dot_zsh/athome.zsh (before zinit plugins); cdreplay there replays
 # deferred compdef calls. The cached files above register via compdef, which is
 # safe post-compinit.

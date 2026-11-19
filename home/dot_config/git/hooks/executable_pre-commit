@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Global pre-commit hook deployed by chezmoi at ~/.config/git/hooks/pre-commit.
-# Activated via `core.hooksPath` in ~/.gitconfig — applies to EVERY repo.
+# Activated via `core.hooksPath` in ~/.config/git/config — applies to EVERY repo.
 #
 # Three guards (any failure blocks the commit):
 #   1. gitleaks scan of staged changes

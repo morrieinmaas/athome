@@ -14,7 +14,7 @@ seed_github_ssh_config() {
   local hostkey="$1"
   mkdir -p "$HOME/.ssh"; chmod 700 "$HOME/.ssh"
   touch "$HOME/.ssh/config"; chmod 600 "$HOME/.ssh/config"
-  grep -q "$hostkey" "$HOME/.ssh/config" 2>/dev/null && return 0
+  grep -qs "$hostkey" "$HOME/.ssh/config" "$HOME/.ssh/athome/base.conf" && return 0   # base.conf: chezmoi's, once it has run
   cat >> "$HOME/.ssh/config" <<SSHSEED
 
 # === seeded by scripts/lib/ssh.sh — the chezmoi-managed ~/.ssh/config replaces this ===

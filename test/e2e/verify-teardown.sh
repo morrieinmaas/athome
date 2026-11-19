@@ -16,8 +16,8 @@ echo "== teardown assertions (after teardown --all --execute) =="
 
 # ── Tool layer + managed dotfiles must be GONE ──
 refute "athome binary removed"           test -e "$HOME/.local/bin/athome"
-refute "managed .zshrc removed"             test -f "$HOME/.zshrc"
-refute "managed .gitconfig removed"         test -f "$HOME/.gitconfig"
+refute "managed athome.zsh removed"         test -f "$HOME/.zsh/athome.zsh"
+refute "managed git config removed"         test -f "$HOME/.config/git/config"
 refute "generated chezmoi config removed"   test -d "$HOME/.config/chezmoi"
 refute "mise data removed"                  test -d "$HOME/.local/share/mise"
 refute "mise tools gone (direnv off PATH)"  command -v direnv
@@ -25,6 +25,8 @@ refute "zinit external removed"             test -d "$HOME/.local/share/zinit"
 refute "tmux plugins removed"               test -d "$HOME/.config/tmux/plugins"
 
 # ── USER DATA must SURVIVE (the safety guard) ──
+check  "your .zshrc kept (modify_ target)"  test -f "$HOME/.zshrc"
+check  "your .gitconfig kept (modify_)"     test -f "$HOME/.gitconfig"
 check  "secrets .env file preserved"        test -f "$HOME/.secrets/canary/.env"
 check  "project-dir file preserved"         test -f "$HOME/personal/canary-repo/keepme"
 check  "source repo preserved"              test -f "$HOME/athome/scripts/bootstrap.sh"

@@ -70,7 +70,7 @@ pyproject() {
 
 # repo: cd to a project — exits at the first existing match
 # Searches the per-context roots only; ~/Code is gone (see commit notes
-# in dot_gitconfig.tmpl). Personal → ~/personal, work → ~/work, sidebiz
+# in dot_config/git/config.tmpl). Personal → ~/personal, work → ~/work, sidebiz
 # → ~/sidebiz. Single tree per context.
 repo() {
   for base in ~/personal ~/work ~/sidebiz; do

@@ -1,0 +1,112 @@
+# ~/.config/git/config — athome's git settings, managed by chezmoi; apply
+# replaces edits here. ~/.gitconfig is yours, and `git config --global` writes
+# there. git reads this file first and ~/.gitconfig after, so a value set in
+# ~/.gitconfig wins.
+
+[user]
+    name  = {{ .name_personal }}
+    email = {{ .email_personal }}
+
+# Per-context identity overrides. One root dir per context, no ambiguity:
+# every repo under ~/personal/ commits as personal, under ~/work/ as work,
+# under ~/sidebiz/ as sidebiz. The old ~/Code/<org>/ override soup is gone
+# because it was structurally easier to mis-clone "work" project under the
+# your personal namespace and ship a sidebiz commit with the work email
+# attached. Single tree per context = no accidents.
+[includeIf "gitdir:~/personal/"]
+    path = ~/.gitconfig-personal
+
+[includeIf "gitdir:~/work/"]
+    path = ~/.gitconfig-work
+
+[includeIf "gitdir:~/sidebiz/"]
+    path = ~/.gitconfig-sidebiz
+
+[init]
+    defaultBranch = main
+
+[core]
+    editor       = nvim
+    autocrlf     = input
+    excludesfile = ~/.gitignore_global
+    # Global hooks dir applies to EVERY repo: gitleaks pre-commit + conventional-commits msg
+    hooksPath    = ~/.config/git/hooks
+
+[transfer]
+    fsckObjects = true
+[fetch]
+    fsckObjects = true
+    prune       = true
+[receive]
+    fsckObjects = true
+
+[pull]
+    rebase = true
+[rebase]
+    autostash = true
+    autosquash = true
+[push]
+    default     = simple
+    autoSetupRemote = true
+    followTags  = true
+[merge]
+    conflictstyle = zdiff3
+[rerere]
+    enabled = true
+[branch]
+    sort = -committerdate
+[tag]
+    sort = version:refname
+[diff]
+    algorithm   = histogram
+    colorMoved  = default
+    tool        = difftastic
+[difftool "difftastic"]
+    cmd = difft "$LOCAL" "$REMOTE"
+[difftool]
+    prompt = false
+
+[color]
+    ui = auto
+
+[alias]
+    st        = status -sb
+    co        = checkout
+    sw        = switch
+    br        = branch
+    cm        = commit -m
+    amend     = commit --amend --no-edit
+    last      = log -1 HEAD
+    lg        = log --graph --pretty=format:'%C(yellow)%h%Creset %C(cyan)%an%Creset %s %C(green)(%cr)%Creset %C(magenta)%d%Creset' --abbrev-commit
+    unstage   = reset HEAD --
+    please    = push --force-with-lease
+
+# ── URL rewrites: push over SSH, clone/fetch over the URL as written ─────────
+# `pushInsteadOf` (NOT `insteadOf`): pushes to github.com go over SSH with your
+# key — no HTTPS-token prompt — while clone/fetch use the URL exactly as given.
+#
+# Why not the broader `insteadOf` (which ALSO rewrites clone/fetch to SSH)? It
+# breaks anonymous clones of PUBLIC repos: GitHub requires a registered key for
+# SSH even on public repos, so on any machine whose key isn't on GitHub yet — a
+# fresh box mid-bootstrap, or the keyless CI e2e — a rewritten
+# `https://github.com/<public>/<repo>` clone dies with "Host key verification
+# failed" / "Permission denied (publickey)". chezmoi's git-repo externals
+# (zinit, tpm) clone exactly such public HTTPS URLs during `chezmoi apply`, so
+# `insteadOf` aborted the whole apply before ~/.zshrc and the mise toolchain
+# landed. `pushInsteadOf` keeps those clones on anonymous HTTPS and still routes
+# your own pushes through SSH.
+#
+# Your own repos still go over SSH without the catch-all: `gh repo clone` honours
+# `gh config git_protocol ssh` (set by bootstrap.sh) and bootstrap rewrites this
+# repo's own remote to git@github.com directly. Tradeoff: a bare
+# `git clone https://github.com/<you>/<private-repo>` now fetches over HTTPS
+# (gh's credential helper supplies the token) rather than being forced to SSH.
+[url "git@github.com:"]
+    pushInsteadOf = https://github.com/
+
+# One GitHub account → one SSH key (per machine), so there's no per-account
+# host-alias routing: every github.com repo uses ~/.ssh/<hostname>_ed25519 (see
+# ~/.ssh/athome/base.conf). The directory-based `includeIf` blocks above still set the
+# right commit *email* per tree (~/work vs ~/personal vs ~/sidebiz). If you add
+# a second GitHub account later, reintroduce a `[url "git@github-<acct>:..."]`
+# block here pointing at that account's host alias.

@@ -1,0 +1,47 @@
+#!/bin/sh
+# chezmoi modify_ script for ~/.zshrc, which is yours. athome's zsh setup lives
+# in ~/.zsh/athome.zsh; this script only makes sure ~/.zshrc sources it, with
+# one line, and passes every other line through verbatim. A new hook line goes
+# at the top, so lines a tool appends (completions, `eval "$(x init zsh)"`) run
+# after athome's compinit and PATH.
+#
+# Migration: a ~/.zshrc that athome rendered whole starts with the old "managed
+# by chezmoi" header. From there to its `.zshrc.local` line (or the end of the
+# file), the lines that match an old athome body in order (every version is in
+# .chezmoitemplates/legacy/zshrc/) are dropped and the hook takes the header's
+# place; any other line there is yours and stays. The mise line
+# scripts/install-mise.sh adds before bootstrap (marked "# athome: pre-bootstrap
+# stopgap") goes too.
+set -eu
+
+known="$(mktemp)"
+trap 'rm -f "$known"' EXIT
+cat >"$known" <<'ATHOME_EOF'
+{{ range $i := until 6 }}@@athome legacy v{{ add $i 1 }}@@
+{{ include (printf ".chezmoitemplates/legacy/zshrc/v%d" (add $i 1)) }}{{ end -}}
+ATHOME_EOF
+
+awk '
+{{ include ".chezmoitemplates/legacy/lcs.awk" }}
+# Only a line that sources athome.zsh counts, not one that merely names it.
+function is_hook(s) {
+  return s ~ /^[ \t]*(\[\[ -[fr] [^]]*\]\] && )?(source|\.)[ \t]+"?(\$HOME|~)\/\.zsh\/athome\.zsh"?[ \t]*(#.*)?$/
+}
+END {
+  hook = "[[ -f \"$HOME/.zsh/athome.zsh\" ]] && source \"$HOME/.zsh/athome.zsh\""
+  for (i = 1; i <= n; i++) if (index(line[i], "# ~/.zshrc — managed by chezmoi") == 1) { hs = i; break }
+  if (hs) {
+    he = n
+    for (i = hs + 1; i <= n; i++) if (index(line[i], "source \"$HOME/.zshrc.local\"   # legacy path")) { he = i; break }
+    if (hs > 1 && line[hs - 1] ~ /^#!/) hs--
+    drop_legacy(hs, he)
+  }
+  for (i = 1; i <= n; i++) if (line[i] ~ /# athome: pre-bootstrap stopgap$/) drop[i] = 1
+  for (i = 1; i <= n; i++) if (!drop[i] && is_hook(line[i])) { if (seen) drop[i] = 1; seen = 1 }
+  if (!seen && !hs) print hook
+  for (i = 1; i <= n; i++) {
+    if (hs && i == hs && !seen) print hook
+    if (!drop[i]) print line[i]
+  }
+}
+' "$known" -

@@ -10,7 +10,7 @@
 set -euo pipefail
 
 dir="${HOME}/.config/themes"
-# $1 = file to recolour instead (the chezmoi modify_ script passes a temp copy).
+# $1 = file to recolour instead of the live config (handy for testing a copy).
 cfg="${1:-${HOME}/.config/gh-dash/config.yml}"
 [ -f "$cfg" ] || exit 0
 

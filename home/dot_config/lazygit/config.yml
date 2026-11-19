@@ -12,11 +12,13 @@ gui:
   showFileTree: true
   sidePanelWidth: 0.3333
 git:
-  # lazygit 0.62 renamed git.paging (object) → git.pagers (array). Keeping the
-  # old key makes lazygit auto-migrate + rewrite this file on every launch (the
+  # lazygit 0.62 renamed git.paging (object) → git.pagers (array), and 0.65
+  # renamed git.pagers → git.diffRenderers (each entry gains a `type`). An old
+  # key makes lazygit auto-migrate + rewrite this file on every launch (the
   # "config migrated/saved" popup) and drift from chezmoi. Use the new schema.
-  pagers:
+  diffRenderers:
     - colorArg: always
+      type: rawGit
   commit:
     signOff: false
   autoFetch: true

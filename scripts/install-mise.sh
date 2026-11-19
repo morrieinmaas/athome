@@ -53,14 +53,14 @@ repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 # Wire activation for new shells so the next `mise run bootstrap` finds mise.
 # Skip if it's already active anywhere ~/.zshrc sources (athome's completions.zsh
 # activates it once dotfiles are deployed) — avoids a duplicate line. Uses the
-# absolute mise path so it works even before ~/.local/bin is on PATH. The
-# bootstrap's `chezmoi apply --force` later replaces ~/.zshrc with the template,
-# so anything added here is only a pre-bootstrap stopgap.
+# absolute mise path so it works even before ~/.local/bin is on PATH. It is only
+# a pre-bootstrap stopgap: the marker comment lets chezmoi's ~/.zshrc modify_
+# script drop the line again once ~/.zsh/athome.zsh takes over.
 rc="$HOME/.zshrc"
 if grep -rqs "mise activate zsh" "$rc" "$HOME/.zsh" 2>/dev/null; then
   echo "✓ mise activation already wired — nothing added to ~/.zshrc"
 else
-  printf 'eval "$(%s activate zsh)"\n' "$mise_bin" >> "$rc"
+  printf 'eval "$(%s activate zsh)"   # athome: pre-bootstrap stopgap\n' "$mise_bin" >> "$rc"
   echo "✓ wired mise activation into ~/.zshrc"
 fi
 

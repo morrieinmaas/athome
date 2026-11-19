@@ -102,7 +102,7 @@ The repo lives in `~/.local/share/chezmoi`. `czc` takes you there.
 | `czd` | Show the actual differences |
 | `cza` | Apply the repo to your machine |
 | `czu` | Pull the latest changes, then apply |
-| `cze ~/.zshrc` | Edit a file in the repo instead of in place |
+| `cze ~/.zsh/aliases.zsh` | Edit a file in the repo instead of in place |
 | `mise run apply` | Apply, including package installs (run from the repo) |
 | `mise upgrade` | Upgrade the mise-managed tools |
 | `theme` | Pick a colour theme for terminal, tmux, editor and desktop |
@@ -118,7 +118,9 @@ you're not sure, because applying overwrites local edits to managed files.
 - **Add an app, font or system package:** put it in
   [`home/.chezmoidata/packages.yaml`](home/.chezmoidata/packages.yaml).
 - **Change a config:** edit it under [`home/`](home), which mirrors your home
-  folder (`dot_zshrc.tmpl` becomes `~/.zshrc`).
+  folder (`dot_zsh/athome.zsh` becomes `~/.zsh/athome.zsh`). Your `~/.zshrc`,
+  `~/.ssh/config` and `~/.gitconfig` stay yours: see
+  [what athome owns](docs/customizing.md#what-athome-owns-vs-what-you-own).
 
 [docs/customizing.md](docs/customizing.md) covers the details, including
 per-machine extra packages that never touch the repo.

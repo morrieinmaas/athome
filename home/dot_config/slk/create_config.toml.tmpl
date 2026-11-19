@@ -1,0 +1,2 @@
+{{- /* create_: written only when ~/.config/slk/config.toml is missing, so apply never undoes a `theme` pick or your edits. The content lives in .chezmoitemplates/slk/config.toml; edit that. */ -}}
+{{ includeTemplate ".chezmoitemplates/slk/config.toml" . | trimSuffix "\n" }}

@@ -427,7 +427,10 @@ func ghSeedSSHConfig(home, hostkey string) error {
 	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	if strings.Contains(string(existing), hostkey) {
+	// After chezmoi has run, the github.com block lives in athome/base.conf,
+	// which ~/.ssh/config includes.
+	base, _ := os.ReadFile(filepath.Join(dir, "athome", "base.conf"))
+	if strings.Contains(string(existing), hostkey) || strings.Contains(string(base), hostkey) {
 		return os.Chmod(path, 0o600)
 	}
 	block := "\n# === seeded by scripts/lib/ssh.sh — the chezmoi-managed ~/.ssh/config replaces this ===\nHost github.com\n    HostName github.com\n    User git\n    IdentityFile ~/.ssh/id_ed25519\n    IdentityFile ~/.ssh/" + hostkey + "\n"

@@ -131,6 +131,55 @@ One edit: change `grofe` (a release tag such as `v0.3.1`) or `canopy` (a tag or 
 `home/.chezmoidata/pins.toml`. The install scripts render the pins, so the next `chezmoi apply`
 (or `athome update`) reinstalls the tool; `athome status` compares what is installed with the pin.
 
+## What athome owns vs what you own
+
+Some files in your home folder are yours, and tools append to them too (an
+installer adds its completion line to `~/.zshrc`, `git config --global` writes
+`~/.gitconfig`). athome never replaces those. It keeps its own settings in files
+it owns, and either keeps one line in yours that pulls them in (a `modify_`
+script) or writes your file once, when it is missing (a `create_` file).
+
+| Your file | athome's file (managed, apply replaces edits) | How chezmoi treats yours |
+| --- | --- | --- |
+| `~/.zshrc` | `~/.zsh/athome.zsh` | keeps one `source "$HOME/.zsh/athome.zsh"` line, at the top when it adds it |
+| `~/.ssh/config` | `~/.ssh/athome/base.conf` (and the generated `~/.ssh/athome/config`) | keeps one `Include athome/*.conf` line above every `Host`/`Match` |
+| `~/.gitconfig` | `~/.config/git/config` | every line kept; chezmoi only appends the per-directory `includeIf` blocks (and an empty `[user]`) when no `[user]` section has them after it, so `git config --global user.email` cannot beat them |
+| `~/.config/containers/registries.conf` | `~/.config/containers/registries.conf.d/athome.conf` | not managed |
+| `~/.zprofile` | none | not managed |
+| `~/.config/gh-dash/config.yml`, `~/.config/slk/config.toml`, `~/.config/niri/config.kdl` | none (the `theme` command recolours them) | written once when missing, then never touched |
+
+Every other line in a file of yours passes through `apply` verbatim. Two
+consequences worth knowing:
+
+- **Precedence.** git reads `~/.config/git/config` first and `~/.gitconfig` after,
+  so your value wins. For `user.*` that would beat the per-directory
+  identities for `~/personal`, `~/work` and `~/sidebiz`, so chezmoi keeps their
+  `includeIf` blocks after your last `[user]` section (`git config --global
+  user.email` writes into that section, above them). ssh
+  takes the first value it finds, and athome's `Host *` defaults come first,
+  so override them per host in `~/.ssh/config.local` (read before them), not
+  in a later block.
+- **Upgrades.** A file written once never gets later repo changes. To take the
+  repo's current version of one, move yours aside and apply. For a themed
+  config, run `theme <name>` afterwards: the fresh copy has the repo's colours.
+
+Migrating from an older athome, where it owned these files whole: the first
+apply recognises the old body (by its "managed by chezmoi" header) and swaps it
+for the one line, dropping only lines some athome version wrote and keeping
+whatever you or a tool added in or around it. An existing
+`~/.gitconfig` is left exactly as it is, old athome settings included; they
+match `~/.config/git/config`, and you can delete them from `~/.gitconfig` so
+later repo changes are not shadowed. Run `chezmoi init` before that apply when
+chezmoi warns that the config template changed.
+
+Every other file under `home/` is athome's, whole, which the next section is about.
+Some of those are files a tool can write too, so an apply would undo such a
+write: `~/.zshenv` (rustup adds `. "$HOME/.cargo/env"`), `~/.config/mise/config.toml`
+(`mise use -g`), `~/.config/gh/config.yml` (`gh config set`),
+`~/.config/zed/settings.json` (Zed's settings UI), `~/.config/opencode/opencode.json`
+and `~/.config/containers/containers.conf`. Capture such a change with `mise run
+save`, or move it somewhere the tool also reads that athome does not manage.
+
 ## Managing drift (don't lose live edits!)
 
 chezmoi's source of truth is the **repo** (`home/…`); `apply` renders source →

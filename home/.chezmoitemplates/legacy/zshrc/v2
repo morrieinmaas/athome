@@ -1,0 +1,107 @@
+#!/usr/bin/env zsh
+# ~/.zshrc — managed by chezmoi (dot_zshrc.tmpl).
+# Kept tiny on purpose: bootstrap zinit, then source thematic files from ~/.zsh/.
+
+# ─── PATH first (so tools below can find each other) ────────────────────────
+[[ -f "$HOME/.zsh/path.zsh" ]] && source "$HOME/.zsh/path.zsh"
+
+# ─── zinit bootstrap ────────────────────────────────────────────────────────
+ZINIT_HOME="${XDG_DATA_HOME:-${HOME}/.local/share}/zinit/zinit.git"
+[[ ! -d $ZINIT_HOME ]] && mkdir -p "$(dirname "$ZINIT_HOME")"
+[[ ! -d $ZINIT_HOME/.git ]] && git clone --depth 1 \
+  https://github.com/zdharma-continuum/zinit.git "$ZINIT_HOME"
+source "${ZINIT_HOME}/zinit.zsh"
+
+# ─── Force emacs keybindings ────────────────────────────────────────────────
+# zsh auto-detects vi-mode if $EDITOR/$VISUAL contains the substring "vi".
+# Our exports set EDITOR=nvim which matches → vi-mode → Ctrl+A echoes literal
+# `^A` instead of going to beginning-of-line, etc. Force emacs mode here,
+# AFTER zinit's source so any OMZ snippet that fiddles with bindkey runs
+# in the right base mode. Also re-bind the canonical emacs nav keys so
+# they're guaranteed regardless of plugin ordering.
+bindkey -e
+bindkey '^A' beginning-of-line
+bindkey '^E' end-of-line             # autosuggest-accept binding below extends this
+bindkey '^K' kill-line
+bindkey '^U' backward-kill-line
+bindkey '^W' backward-kill-word
+bindkey '^R' history-incremental-search-backward
+
+# ─── Disable XON/XOFF flow control ──────────────────────────────────────────
+# tmux uses Ctrl-S as its prefix (see ~/.config/tmux/tmux.conf). Ctrl-S is also
+# the terminal's XOFF (freeze output); with flow control on, Ctrl-S never
+# reaches tmux — it freezes the screen instead (Ctrl-Q unfreezes). Turn it off
+# for interactive ttys so the prefix works everywhere.
+[[ $- == *i* && -t 0 ]] && stty -ixon 2>/dev/null
+
+# ─── Completion system: init BEFORE any plugin that calls `compdef` ─────────
+# zsh-completions, zsh-syntax-highlighting, our vendored completion zstyles and
+# git-aliases (dot_zsh/) all call compdef at load time. If compinit hasn't run:
+#   zsh: compdef: command not found
+# Initialize early; zinit's `cdreplay -q` at the bottom of this file picks up
+# any compdef calls that fired before completions were fully built.
+autoload -Uz compinit
+# -C skips compinit's insecure-fpath audit for faster startup. NOTE: zinit does
+# NOT perform that audit — this is a deliberate single-user-laptop speed/safety
+# trade. Run `compaudit` manually if a PM prefix ever becomes group-writable.
+compinit -C
+
+# ─── oh-my-zsh purged (prompt → starship) ────────────────────────────────────
+# The prompt is now starship (dot_config/starship.toml; init cached in
+# dot_zsh/completions.zsh), replacing the OMZ dogenpunk theme. What moved where:
+#   • OMZ `git` plugin aliases  → dot_zsh/git-aliases.zsh (sourced below, BEFORE
+#     aliases.zsh so your own git overrides there still win)
+#   • OMZ history/directories libs → setopts in dot_zsh/exports.zsh
+#   • OMZ completion lib zstyles   → dot_zsh/completions.zsh
+#   • OMZ direnv/eza/docker plugins → dropped; aliases.zsh + the _zcache direnv
+#     hook already cover them (docker `d*` aliases + `docker`/`dc` completion are
+#     the only casualties — add back via _zcache if you miss them)
+# zinit STAYS — it still loads the fish-like zsh-autosuggestions /
+# zsh-completions / zsh-syntax-highlighting plugins below (never oh-my-zsh).
+
+# ─── zsh-autosuggestions: fish-like ghost-text suggestions ──────────────────
+# Config MUST be set BEFORE the plugin sources — the plugin reads these
+# globals exactly once at init time.
+#   strategy: (history completion) → first try $HISTFILE prefix-match, then
+#             fall back to the completion subsystem. This is what gives the
+#             "true fish-like" feel where suggestions appear even for commands
+#             you've never typed before.
+#   use_async: render suggestions off the main thread so typing stays snappy.
+#   highlight_style: a neutral medium gray, italic for emphasis.
+#                    Default fg=8 is invisible on most terminal themes.
+#   buffer_max_size: don't try to suggest for huge pasted buffers.
+typeset -ga ZSH_AUTOSUGGEST_STRATEGY=(history completion)
+ZSH_AUTOSUGGEST_USE_ASYNC=1
+ZSH_AUTOSUGGEST_HIGHLIGHT_STYLE='fg=240,italic'
+ZSH_AUTOSUGGEST_BUFFER_MAX_SIZE=20
+
+# Load SYNCHRONOUSLY (no `wait`) so ghost text appears on the very first
+# prompt, not after the first executed command. The plugin is tiny (~10ms).
+zinit light zsh-users/zsh-autosuggestions
+
+# Real fix for the earlier "Ctrl+E echoes literal ^E in tmux" symptom
+# turned out to be zsh's vi-mode auto-detect (EDITOR=nvim contains "vi"
+# substring → zsh picked vi-mode → ^E had no binding). The `bindkey -e`
+# we now run near the top of this file forces emacs mode regardless.
+# With emacs mode active, ^E is end-of-line by default AND end-of-line
+# is in `ZSH_AUTOSUGGEST_ACCEPT_WIDGETS` → Ctrl+E both goes to end of
+# line AND accepts any ghost-text suggestion. No explicit autosuggest-
+# accept binding needed.
+
+# Heavier plugins can defer — they only matter after some typing happens.
+zinit wait lucid for \
+  zsh-users/zsh-completions \
+  zsh-users/zsh-syntax-highlighting
+
+# Replay any compdef calls that zinit cached while plugins were loading.
+# Pair with the early `compinit -C` near the top of this file.
+zinit cdreplay -q
+
+# ─── Source thematic config (order matters: each builds on the prior) ───────
+for f in exports.zsh git-aliases.zsh aliases.zsh functions.zsh completions.zsh; do
+  [[ -f "$HOME/.zsh/$f" ]] && source "$HOME/.zsh/$f"
+done
+
+# ─── Machine-specific overrides (un-tracked; create on the machine itself) ──
+[[ -f "$HOME/.zsh/local.zsh" ]] && source "$HOME/.zsh/local.zsh"
+[[ -f "$HOME/.zshrc.local"  ]] && source "$HOME/.zshrc.local"   # legacy path

@@ -364,7 +364,7 @@ Shell aliases (anywhere):
 
   czu                          # chezmoi update -v (pull + apply)
   czd                          # chezmoi diff
-  cze ~/.zshrc                 # edit a tracked file (auto-applies)
+  cze ~/.zsh/aliases.zsh       # edit a tracked file (auto-applies)
   czdoc                        # chezmoi doctor
 
 Next manual steps:

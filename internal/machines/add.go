@@ -128,13 +128,9 @@ func reachErr(name string, res run.Result) error {
 
 const (
 	// hostProbeMark precedes the values, so a shell banner before it is ignored.
-	hostProbeMark   = "athome-host-probe"
-	hostProbeScript = `echo ` + hostProbeMark + `; printf "%s\n" "$HOME"; uname -n`
-	readPubScript   = `cat "$HOME/.ssh/$1_ed25519.pub"`
-	boxKeyScript    = prepareSSH + `k="$HOME/.ssh/$1_ed25519"
-[ -f "$k" ] || ssh-keygen -q -t ed25519 -N '' -C "athome@$2" -f "$k" || exit 1
-[ -f "$k.pub" ] || ssh-keygen -y -f "$k" > "$k.pub" || exit 1
-cat "$k.pub"`
+	hostProbeMark        = "athome-host-probe"
+	hostProbeScript      = `echo ` + hostProbeMark + `; printf "%s\n" "$HOME"; uname -n`
+	readPubScript        = `cat "$HOME/.ssh/$1_ed25519.pub"`
 	readAuthorizedScript = `cat "$HOME/.ssh/authorized_keys"`
 	ghStatusScript       = `gh auth status`
 	ghLoginScript        = `gh auth login --hostname github.com --git-protocol ssh --skip-ssh-key --web`
@@ -264,7 +260,7 @@ func (a *addRun) boxKeyCheck(ctx context.Context, e *steps.Env) (bool, error) {
 	if res.Code != 0 {
 		return false, nil
 	}
-	auth, sign, err := a.gh.registered(ctx, blobOf(strings.TrimSpace(res.Stdout)))
+	auth, sign, err := a.gh.registered(ctx, keys.PubBlob(strings.TrimSpace(res.Stdout)))
 	if err != nil || !auth || !sign {
 		return false, err
 	}
@@ -303,7 +299,7 @@ func (a *addRun) breakGlassCheck(ctx context.Context, e *steps.Env) (bool, error
 	if err := reachErr(a.m.Name, res); err != nil {
 		return false, err
 	}
-	return res.Code == 0 && authorizedHas(res.Stdout, blobOf(pub)), nil
+	return res.Code == 0 && authorizedHas(res.Stdout, keys.PubBlob(pub)), nil
 }
 
 func (a *addRun) breakGlassApply(ctx context.Context, e *steps.Env) error {
@@ -452,18 +448,8 @@ func Add(ctx context.Context, d Deps, m Machine) error {
 	if err != nil {
 		return err
 	}
-	if hasMachine(ms, m.Name) {
-		return fmt.Errorf("machine %s already exists", m.Name)
-	}
-	p, err := LoadPending(d.Home, m.Name)
-	if err != nil {
+	if m, err = resumeEntry(d, ms, m); err != nil {
 		return err
-	}
-	if p != nil {
-		if !sameEntry(*p, m) {
-			return fmt.Errorf("machine add %s is pending with other values; finish it with the same flags or run athome machine rm %s --force", m.Name, m.Name)
-		}
-		m = *p
 	}
 	if m.ForwardAgent {
 		d.say("warning: root on %s can use your laptop key while you are attached", m.Name)
@@ -484,6 +470,30 @@ func Add(ctx context.Context, d Deps, m Machine) error {
 	if failed.Name == "" {
 		return err
 	}
+	return addFailure(d, m.Name, failed, rep)
+}
+
+// resumeEntry is m, or its pending entry when a rerun with the same values
+// resumes an unfinished add. A machine already in ms is refused.
+func resumeEntry(d Deps, ms []Machine, m Machine) (Machine, error) {
+	if hasMachine(ms, m.Name) {
+		return m, fmt.Errorf("machine %s already exists", m.Name)
+	}
+	p, err := LoadPending(d.Home, m.Name)
+	if err != nil {
+		return m, err
+	}
+	if p == nil {
+		return m, nil
+	}
+	if !sameEntry(*p, m) {
+		return m, fmt.Errorf("machine add %s is pending with other values; finish it with the same flags or run athome machine rm %s --force", m.Name, m.Name)
+	}
+	return *p, nil
+}
+
+// addFailure reports the failed step and what the steps before it left behind.
+func addFailure(d Deps, name string, failed steps.Event, rep steps.Report) error {
 	msg := fmt.Sprintf("athome machine add: %s: %v", failed.Name, failed.Err)
 	if failed.Name == "machine-validate" {
 		return errors.New(msg)
@@ -500,12 +510,12 @@ func Add(ctx context.Context, d Deps, m Machine) error {
 			continue // its check passed only because there is no grofe to add to
 		}
 		if slices.Contains(passed, l.step) {
-			left = append(left, strings.Replace(l.what, "%s", m.Name, 1))
+			left = append(left, strings.Replace(l.what, "%s", name, 1))
 		}
 	}
 	if len(left) == 0 {
 		left = []string{"nothing"}
 	}
 	return fmt.Errorf("%s\nleft behind: %s\nrerun the same command to resume, or remove it with athome machine rm %s --force",
-		msg, strings.Join(left, ", "), m.Name)
+		msg, strings.Join(left, ", "), name)
 }

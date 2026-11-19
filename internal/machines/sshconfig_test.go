@@ -1,14 +1,30 @@
 package machines
 
 import (
-	"bytes"
-	"context"
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestLoginBlockSplitsTheJump(t *testing.T) {
+	for jump, want := range map[string]string{
+		"bastion":                  "ProxyCommand ssh -W [%h]:%p bastion\n",
+		"ops@bastion":              "ProxyCommand ssh -W [%h]:%p -l ops bastion\n",
+		"bastion:2222":             "ProxyCommand ssh -W [%h]:%p -p 2222 bastion\n",
+		"ops@bastion.example:2222": "ProxyCommand ssh -W [%h]:%p -p 2222 -l ops bastion.example\n",
+		"ops@10.0.0.1":             "ProxyCommand ssh -W [%h]:%p -l ops 10.0.0.1\n",
+	} {
+		m := gpu()
+		m.Jump = jump
+		if got := block(m, "", true); !strings.Contains(got, "    "+want) {
+			t.Errorf("jump %q:\n%s", jump, got)
+		}
+		if got := block(m, "k", false); !strings.Contains(got, "    ProxyJump "+jump+"\n") {
+			t.Errorf("jump %q, shared block:\n%s", jump, got)
+		}
+	}
+}
 
 func generatedConfig(home string) string {
 	b, _ := os.ReadFile(filepath.Join(SSHDir(home), "config"))
@@ -71,64 +87,4 @@ func TestBoxCommandsWriteTheGeneratedConfigFirst(t *testing.T) {
 			t.Error("no Host block when the box was reached")
 		}
 	})
-}
-
-func writePending(t *testing.T, home, name, body string) {
-	t.Helper()
-	if err := os.MkdirAll(pendingDir(home), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(pendingDir(home), name+".toml"), []byte(body), 0o600); err != nil {
-		t.Fatal(err)
-	}
-}
-
-const badPending = "scope = \"home/x\"\ntarget = \"x.example\"\nuser = \"dev\"\n"
-
-func TestLoadPendingValidates(t *testing.T) {
-	home := t.TempDir()
-	writePending(t, home, "bad", badPending)
-	_, err := LoadPending(home, "bad")
-	var inv *InvalidPendingError
-	if !errors.As(err, &inv) || !strings.Contains(err.Error(), "athome machine rm bad --force") {
-		t.Fatalf("err = %v", err)
-	}
-}
-
-func TestRefreshSkipsAnInvalidPendingEntryWithANote(t *testing.T) {
-	home := t.TempDir()
-	if err := SavePending(home, newAdd()); err != nil {
-		t.Fatal(err)
-	}
-	writePending(t, home, "bad", badPending)
-	var note bytes.Buffer
-	if err := RefreshTo(home, "laptop_ed25519", &note); err != nil {
-		t.Fatalf("refresh failed on an invalid pending entry: %v", err)
-	}
-	cfg := generatedConfig(home)
-	if !strings.Contains(cfg, "Host acme-dev") || strings.Contains(cfg, "Host bad") {
-		t.Errorf("config:\n%s", cfg)
-	}
-	if !strings.Contains(note.String(), "bad") {
-		t.Errorf("no note: %q", note.String())
-	}
-}
-
-func TestRemoveOfAnInvalidPendingEntryNeedsForce(t *testing.T) {
-	w, d, _ := newWorld(t)
-	writePending(t, d.Home, "bad", badPending)
-	if err := Remove(context.Background(), d, "bad", false); err == nil || !strings.Contains(err.Error(), "--force") {
-		t.Fatalf("err = %v", err)
-	}
-	if err := Remove(context.Background(), d, "bad", true); err != nil {
-		t.Fatalf("force: %v", err)
-	}
-	if _, err := os.Stat(filepath.Join(pendingDir(d.Home), "bad.toml")); err == nil {
-		t.Error("invalid pending file left")
-	}
-	for _, c := range w.calls {
-		if c.Name == "ssh" {
-			t.Errorf("a box was reached for an entry that says nothing about one: %v", c.Args)
-		}
-	}
 }

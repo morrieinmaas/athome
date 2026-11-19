@@ -49,8 +49,8 @@ test/e2e/run.sh            # Arch and Fedora
 ```
 
 CI runs the same thing on every pull request and every push to main, plus `shellcheck`,
-`shfmt` and `gitleaks`; a branch without a pull request gets no CI run. Run them locally
-before opening a PR:
+`shfmt` and `gitleaks`; a branch without a pull request gets only the
+`secrets-scan` workflow. Run them locally before opening a PR:
 
 ```bash
 mise run lint

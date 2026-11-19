@@ -9,6 +9,8 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    # Tag pushes do not start go.yml, so this is the only test of a release; see go.yml.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -16,7 +18,7 @@ jobs:
           go-version-file: go.mod
       - run: go vet ./...
       - run: test -z "$(gofmt -l .)"
-      - run: go test ./...
+      - run: go test -timeout 5m ./...
 
   goreleaser:
     needs: test

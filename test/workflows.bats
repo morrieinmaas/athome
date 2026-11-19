@@ -8,11 +8,19 @@ setup() {
 
 # Workflows that run on pull requests; release.yml runs on tags only.
 pr_workflows() {
-  grep -l '^  pull_request:' "$WF"/*.yml
+  echo "$WF/e2e.yml" "$WF/go.yml" "$WF/lint.yml" "$WF/secrets-scan.yml" "$WF/sshd.yml"
+}
+
+@test "the workflow list above is every workflow that runs on pull requests" {
+  run grep -l '^  pull_request:' "$WF"/*.yml
+  [ "$status" -eq 0 ]
+  [ "$(echo $output)" = "$(pr_workflows)" ]
 }
 
 @test "a pull request branch runs each workflow once, not again for its push" {
   for f in $(pr_workflows); do
+    # gitleaks keeps scanning every pushed branch: a secret on a branch with no PR must still be flagged
+    [ "$f" = "$WF/secrets-scan.yml" ] && continue
     # push is limited to main, so a PR branch's push does not start a second run
     run awk '/^  push:/ { p = 1; next } p && /^  [a-z_]+:/ { exit } p { print }' "$f"
     [[ "$output" == *'branches: [main]'* ]] || { echo "$f: push not limited to main"; return 1; }
@@ -27,11 +35,19 @@ pr_workflows() {
   done
 }
 
-@test "go test has a job timeout and a test timeout below it" {
-  f="$WF/go.yml"
-  run awk '/^  test:/ { p = 1 } /^  release-check:/ { p = 0 } p' "$f"
-  [[ "$output" == *'timeout-minutes: 20'* ]]
-  [[ "$output" == *'go test -timeout 10m ./...'* ]]
+# go test runs about GOMAXPROCS packages at a time, so two waves of hung
+# packages must each reach the 5m test timeout before the 20m job limit.
+@test "go test jobs have a job limit and a test timeout that fits twice in it" {
+  for f in "$WF/go.yml" "$WF/release.yml"; do
+    run awk '/^  test:/ { p = 1; next } p && /^  [a-z-]+:/ { exit } p' "$f"
+    [[ "$output" == *'timeout-minutes: 20'* ]] || { echo "$f: job limit"; return 1; }
+    [[ "$output" == *'go test -timeout 5m ./...'* ]] || { echo "$f: test timeout"; return 1; }
+  done
+}
+
+@test "secrets-scan still runs on a push to any branch" {
+  run awk '/^  push:/ { p = 1; next } p && /^  [a-z_]+:/ { exit } p { print }' "$WF/secrets-scan.yml"
+  [[ "$output" != *'branches:'* ]]
 }
 
 @test "the job names other checks refer to are unchanged" {

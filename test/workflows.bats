@@ -23,7 +23,7 @@ pr_workflows() {
     [ "$f" = "$WF/secrets-scan.yml" ] && continue
     # push is limited to main, so a PR branch's push does not start a second run
     run awk '/^  push:/ { p = 1; next } p && /^  [a-z_]+:/ { exit } p { print }' "$f"
-    [[ "$output" == *'branches: [main]'* ]] || { echo "$f: push not limited to main"; return 1; }
+    [ "$output" = '    branches: [main]' ] || { echo "$f: push not limited to main: $output"; return 1; }
   done
 }
 
@@ -46,8 +46,9 @@ pr_workflows() {
 }
 
 @test "secrets-scan still runs on a push to any branch" {
-  run awk '/^  push:/ { p = 1; next } p && /^  [a-z_]+:/ { exit } p { print }' "$WF/secrets-scan.yml"
-  [[ "$output" != *'branches:'* ]]
+  grep -qx '  push:' "$WF/secrets-scan.yml"
+  run awk '/^  push:/ { p = 1; next } p && /^  [a-z_]+:/ { exit } p && !/^ *#/ { print }' "$WF/secrets-scan.yml"
+  [ -z "$output" ]
 }
 
 @test "the job names other checks refer to are unchanged" {

@@ -3,7 +3,6 @@ package machines
 import (
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -88,17 +87,29 @@ func SSHConfig(ms []Machine, laptopKeyFile string) string {
 }
 
 // CheckInclude fails unless ~/.ssh/config pulls in the generated config, either
-// directly or through `Include athome/*.conf`, the line chezmoi keeps there
-// (athome/base.conf then includes athome/config).
+// directly or through `Include athome/*.conf`, the line chezmoi keeps there,
+// when athome/base.conf then includes athome/config.
 func CheckInclude(home string) error {
-	data, err := os.ReadFile(filepath.Join(home, ".ssh", "config"))
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return err
+	dir := filepath.Join(home, ".ssh")
+	if includes(filepath.Join(dir, "config"), "athome/config") {
+		return nil
 	}
-	for _, l := range strings.Split(string(data), "\n") {
-		if f := strings.Fields(l); len(f) == 2 && strings.EqualFold(f[0], "Include") && (f[1] == "athome/config" || f[1] == "athome/*.conf") {
-			return nil
-		}
+	if includes(filepath.Join(dir, "config"), "athome/*.conf") && includes(filepath.Join(dir, "athome", "base.conf"), "athome/config") {
+		return nil
 	}
 	return errors.New("~/.ssh/config does not include athome/config; run chezmoi apply ~/.ssh/config")
+}
+
+// includes reports whether the ssh config file at path has an `Include target` line.
+func includes(path, target string) bool {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	for _, l := range strings.Split(string(data), "\n") {
+		if f := strings.Fields(l); len(f) == 2 && strings.EqualFold(f[0], "Include") && f[1] == target {
+			return true
+		}
+	}
+	return false
 }

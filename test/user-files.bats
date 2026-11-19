@@ -218,7 +218,7 @@ Host a
 @test "git: ~/.gitconfig is written only when missing, and a user's file is never read or changed" {
   [ ! -e "$ROOT/home/dot_gitconfig.tmpl" ]
   [ -f "$ROOT/home/create_dot_gitconfig" ]
-  [ -z "$(git config -f "$ROOT/home/create_dot_gitconfig" --list)" ]
+  [ "$(git config -f "$ROOT/home/create_dot_gitconfig" --get-regexp '^includeif\.' | wc -l)" -eq 3 ]
   # chezmoi cat of a create_ target prints the template; apply skips an existing file.
   printf '[url "git@github.com:"]\n\tinsteadOf = https://github.com/\n' >"$DEST/.gitconfig"
   chezmoi --source "$ROOT/home" --config "$TMP/personal.toml" --destination "$DEST" \
@@ -350,4 +350,17 @@ Host gitlab.com
     cp "$v" "$DEST/.zshrc"
     [ "$(through .zshrc)" = "$ZSH_HOOK" ]
   done
+}
+
+@test "git: a later git config --global user.email does not beat the per-directory identity" {
+  mkdir -p "$DEST/.config/git" "$DEST/work/r" "$DEST/other"
+  printf '[data]\n  machineType = "personal"\n  name_personal = "P"\n  email_personal = "p@example.org"\n' >"$TMP/g.toml"
+  chezmoi --source "$ROOT/home" --config "$TMP/g.toml" execute-template <"$ROOT/home/dot_config/git/config.tmpl" >"$DEST/.config/git/config"
+  printf '[user]\n\temail = w@example.org\n' >"$DEST/.gitconfig-work"
+  cp "$ROOT/home/create_dot_gitconfig" "$DEST/.gitconfig"
+  g() { HOME="$DEST" XDG_CONFIG_HOME="$DEST/.config" GIT_CONFIG_NOSYSTEM=1 git "$@"; }
+  g -C "$DEST/work/r" init -q
+  g config --global user.email me@example.org
+  [ "$(g -C "$DEST/work/r" config user.email)" = "w@example.org" ]
+  [ "$(g -C "$DEST/other" config user.email)" = "me@example.org" ]
 }

@@ -152,11 +152,16 @@ Every other line in a file of yours passes through `apply` verbatim. Two
 consequences worth knowing:
 
 - **Precedence.** git reads `~/.config/git/config` first and `~/.gitconfig` after,
-  so your value wins. ssh takes the first value it finds, and athome's
-  `Host *` defaults come first, so override them per host in
-  `~/.ssh/config.local` (read before them), not in a later block.
+  so your value wins. That includes `user.*`: keep it in the `[user]` section
+  at the top of `~/.gitconfig`, above its `includeIf` blocks, so the
+  per-directory identities for `~/personal`, `~/work` and `~/sidebiz` still win
+  inside those trees (`git config --global user.email` writes it there). ssh
+  takes the first value it finds, and athome's `Host *` defaults come first,
+  so override them per host in `~/.ssh/config.local` (read before them), not
+  in a later block.
 - **Upgrades.** A file written once never gets later repo changes. To take the
-  repo's current version of one, move yours aside and apply.
+  repo's current version of one, move yours aside and apply. For a themed
+  config, run `theme <name>` afterwards: the fresh copy has the repo's colours.
 
 Migrating from an older athome, where it owned these files whole: the first
 apply recognises the old body (by its "managed by chezmoi" header) and swaps it

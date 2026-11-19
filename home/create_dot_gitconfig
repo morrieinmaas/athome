@@ -3,3 +3,19 @@
 #
 # athome's git settings live in ~/.config/git/config, managed by chezmoi. git
 # reads that file first and this one after, so a value set here wins.
+#
+# The empty [user] section and the includeIf blocks below keep the
+# per-directory identities (~/personal, ~/work, ~/sidebiz) winning: a later
+# `git config --global user.email ...` lands in [user], ABOVE the includeIf
+# blocks, so inside those trees the per-directory email still overrides it.
+# Keep any [user] settings above these blocks.
+[user]
+
+[includeIf "gitdir:~/personal/"]
+    path = ~/.gitconfig-personal
+
+[includeIf "gitdir:~/work/"]
+    path = ~/.gitconfig-work
+
+[includeIf "gitdir:~/sidebiz/"]
+    path = ~/.gitconfig-sidebiz

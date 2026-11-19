@@ -1,7 +1,15 @@
 name: go
 on:
+  # push runs on main only: a PR branch is tested by its pull_request run, not twice.
   push:
+    branches: [main]
   pull_request:
+
+# A newer push to the same pull request cancels its older run. Other events group by commit,
+# so every main commit gets its own run instead of a queued one being dropped.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -13,6 +21,8 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
+    # A real hang fails at go test's own timeout with a stack dump, well before the job limit.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -20,7 +30,7 @@ jobs:
           go-version-file: go.mod
       - run: go vet ./...
       - run: test -z "$(gofmt -l .)"
-      - run: go test ./...
+      - run: go test -timeout 10m ./...
 
   release-check:
     runs-on: ubuntu-latest

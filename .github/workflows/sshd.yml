@@ -1,7 +1,15 @@
 name: sshd
 on:
+  # push runs on main only: a PR branch is tested by its pull_request run, not twice.
   push:
+    branches: [main]
   pull_request:
+
+# A newer push to the same pull request cancels its older run. Other events group by commit,
+# so every main commit gets its own run instead of a queued one being dropped.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read

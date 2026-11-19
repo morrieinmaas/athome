@@ -1,0 +1,134 @@
+#!/usr/bin/env bash
+# Put the athome binary at ~/.local/bin/athome, at least at pins.athome.
+#
+# scripts/bootstrap.sh installs athome on a new machine. A machine set up before
+# the binary existed never ran that part, so this script gives it the binary on
+# a plain `chezmoi apply`. From then on `athome update` moves it forward.
+#
+# The pin is a floor, not a ceiling: an athome that already reports the pin or a
+# newer release is left alone, so a binary `athome update` installed is never
+# downgraded. One that is not a release (a `dev`, `e2e` or snapshot build) is
+# left alone as well. Only a missing or older athome, or one whose `athome
+# version` fails, is replaced.
+#
+# The download is the installer's: athome_<os>_<arch> and checksums.txt from
+# ATHOME_RELEASE_BASE (default https://github.com/morrieinmaas/athome/releases/download),
+# checked with sha256 before it is moved into place. A download that fails
+# (offline, release not published yet) prints a note and installs nothing; a
+# checksum that does not match fails the apply.
+#
+# run_, not run_onchange: chezmoi would record a failed download as done and
+# never try again until the pin changed. Every apply runs it instead, and once
+# athome is at or above the pin it stops after one `athome version`, silently.
+set -euo pipefail
+
+pin="{{ .pins.athome }}"
+base="${ATHOME_RELEASE_BASE:-https://github.com/morrieinmaas/athome/releases/download}"
+dest_dir="${HOME}/.local/bin"
+dest="${dest_dir}/athome"
+
+tmp=""
+part=""
+cleanup() {
+  [ -z "${tmp}" ] || rm -rf "${tmp}"
+  [ -z "${part}" ] || rm -f "${part}"
+}
+trap cleanup EXIT
+
+# semver prints "X Y Z" for X.Y.Z or vX.Y.Z and fails for anything else.
+semver() {
+  local v="${1#v}"
+  [[ "${v}" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || return 1
+  printf '%s %s %s\n' "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}" "${BASH_REMATCH[3]}"
+}
+
+# older succeeds when release $1 is lower than release $2.
+older() {
+  local a b
+  read -r -a a <<<"$(semver "$1")"
+  read -r -a b <<<"$(semver "$2")"
+  local i
+  for i in 0 1 2; do
+    if [ "${a[i]}" -lt "${b[i]}" ]; then return 0; fi
+    if [ "${a[i]}" -gt "${b[i]}" ]; then return 1; fi
+  done
+  return 1
+}
+
+semver "${pin}" >/dev/null || {
+  printf 'athome: pins.athome %s is not a vX.Y.Z release\n' "${pin}" >&2
+  exit 1
+}
+
+if [ -x "${dest}" ] && have="$("${dest}" version 2>/dev/null)"; then
+  # `athome version` prints "athome <version> (<commit>)".
+  have="$(printf '%s\n' "${have}" | awk 'NR == 1 { print $2 }')"
+  if ! semver "${have}" >/dev/null; then
+    exit 0 # a dev, e2e or snapshot build: not ours to replace
+  fi
+  older "${have}" "${pin}" || exit 0
+fi
+
+case "$(uname -s)" in
+  Darwin) os=darwin ;;
+  Linux) os=linux ;;
+  *)
+    printf 'athome: no release for %s, so athome is not installed\n' "$(uname -s)" >&2
+    exit 0
+    ;;
+esac
+case "$(uname -m)" in
+  x86_64 | amd64) arch=amd64 ;;
+  arm64 | aarch64) arch=arm64 ;;
+  *)
+    printf 'athome: no release for %s, so athome is not installed\n' "$(uname -m)" >&2
+    exit 0
+    ;;
+esac
+
+if ! command -v curl >/dev/null 2>&1; then
+  printf 'athome: curl not found, so athome is not installed\n' >&2
+  exit 0
+fi
+if command -v sha256sum >/dev/null 2>&1; then
+  sha() { sha256sum "$1" | cut -d' ' -f1; }
+elif command -v shasum >/dev/null 2>&1; then
+  sha() { shasum -a 256 "$1" | cut -d' ' -f1; }
+else
+  printf 'athome: neither sha256sum nor shasum found; refusing to install an unchecked athome\n' >&2
+  exit 1
+fi
+
+asset="athome_${os}_${arch}"
+url="${base%/}/${pin}"
+tmp="$(mktemp -d "${TMPDIR:-/tmp}/athome-install.XXXXXX")"
+# An https base never follows a redirect to anything but https.
+proto=()
+case "${base}" in https://*) proto=(--proto "=https" --proto-redir "=https") ;; esac
+# A failed download (offline, or the release is not published yet) keeps the
+# apply going; nothing is installed and the next apply tries again.
+for f in "${asset}" checksums.txt; do
+  if ! curl -fsSL ${proto[@]+"${proto[@]}"} --connect-timeout 10 --max-time 300 \
+    "${url}/${f}" -o "${tmp}/${f}" 2>"${tmp}/curl.err"; then
+    err="$(tr '\n' ' ' <"${tmp}/curl.err")"
+    printf "athome: cannot download %s (%s), so athome %s is not installed; the next apply tries again\n" \
+      "${url}/${f}" "${err% }" "${pin}" >&2
+    exit 0
+  fi
+done
+
+want="$(awk -v a="${asset}" '$2 == a || $2 == "*" a { print $1; exit }' "${tmp}/checksums.txt")"
+got="$(sha "${tmp}/${asset}")"
+if [ -z "${want}" ] || [ "${got}" != "${want}" ]; then
+  printf 'athome: checksum mismatch for %s: expected %s, got %s\n' "${asset}" "${want:-nothing}" "${got}" >&2
+  exit 1
+fi
+
+# Written next to the target and renamed over it, so nothing ever runs half a file.
+mkdir -p "${dest_dir}"
+part="$(mktemp "${dest_dir}/.athome.XXXXXX")"
+cp "${tmp}/${asset}" "${part}"
+chmod 0755 "${part}"
+mv -f "${part}" "${dest}"
+part=""
+printf 'athome: installed %s at %s\n' "${pin}" "${dest}"

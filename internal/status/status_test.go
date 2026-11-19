@@ -2,6 +2,8 @@ package status_test
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/morrieinmaas/athome/internal/run"
@@ -87,5 +89,45 @@ func TestMissingCount(t *testing.T) {
 		if _, err := status.MissingCount(in); err == nil {
 			t.Errorf("MissingCount(%q) must fail", in)
 		}
+	}
+}
+
+func collectPinned(t *testing.T, version, lsRemote string, lsCode int, pin string) status.Component {
+	t.Helper()
+	repo, home := t.TempDir(), t.TempDir()
+	data := filepath.Join(repo, "home", ".chezmoidata")
+	if err := os.MkdirAll(data, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(data, "pins.toml"), []byte("[pins]\nathome = \""+pin+"\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	f := runtest.NewFake()
+	f.On("git", "-C", repo, "ls-remote", "--tags", "--refs", "origin").Return(run.Result{Stdout: lsRemote, Code: lsCode})
+	return status.Collect(context.Background(), f, version, "abc", home, repo).Components[0]
+}
+
+func TestAthomeBelowPin(t *testing.T) {
+	// Below the pin is not current even offline, and the detail names the pin.
+	for _, code := range []int{0, 128} {
+		c := collectPinned(t, "0.4.3", "a\trefs/tags/v0.5.1\n", code, "v0.5.0")
+		if c.Status != status.NotCurrent || c.Detail != "0.4.3 (below pins.athome v0.5.0; chezmoi apply installs it)" {
+			t.Errorf("ls-remote exit %d: %+v", code, c)
+		}
+	}
+}
+
+func TestAthomeAtOrAbovePinFollowsTags(t *testing.T) {
+	if c := collectPinned(t, "0.5.1", "a\trefs/tags/v0.5.1\n", 0, "v0.5.0"); c.Pin != "v0.5.0" {
+		t.Errorf("pin not reported: %+v", c)
+	}
+	if c := collectPinned(t, "0.5.1", "a\trefs/tags/v0.5.1\n", 0, "v0.5.0"); c.Status != status.Current || c.Detail != "" {
+		t.Errorf("above pin: %+v", c)
+	}
+	if c := collectPinned(t, "0.5.0", "a\trefs/tags/v0.5.1\n", 0, "v0.5.0"); c.Status != status.NotCurrent || c.Detail != "" {
+		t.Errorf("at pin, behind tags: %+v", c)
+	}
+	if c := collectPinned(t, "dev", "a\trefs/tags/v0.5.1\n", 0, "v0.5.0"); c.Status != status.Unknown {
+		t.Errorf("dev build: %+v", c)
 	}
 }

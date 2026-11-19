@@ -286,7 +286,12 @@ func (p *plan) dotfiles(ctx context.Context) {
 		count := 0
 		res, _ := p.env.Run.Run(ctx, run.Cmd{Name: "chezmoi", Args: []string{"managed", "--path-style=absolute", "--include=files"}})
 		targets := strings.Split(strings.TrimSpace(res.Stdout), "\n")
-		yours := p.userOwned(ctx)
+		yours, ok := p.userOwned(ctx)
+		if !ok {
+			// Without the listing your files and athome's look alike; remove neither.
+			targets = nil
+			p.note("skip: chezmoi could not list which managed files are yours, so none are removed")
+		}
 		for _, f := range targets {
 			if yours[f] {
 				p.note("kept (yours; athome only keeps a line in it or wrote it once): " + f)
@@ -312,24 +317,24 @@ func (p *plan) dotfiles(ctx context.Context) {
 }
 
 // userOwned reports which managed targets are the user's files: chezmoi only
-// keeps a hook line in them (modify_) or wrote them once (create_). When
-// chezmoi's listing can't be read it holds nothing back, as before.
-func (p *plan) userOwned(ctx context.Context) map[string]bool {
-	res, _ := p.env.Run.Run(ctx, run.Cmd{Name: "chezmoi", Args: []string{"managed", "--path-style=all", "--format=json", "--include=files"}})
+// keeps a hook line in them (modify_) or wrote them once (create_). ok is false
+// when chezmoi's listing can't be read.
+func (p *plan) userOwned(ctx context.Context) (yours map[string]bool, ok bool) {
+	res, err := p.env.Run.Run(ctx, run.Cmd{Name: "chezmoi", Args: []string{"managed", "--path-style=all", "--format=json", "--include=files"}})
 	var entries map[string]struct {
 		Absolute       string `json:"absolute"`
 		SourceRelative string `json:"sourceRelative"`
 	}
-	yours := map[string]bool{}
-	if json.Unmarshal([]byte(res.Stdout), &entries) != nil {
-		return yours
+	if err != nil || res.Code != 0 || json.Unmarshal([]byte(res.Stdout), &entries) != nil {
+		return nil, false
 	}
+	yours = map[string]bool{}
 	for _, e := range entries {
 		if b := path.Base(e.SourceRelative); strings.HasPrefix(b, "modify_") || strings.HasPrefix(b, "create_") {
 			yours[e.Absolute] = true
 		}
 	}
-	return yours
+	return yours, true
 }
 
 func (p *plan) all(ctx context.Context) {

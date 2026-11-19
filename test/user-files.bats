@@ -17,6 +17,7 @@ setup() {
   for t in personal work; do
     printf '[data]\n  machineType = "%s"\n' "$t" >"$TMP/$t.toml"
   done
+  printf '[data]\n  machineType = "remote"\n  machineName = "box"\n  scope = "work/x"\n' >"$TMP/remote.toml"
   ZSH_HOOK='[[ -f "$HOME/.zsh/athome.zsh" ]] && source "$HOME/.zsh/athome.zsh"'
   SSH_HOOK='Include athome/*.conf'
 }
@@ -144,7 +145,6 @@ Host *
   [ "$(through .ssh/config)" = "$SSH_HOOK
 Host mine
     HostName mine.example" ]
-  printf '[data]\n  machineType = "remote"\n  machineName = "box"\n  scope = "work/x"\n' >"$TMP/remote.toml"
   old_ssh remote >"$DEST/.ssh/config"
   grep -q 'StrictHostKeyChecking yes' "$DEST/.ssh/config"
   [ "$(through .ssh/config remote)" = "$SSH_HOOK" ]
@@ -317,4 +317,37 @@ Host github.com
   [ "$(through .ssh/config)" = "$SSH_HOOK
 Host=x
     User y" ]
+}
+
+@test "zshrc: a user block inside the old body keeps its done, and the result parses" {
+  command -v zsh >/dev/null || skip "zsh not installed"
+  old_zshrc | awk 'NR == 50 { print "for d in a b; do"; print "  echo $d"; print "done" } { print }' >"$DEST/.zshrc"
+  through .zshrc >"$TMP/zshrc"
+  [ "$(cat "$TMP/zshrc")" = "$ZSH_HOOK
+for d in a b; do
+  echo \$d
+done" ]
+  zsh -n "$TMP/zshrc"
+}
+
+@test "ssh config: a user Host block whose options match athome's keeps all of them" {
+  old_ssh | awk '/^Include config.local$/ { print; print "Host gitlab.com"; print "    User git"; print "    IdentitiesOnly yes"; print "    ServerAliveInterval 60"; next } { print }' >"$DEST/.ssh/config"
+  [ "$(through .ssh/config)" = "$SSH_HOOK
+Host gitlab.com
+    User git
+    IdentitiesOnly yes
+    ServerAliveInterval 60" ]
+}
+
+@test "zshrc and ssh config: every old athome body, for every machine type, migrates to the hook alone" {
+  for t in personal work remote; do
+    for v in "$ROOT"/home/.chezmoitemplates/legacy/ssh-config/v*; do
+      chezmoi --source "$ROOT/home" --config "$TMP/$t.toml" execute-template <"$v" >"$DEST/.ssh/config"
+      [ "$(through .ssh/config "$t")" = "$SSH_HOOK" ]
+    done
+  done
+  for v in "$ROOT"/home/.chezmoitemplates/legacy/zshrc/v*; do
+    cp "$v" "$DEST/.zshrc"
+    [ "$(through .zshrc)" = "$ZSH_HOOK" ]
+  done
 }

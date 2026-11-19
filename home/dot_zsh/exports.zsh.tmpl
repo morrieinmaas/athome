@@ -157,7 +157,7 @@ fi
 
 # ─── SSH keys (no agent required) ────────────────────────────────────────────
 # GPG / gpg-agent retired (Phase 5). The ed25519 identity keys are generated
-# WITHOUT a passphrase (bootstrap.sh) and ~/.ssh/config pins them per-host via
+# WITHOUT a passphrase (bootstrap.sh) and ~/.ssh/athome/base.conf pins them per-host via
 # IdentityFile + IdentitiesOnly, so ssh and git (SSH commit signing) read the
 # key files directly — no ssh-agent or gpg-agent needed. On macOS the keys are
 # additionally added to the Keychain (UseKeychain in ~/.ssh/config); on Linux

@@ -7,25 +7,26 @@
 #
 # Migration: an ~/.ssh/config that athome rendered whole starts with the old
 # "managed by chezmoi" header and ends with its `Host github.com` block. In that
-# range every line some athome version wrote (.chezmoitemplates/legacy/
-# ssh-config-lines) is dropped; any other line there is yours and stays, with
-# its Host line when it is an option under one. The github.com blocks bootstrap
+# range the lines that match an old athome body in order (every version is in
+# .chezmoitemplates/legacy/ssh-config/) are dropped; any other line there is
+# yours and stays. A Host block you added keeps all its options, and an option
+# you added under an old athome Host keeps that Host line. The github.com blocks bootstrap
 # and run_before_00 seed go too. athome's content now lives in base.conf.
 set -eu
 
 known="$(mktemp)"
 trap 'rm -f "$known"' EXIT
 cat >"$known" <<'ATHOME_EOF'
-{{ includeTemplate ".chezmoitemplates/legacy/ssh-config-lines" . | trimSuffix "\n" }}
+{{ range $i := until 6 }}@@athome legacy v{{ add $i 1 }}@@
+{{ includeTemplate (printf ".chezmoitemplates/legacy/ssh-config/v%d" (add $i 1)) $ }}{{ end -}}
 ATHOME_EOF
 
 awk '
+{{ include ".chezmoitemplates/legacy/lcs.awk" }}
 function is_hook(s) { s = tolower(s); return s ~ /^[ \t]*include[ \t]+athome\/\*\.conf[ \t]*$/ }
 function is_block(s) { s = tolower(s); return s ~ /^[ \t]*(host|match)([ \t]|=)/ }
 function is_github(s) { return s ~ /^Host[ \t]+github\.com[ \t]*$/ }
 function is_seed(s) { return index(s, "# === seeded by scripts/lib/ssh.sh") == 1 || index(s, "# === chezmoi run_before_00 seed") == 1 }
-NR == FNR { known[$0] = 1; next }
-{ line[++n] = $0 }
 END {
   # The old athome-rendered body: header through the end of its github.com block.
   for (i = 1; i <= n; i++) if (index(line[i], "# ~/.ssh/config — managed by chezmoi") == 1) { hs = i; break }
@@ -33,11 +34,16 @@ END {
     for (i = hs + 1; i <= n; i++) if (is_github(line[i])) { he = i; break }
     if (he) {
       while (he < n && line[he + 1] ~ /^[ \t]+[^ \t]/) he++
+      drop_legacy(hs, he)
       host = 0
-      for (i = hs; i <= he; i++) {
-        if (line[i] == "" || line[i] in known) drop[i] = 1
+      for (i = hs; i <= he; i++) {   # a Host block you added keeps every option
+        if (is_block(line[i])) host = drop[i] ? 0 : i
+        else if (host && line[i] ~ /^[ \t]+[^ \t]/) drop[i] = 0
+      }
+      host = 0
+      for (i = hs; i <= he; i++) {   # your option under an old athome Host keeps it
         if (is_block(line[i])) host = i
-        else if (!drop[i] && host && line[i] ~ /^[ \t]/) drop[host] = 0   # keep your option under its Host
+        else if (!drop[i] && host && line[i] ~ /^[ \t]+[^ \t]/) drop[host] = 0
       }
     }
   }

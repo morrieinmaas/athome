@@ -23,7 +23,10 @@ type rig struct {
 
 func newRig(t *testing.T) *rig {
 	t.Helper()
-	return &rig{home: t.TempDir(), fake: runtest.NewFake()}
+	r := &rig{home: t.TempDir(), fake: runtest.NewFake()}
+	// No user-owned files unless a test says otherwise.
+	r.fake.On("chezmoi", "managed", "--path-style=all", "--format=json", "--include=files").Return(run.Result{Stdout: "{}"})
+	return r
 }
 
 func (r *rig) run(osName, stdin string, args ...string) int {
@@ -311,6 +314,22 @@ func TestDotfilesKeepsUserOwnedFiles(t *testing.T) {
 		}
 	}
 	contains(t, r.out.String(), "kept (yours; athome only keeps a line in it or wrote it once): "+zshrc, "(1 managed files)")
+}
+
+// When chezmoi can't say which files are the user's, --dotfiles removes none.
+func TestDotfilesRemovesNothingWithoutTheListing(t *testing.T) {
+	r := newRig(t)
+	r.fake.Have("chezmoi")
+	zshrc := r.touch(t, ".zshrc")
+	r.fake.On("chezmoi", "managed", "--path-style=absolute", "--include=files").Return(run.Result{Stdout: zshrc + "\n"})
+	r.fake.On("chezmoi", "managed", "--path-style=all", "--format=json", "--include=files").Return(run.Result{Code: 1})
+	if code := r.run("linux", " dotfiles \n", "--dotfiles", "--execute"); code != 0 {
+		t.Fatalf("exit = %d: %s", code, r.err.String())
+	}
+	if !exists(zshrc) {
+		t.Errorf("%s was removed", zshrc)
+	}
+	contains(t, r.out.String(), "none are removed", "(0 managed files)")
 }
 
 func TestYesSkipsQuestion(t *testing.T) {

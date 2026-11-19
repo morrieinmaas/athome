@@ -106,7 +106,7 @@
 
 # One GitHub account → one SSH key (per machine), so there's no per-account
 # host-alias routing: every github.com repo uses ~/.ssh/<hostname>_ed25519 (see
-# ~/.ssh/config). The directory-based `includeIf` blocks above still set the
+# ~/.ssh/athome/base.conf). The directory-based `includeIf` blocks above still set the
 # right commit *email* per tree (~/work vs ~/personal vs ~/sidebiz). If you add
 # a second GitHub account later, reintroduce a `[url "git@github-<acct>:..."]`
 # block here pointing at that account's host alias.

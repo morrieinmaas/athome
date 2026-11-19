@@ -555,7 +555,8 @@ Decisions:
 - **`athome update [--to <version>] [--yes|-y]`** first resolves the target, so the step
   checks only read: `git -C <repo> fetch --quiet --tags --force origin`, then `--to`, else
   the highest local `vX.Y.Z` tag. A failed fetch exits 1 before any step. It then runs
-  `steps.Update()`, four steps:
+  `steps.Update()`, five steps (`config`, between `source` and `apply`, was added later; see
+  docs/commands.md):
   1. `self`: check: the running version, with any leading `v` stripped, equals the
      target's, or is newer and `--to` was not given. Apply: print the
      changelog, `git -C <repo> log --no-merges --format='  %s' v<current>..<target>`

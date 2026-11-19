@@ -225,15 +225,19 @@ func miseCheck(ctx context.Context, env *Env) (bool, error) {
 }
 
 // configSource is the source chezmoi apply reads: the sourceDir pinned in
-// chezmoi.toml, else the repo's home.
+// chezmoi.toml (a leading ~/ under the home, as chezmoi reads it), else the
+// repo's home.
 func configSource(env *Env) string {
 	var doc struct {
 		SourceDir string `toml:"sourceDir"`
 	}
-	if _, err := toml.DecodeFile(chezmoiConfigPath(env), &doc); err == nil && doc.SourceDir != "" {
-		return doc.SourceDir
+	if _, err := toml.DecodeFile(chezmoiConfigPath(env), &doc); err != nil || doc.SourceDir == "" {
+		return sourceDir(env)
 	}
-	return sourceDir(env)
+	if rest, ok := strings.CutPrefix(doc.SourceDir, "~/"); ok {
+		return filepath.Join(env.Home, rest)
+	}
+	return doc.SourceDir
 }
 
 // configCurrent: chezmoi.toml was generated from the source's current config

@@ -567,6 +567,23 @@ func TestUpdateConfigRegeneratesChezmoiConfig(t *testing.T) {
 			t.Fatalf("rep %+v err %v calls %v", rep, err, fx.calls("chezmoi"))
 		}
 	})
+	t.Run("a ~/ pin is read under the home", func(t *testing.T) {
+		fx, cfg := setup(t)
+		pinned := fx.Path("src", "athome", "home")
+		mustMkdir(t, pinned)
+		writeFile(t, filepath.Join(pinned, ".chezmoi.toml.tmpl"), tmpl+"# changed\n", 0o644)
+		writeFile(t, cfg, "sourceDir = \"~/src/athome/home\"\n[data]\n", 0o600)
+		fx.Fake.On("chezmoi", stateGet...).Return(run.Result{Stdout: "{\"configTemplateContentsSHA256\": \"" + sum + "\"}"})
+		if _, err := fx.runUpdate(o, configStep); err != nil {
+			t.Fatal(err)
+		}
+		if !fx.did("chezmoi", "init", "--no-tty", "--promptDefaults", "--source="+pinned) {
+			t.Fatalf("calls %v", fx.calls("chezmoi"))
+		}
+		if b, _ := os.ReadFile(cfg); !strings.HasPrefix(string(b), "sourceDir = \"~/src/athome/home\"\n") {
+			t.Errorf("config:\n%s", b)
+		}
+	})
 	t.Run("a pinned source is the one hashed and regenerated from", func(t *testing.T) {
 		fx, cfg := setup(t)
 		pinned := filepath.Join(t.TempDir(), "pinned home")

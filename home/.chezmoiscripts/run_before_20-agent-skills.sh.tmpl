@@ -10,8 +10,9 @@
 #   ~/.agents                 -> ~/.claude/agent-skills (where the `skills` CLI
 #                                that maintains that tree looks)
 #   ~/.config/agents/skills/     the skills actually switched on: a symlink per
-#                                entry in agent-skills/.skill-lock.json, plus
-#                                your own skills as real directories
+#                                entry in agent-skills/.skill-lock.json and
+#                                agent-skills/.own-skills; real directories
+#                                there are left alone
 #   ~/.claude/skills, ~/.config/opencode/skills -> ~/.config/agents/skills
 #                                (declared as symlinks in the chezmoi source)
 #
@@ -76,25 +77,35 @@ if [ -d "$claude/skills" ] && [ ! -L "$claude/skills" ]; then
   echo "==> agent skills: moved ~/.claude/skills into ~/.config/agents/skills"
 fi
 
-# ── 4. Switch on what the lock lists ─────────────────────────────────────────
-# Real directories in the active set are your own skills and are never touched.
-# Symlinks into the vendored tree follow the lock: added when listed, removed
-# when not.
+# ── 4. Switch on what the lock and .own-skills list ──────────────────────────
+# Wanted: the lock's skills plus the names in agent-skills/.own-skills (one per
+# line, `#` comments), your own skills kept in the vendored tree. Real
+# directories in the active set are never touched. Symlinks into the vendored
+# tree follow the wanted set: added when listed, removed when not.
 lock="$claude/agent-skills/.skill-lock.json"
+own="$claude/agent-skills/.own-skills"
 vendored="$claude/agent-skills/skills"
 if [ -f "$lock" ] && command -v python3 >/dev/null 2>&1; then
-  wanted="$(python3 -I -c 'import json,sys; print("\n".join(json.load(open(sys.argv[1]))["skills"]))' "$lock")"
-  n=0
-  while read -r name; do
-    [ -n "$name" ] && [ -d "$vendored/$name" ] || continue
-    [ -e "$active/$name" ] && [ ! -L "$active/$name" ] && continue
-    ln -sfn "$vendored/$name" "$active/$name"; n=$((n + 1))
-  done <<< "$wanted"
+  locked="$(python3 -I -c 'import json,sys; print("\n".join(json.load(open(sys.argv[1]))["skills"]))' "$lock")"
+  mine=""
+  [ -f "$own" ] && mine="$(sed -e 's/#.*//' -e 's/[[:space:]]*$//' -e 's/^[[:space:]]*//' "$own" | grep -v '^$' || true)"
+  wanted="$(printf '%s\n%s\n' "$locked" "$mine")"
+  link() {
+    local count=0 name
+    while read -r name; do
+      [ -n "$name" ] && [ -f "$vendored/$name/SKILL.md" ] || continue
+      [ -e "$active/$name" ] && [ ! -L "$active/$name" ] && continue
+      ln -sfn "$vendored/$name" "$active/$name"; count=$((count + 1))
+    done
+    echo "$count"
+  }
+  n="$(link <<< "$locked")"
+  m="$(link <<< "$mine")"
   for l in "$active"/*; do
     [ -L "$l" ] || continue
     case "$(readlink "$l")" in "$vendored"/*) ;; *) continue ;; esac
     grep -qxF "$(basename "$l")" <<< "$wanted" || rm -f "$l"
   done
-  echo "==> agent skills: $n switched on from the lock"
+  echo "==> agent skills: switched on $n from the lock, $m of your own"
 fi
 {{ end -}}

@@ -19,9 +19,10 @@ func runStatus(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("athome status", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	asJSON := fs.Bool("json", false, "print the report as JSON")
+	quiet := fs.Bool("quiet", false, "print only what is not current, one name per line; exit 3 if any")
 	if err := fs.Parse(args); err != nil {
 		if err == flag.ErrHelp {
-			fmt.Fprint(stdout, "Usage: athome status [--json]\n")
+			fmt.Fprint(stdout, "Usage: athome status [--json | --quiet]\n")
 			return exitOK
 		}
 		fmt.Fprintf(stderr, "athome status: %v\n", err)
@@ -29,6 +30,10 @@ func runStatus(args []string, stdout, stderr io.Writer) int {
 	}
 	if fs.NArg() > 0 {
 		fmt.Fprintf(stderr, "athome status: unexpected argument %q\n", fs.Arg(0))
+		return exitUsage
+	}
+	if *asJSON && *quiet {
+		fmt.Fprint(stderr, "athome status: --json and --quiet do not go together\n")
 		return exitUsage
 	}
 	home, err := os.UserHomeDir()
@@ -42,6 +47,16 @@ func runStatus(args []string, stdout, stderr io.Writer) int {
 		return exitError
 	}
 	rep := status.Collect(context.Background(), newRunner(), Version, Commit, home, repo)
+	if *quiet {
+		drift := rep.Drift()
+		for _, name := range drift {
+			fmt.Fprintln(stdout, name)
+		}
+		if len(drift) > 0 {
+			return exitNotCurrent
+		}
+		return exitOK
+	}
 	rep.Keys = status.Keys(home, steps.KeyHostname(), time.Now())
 	ms, merr := machines.Load(home)
 	rep.Machines = status.MachinesFrom(len(ms), machines.ScopeWarnings(home, ms), merr)

@@ -280,3 +280,31 @@ func TestStatusKeysReminder(t *testing.T) {
 		t.Errorf("json = %s", js)
 	}
 }
+
+func TestStatusQuiet(t *testing.T) {
+	e := newStatusEnv(t)
+	if code, out, errs := runStatus("--quiet"); code != 0 || out != "" || errs != "" {
+		t.Errorf("all current: exit %d, out %q, err %q", code, out, errs)
+	}
+
+	grofe := filepath.Join(e.home, ".local", "lib", "grofe", "grofe")
+	e.fake.On(grofe, "-V").Return(run.Result{Stdout: "grofe 0.3.0\n"})
+	os.RemoveAll(filepath.Join(e.home, ".local", "share", "canopy"))
+	if code, out, _ := runStatus("--quiet"); code != 3 || out != "grofe\ncanopy\n" {
+		t.Errorf("not current and not installed: exit %d, out %q", code, out)
+	}
+
+	e.fake.On(grofe, "-V").Return(run.Result{Stdout: "grofe dev\n"})
+	e.fake.On("git", "-C", e.repo, "ls-remote", "--tags", "--refs", "origin").Return(run.Result{Code: 128})
+	if code, out, _ := runStatus("--quiet"); code != 3 || out != "canopy\n" {
+		t.Errorf("unknown is not drift: exit %d, out %q", code, out)
+	}
+
+	if code, _, _ := runStatus("--quiet", "--json"); code != 2 {
+		t.Errorf("--quiet with --json exit %d, want 2", code)
+	}
+	t.Setenv("ATHOME_REPO", t.TempDir())
+	if code, out, _ := runStatus("--quiet"); code != 1 || out != "" {
+		t.Errorf("missing repo: exit %d, out %q", code, out)
+	}
+}

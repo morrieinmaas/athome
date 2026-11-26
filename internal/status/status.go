@@ -67,6 +67,18 @@ func Collect(ctx context.Context, r run.Runner, version, commit, home, repo stri
 	return rep
 }
 
+// Drift names the components that are not current or not installed: what a
+// chezmoi apply would fix. Unknown (offline, a dev build) is not drift.
+func (r Report) Drift() []string {
+	var names []string
+	for _, c := range r.Components {
+		if c.Status == NotCurrent || c.Status == NotInstalled {
+			names = append(names, c.Name)
+		}
+	}
+	return names
+}
+
 // out runs a command and returns its trimmed stdout, false on a start error or non-zero exit.
 func out(ctx context.Context, r run.Runner, name string, args ...string) (string, bool) {
 	res, err := r.Run(ctx, run.Cmd{Name: name, Args: args})

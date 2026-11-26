@@ -241,7 +241,7 @@ Prints the version and commit, e.g. `athome 0.5.0 (abc1234)`.
 ## athome status
 
 ```
-athome status [--json]
+athome status [--json | --quiet]
 ```
 
 Reads, never writes, and reports five components: `athome` (the running version
@@ -269,5 +269,15 @@ laptop key's age. When it is more than 90 days old, the text output adds
 repository is a warning, printed in the text output as `machines: <warning>`; neither changes
 `current` or the exit code.
 
-Exit codes: 0 whenever the report printed, whatever it says; 1 when the repo is not
-found; 2 for a usage error.
+`--quiet` prints only the components that are `not current` or `not installed`, one
+name per line, and exits 3 when there is any (0 when there is none). `unknown` does
+not count, so being offline is not drift. `~/.zsh/drift-notice.zsh` runs it at most
+once a day in the background and caches the result in
+`${XDG_CACHE_HOME:-~/.cache}/athome/drift`; a new shell then prints one line such as
+`athome: canopy, grofe not current; run chezmoi apply (athome status for details)`,
+or `athome: not installed; run chezmoi apply` when there is no `athome` on `PATH`.
+Delete the cache file to check again now.
+
+Exit codes: 0 whenever the report printed, whatever it says (with `--quiet`, when
+everything is current); 1 when the repo is not found; 2 for a usage error; 3 with
+`--quiet` when something is not current.

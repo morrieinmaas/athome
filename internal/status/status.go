@@ -76,6 +76,9 @@ func Collect(ctx context.Context, r run.Runner, version, commit, home, repo stri
 // broken check never reads as current; only an unreachable origin is not, since
 // being offline is not drift.
 func Drift(ctx context.Context, r run.Runner, version, home, repo string) ([]Component, error) {
+	if _, ok := selfupdate.Parse(version); !ok {
+		return nil, fmt.Errorf("athome %s is a development build", version)
+	}
 	pins, err := readPins(repo)
 	if err != nil {
 		return nil, err

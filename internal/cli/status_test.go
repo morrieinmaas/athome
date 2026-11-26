@@ -339,6 +339,10 @@ func TestStatusQuietUnknownFails(t *testing.T) {
 			e.fake.On(filepath.Join(e.home, ".local", "lib", "grofe", "grofe"), "-V").Return(run.Result{Code: 1})
 		},
 		"athome dev build": func(e *statusEnv) { cli.Version = "dev" },
+		"athome dev build, origin offline": func(e *statusEnv) {
+			cli.Version = "dev"
+			e.fake.On("git", "-C", e.repo, "ls-remote", "--tags", "--refs", "origin").Return(run.Result{Code: 128})
+		},
 	}
 	for name, breakIt := range cases {
 		t.Run(name, func(t *testing.T) {

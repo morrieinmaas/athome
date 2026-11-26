@@ -5,15 +5,19 @@
 
 bats_require_minimum_version 1.5.0
 
-# Build the real athome once, if go is there. HOME stays temp: the module cache
-# is the real one, read only (GOPROXY=off, so nothing is downloaded into it),
-# and the build cache is this file's own.
+# Build the real athome once, as a release (so offline means only offline), if
+# go is there. HOME stays temp: the module cache is the real one, read only
+# (GOPROXY=off, GOTOOLCHAIN=local: nothing is downloaded), and the build cache is
+# this file's own. A failed build is recorded for real_athome, not fatal here.
 setup_file() {
   command -v go >/dev/null || return 0
+  export GOTOOLCHAIN=local
   modcache="$(go env GOMODCACHE)"
   (cd "$BATS_TEST_DIRNAME/.." &&
     HOME="$BATS_FILE_TMPDIR" GOMODCACHE="$modcache" GOPROXY=off GOFLAGS=-mod=readonly \
-      GOCACHE="$BATS_FILE_TMPDIR/gocache" go build -o "$BATS_FILE_TMPDIR/athome" ./cmd/athome)
+      GOCACHE="$BATS_FILE_TMPDIR/gocache" go build -o "$BATS_FILE_TMPDIR/athome" \
+      -ldflags "-X github.com/morrieinmaas/athome/internal/cli.Version=0.0.1" ./cmd/athome) ||
+    touch "$BATS_FILE_TMPDIR/build-failed"
 }
 
 setup() {
@@ -194,6 +198,10 @@ seed() {
 # (pins grofe v0.3.1 and a canopy commit) whose origin does not exist, and a
 # grofe 0.3.0 in HOME. No canopy is installed.
 real_athome() {
+  if [ -e "$BATS_FILE_TMPDIR/build-failed" ]; then
+    [ -z "${CI:-}" ] || { echo "athome build failed" >&2; return 1; }
+    skip "athome build failed (run go mod download)"
+  fi
   if [ ! -x "$BATS_FILE_TMPDIR/athome" ]; then
     [ -z "${CI:-}" ] || { echo "go is required in CI" >&2; return 1; }
     skip "go not installed"

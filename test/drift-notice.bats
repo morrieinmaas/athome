@@ -17,13 +17,13 @@ setup() {
   CALLS="$BATS_TEST_TMPDIR/calls"
   PIDS="$BATS_TEST_TMPDIR/pids"
   mkdir -p "$STUBS"
-  # athome status --quiet: records the call, its pid, its parent (the command
-# substitution) and grandparent (the background check), then
+  # athome status --quiet: records its pid, its parent (the command
+  # substitution) and grandparent (the background check), then the call, then
   # prints $STUB_OUT and exits $STUB_RC after $STUB_SLEEP.
   cat >"$STUBS/athome" <<STUB
 #!/bin/sh
-echo "\$*" >>"$CALLS"
 echo "\$\$ \$PPID \$(ps -o ppid= -p \$PPID)" >"$PIDS"
+echo "\$*" >>"$CALLS"
 sleep "\${STUB_SLEEP:-0}"
 [ -n "\${STUB_OUT:-}" ] && printf '%b\n' "\$STUB_OUT"
 exit "\${STUB_RC:-0}"

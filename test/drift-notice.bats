@@ -10,6 +10,8 @@ setup() {
   ROOT="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
   HOOK="$ROOT/home/dot_zsh/drift-notice.zsh"
   ZSH_BIN="$(command -v zsh)"
+  # go build below keeps the real module and build caches; nothing else sees it.
+  REAL_HOME="$HOME"
   export HOME="$BATS_TEST_TMPDIR/home" XDG_CACHE_HOME="$BATS_TEST_TMPDIR/cache"
   mkdir -p "$HOME"
   CACHE="$XDG_CACHE_HOME/athome/drift"
@@ -185,7 +187,7 @@ seed() {
     skip "go not installed"
   fi
   rm "$STUBS/athome"
-  (cd "$ROOT" && go build -o "$STUBS/athome" ./cmd/athome)
+  (cd "$ROOT" && HOME="$REAL_HOME" go build -o "$STUBS/athome" ./cmd/athome)
   export ATHOME_REPO="$BATS_TEST_TMPDIR/repo"
   mkdir -p "$ATHOME_REPO/home/.chezmoidata" "$HOME/.local/lib/grofe"
   echo home >"$ATHOME_REPO/.chezmoiroot"

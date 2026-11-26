@@ -109,13 +109,14 @@ eval "$(x)"' ]
   done
 }
 
-@test "zshrc: the hook output parses, and athome.zsh is the old body" {
+@test "zshrc: the hook output parses, and athome.zsh is the old body plus the drift notice" {
   command -v zsh >/dev/null || skip "zsh not installed"
   rm -f "$DEST/.zshrc"
   through .zshrc >"$TMP/zshrc"
   zsh -n "$TMP/zshrc"
-  # Same body as the old ~/.zshrc, apart from the header comment.
-  diff <(tail -n +6 "$ROOT/home/dot_zsh/athome.zsh") <(tail -n +4 "$ROOT/test/fixtures/zshrc")
+  # Same body as the old ~/.zshrc, apart from the header comment and drift-notice.zsh.
+  diff <(tail -n +6 "$ROOT/home/dot_zsh/athome.zsh" | /usr/bin/sed 's/ drift-notice\.zsh; do$/; do/') \
+    <(tail -n +4 "$ROOT/test/fixtures/zshrc")
 }
 
 # ── ~/.ssh/config ────────────────────────────────────────────────────────────

@@ -43,6 +43,8 @@ const (
 	exitOK    = 0
 	exitError = 1
 	exitUsage = 2
+	// exitNotCurrent is athome status --quiet when something is not current.
+	exitNotCurrent = 3
 )
 
 // initOpts is everything `athome init` takes from its flags.

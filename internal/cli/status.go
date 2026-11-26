@@ -19,9 +19,10 @@ func runStatus(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("athome status", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	asJSON := fs.Bool("json", false, "print the report as JSON")
+	quiet := fs.Bool("quiet", false, "print only what is behind, as <name>: <fix> lines; exit 3 if any")
 	if err := fs.Parse(args); err != nil {
 		if err == flag.ErrHelp {
-			fmt.Fprint(stdout, "Usage: athome status [--json]\n")
+			fmt.Fprint(stdout, "Usage: athome status [--json | --quiet]\n")
 			return exitOK
 		}
 		fmt.Fprintf(stderr, "athome status: %v\n", err)
@@ -29,6 +30,10 @@ func runStatus(args []string, stdout, stderr io.Writer) int {
 	}
 	if fs.NArg() > 0 {
 		fmt.Fprintf(stderr, "athome status: unexpected argument %q\n", fs.Arg(0))
+		return exitUsage
+	}
+	if *asJSON && *quiet {
+		fmt.Fprint(stderr, "athome status: --json and --quiet do not go together\n")
 		return exitUsage
 	}
 	home, err := os.UserHomeDir()
@@ -40,6 +45,9 @@ func runStatus(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		fmt.Fprintf(stderr, "athome status: %v\n", err)
 		return exitError
+	}
+	if *quiet {
+		return runQuiet(stdout, stderr, home, repo)
 	}
 	rep := status.Collect(context.Background(), newRunner(), Version, Commit, home, repo)
 	rep.Keys = status.Keys(home, steps.KeyHostname(), time.Now())
@@ -59,6 +67,27 @@ func runStatus(args []string, stdout, stderr io.Writer) int {
 	}
 	if r := reminderText(rep.Keys, time.Now()); r != "" {
 		fmt.Fprintln(stdout, r)
+	}
+	return exitOK
+}
+
+// quietTimeout bounds athome status --quiet, which the shell's drift notice runs
+// under a lock: a hung check must not hold it forever.
+const quietTimeout = time.Minute
+
+func runQuiet(stdout, stderr io.Writer, home, repo string) int {
+	ctx, cancel := context.WithTimeout(context.Background(), quietTimeout)
+	defer cancel()
+	drift, err := status.Drift(ctx, newRunner(), Version, home, repo)
+	if err != nil {
+		fmt.Fprintf(stderr, "athome status: %v\n", err)
+		return exitError
+	}
+	for _, c := range drift {
+		fmt.Fprintf(stdout, "%s: %s\n", c.Name, c.Fix)
+	}
+	if len(drift) > 0 {
+		return exitNotCurrent
 	}
 	return exitOK
 }

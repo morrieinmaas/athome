@@ -525,9 +525,9 @@ PermitRootLogin no
 AcceptEnv CANOPY_THEME"' ]
 }
 
-@test "athome.zsh: every machine type sources canopy-theme.zsh" {
+@test "athome.zsh: every machine type sources canopy-theme.zsh and drift-notice.zsh" {
   for t in personal work remote; do
-    render "$t" dot_zsh/athome.zsh | grep -q 'ssh-nudge.zsh canopy-theme.zsh; do'
+    render "$t" dot_zsh/athome.zsh | grep -q 'ssh-nudge.zsh canopy-theme.zsh drift-notice.zsh; do'
   done
 }
 

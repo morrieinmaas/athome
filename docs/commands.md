@@ -241,7 +241,7 @@ Prints the version and commit, e.g. `athome 0.5.0 (abc1234)`.
 ## athome status
 
 ```
-athome status [--json]
+athome status [--json | --quiet]
 ```
 
 Reads, never writes, and reports five components: `athome` (the running version
@@ -269,5 +269,27 @@ laptop key's age. When it is more than 90 days old, the text output adds
 repository is a warning, printed in the text output as `machines: <warning>`; neither changes
 `current` or the exit code.
 
-Exit codes: 0 whenever the report printed, whatever it says; 1 when the repo is not
-found; 2 for a usage error.
+`--quiet` prints only what is behind, one `<name>: <fix>` line each, and exits 3 when
+there is any (0 when there is none). It looks at `athome`, `grofe` and `canopy` only:
+`dotfiles` and `mise` are left out, since a `chezmoi apply` would overwrite local edits,
+and those two checks do not even run. Being offline is not drift, but anything else
+`--quiet` cannot judge (an unreadable or missing `pins.toml`, an unreadable canopy
+checkout, a `grofe -V` that fails, a development build of athome) exits 1 with the
+reason on stderr, so a broken check never reads as all current. It gives up after
+a minute. The fix is `chezmoi apply`
+for a tool behind its pin or missing, and for `athome` below `pins.athome`; it is
+`athome update` for an `athome` at or above its pin but behind the latest tag. `--json`
+carries the same `"fix"` on those components.
+
+`~/.zsh/drift-notice.zsh` runs `athome status --quiet` at most once a day in the
+background (one shell at a time, under a lock) and caches its line in
+`${XDG_CACHE_HOME:-~/.cache}/athome/drift`; a new shell prints that line, such as
+`athome: grofe, canopy not current; run chezmoi apply (athome status for details)`,
+with one `<names> not current; run <fix>` part per fix. A check that exits with anything
+but 0 or 3 caches `athome: drift check failed (exit <n>); run athome status`. Without
+`athome` on `PATH` the line is `athome: not installed; run chezmoi apply`. Delete the
+cache file to check again now.
+
+Exit codes: 0 whenever the report printed, whatever it says (with `--quiet`, when
+everything is current); 1 when the repo is not found (or `--quiet` cannot judge); 2 for a usage error; 3 with
+`--quiet` when something is not current.

@@ -19,7 +19,7 @@ func runStatus(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("athome status", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	asJSON := fs.Bool("json", false, "print the report as JSON")
-	quiet := fs.Bool("quiet", false, "print only what is not current, one name per line; exit 3 if any")
+	quiet := fs.Bool("quiet", false, "print only what is behind, as <name>: <fix> lines; exit 3 if any")
 	if err := fs.Parse(args); err != nil {
 		if err == flag.ErrHelp {
 			fmt.Fprint(stdout, "Usage: athome status [--json | --quiet]\n")
@@ -49,8 +49,8 @@ func runStatus(args []string, stdout, stderr io.Writer) int {
 	rep := status.Collect(context.Background(), newRunner(), Version, Commit, home, repo)
 	if *quiet {
 		drift := rep.Drift()
-		for _, name := range drift {
-			fmt.Fprintln(stdout, name)
+		for _, c := range drift {
+			fmt.Fprintf(stdout, "%s: %s\n", c.Name, c.Fix)
 		}
 		if len(drift) > 0 {
 			return exitNotCurrent

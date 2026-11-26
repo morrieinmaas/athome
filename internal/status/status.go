@@ -22,6 +22,10 @@ const (
 	NotCurrent   = "not current"
 	NotInstalled = "not installed"
 	Unknown      = "unknown"
+
+	// The command that brings a drifted component back to current.
+	FixApply  = "chezmoi apply"
+	FixUpdate = "athome update"
 )
 
 type Component struct {
@@ -31,6 +35,7 @@ type Component struct {
 	Wanted    string `json:"wanted"`
 	Pin       string `json:"pin,omitempty"`
 	Detail    string `json:"detail"`
+	Fix       string `json:"fix,omitempty"`
 }
 
 type Report struct {
@@ -56,8 +61,8 @@ func Collect(ctx context.Context, r run.Runner, version, commit, home, repo stri
 			athomeStatus(ctx, r, version, repo, pins["athome"]),
 			dotfilesStatus(ctx, r),
 			miseStatus(ctx, r, home),
-			grofeStatus(ctx, r, home, pins["grofe"]),
-			canopyStatus(ctx, r, home, pins["canopy"]),
+			pinFix(grofeStatus(ctx, r, home, pins["grofe"])),
+			pinFix(canopyStatus(ctx, r, home, pins["canopy"])),
 		},
 	}
 	rep.Current = true
@@ -67,16 +72,25 @@ func Collect(ctx context.Context, r run.Runner, version, commit, home, repo stri
 	return rep
 }
 
-// Drift names the components that are not current or not installed: what a
-// chezmoi apply would fix. Unknown (offline, a dev build) is not drift.
-func (r Report) Drift() []string {
-	var names []string
+// Drift is the components that have a Fix: athome, grofe and canopy when they
+// are behind. Unknown (offline, a dev build) is not drift, and neither are
+// dotfiles or mise, where a chezmoi apply would overwrite local edits.
+func (r Report) Drift() []Component {
+	var drift []Component
 	for _, c := range r.Components {
-		if c.Status == NotCurrent || c.Status == NotInstalled {
-			names = append(names, c.Name)
+		if c.Fix != "" {
+			drift = append(drift, c)
 		}
 	}
-	return names
+	return drift
+}
+
+// pinFix marks a pinned tool that is behind its pin or missing: chezmoi apply installs it.
+func pinFix(c Component) Component {
+	if c.Status == NotCurrent || c.Status == NotInstalled {
+		c.Fix = FixApply
+	}
+	return c
 }
 
 // out runs a command and returns its trimmed stdout, false on a start error or non-zero exit.
@@ -121,9 +135,12 @@ func readPins(repo string) map[string]string {
 func athomeStatus(ctx context.Context, r run.Runner, version, repo, pin string) Component {
 	c := tagStatus(ctx, r, version, repo)
 	c.Pin = pin
+	if c.Status == NotCurrent {
+		c.Fix = FixUpdate
+	}
 	_, isRel := selfupdate.Parse(version)
 	if _, pinRel := selfupdate.Parse(pin); isRel && pinRel && selfupdate.Compare(version, pin) < 0 {
-		c.Status = NotCurrent
+		c.Status, c.Fix = NotCurrent, FixApply
 		c.Detail = version + " (below pins.athome " + pin + "; chezmoi apply installs it)"
 	}
 	return c

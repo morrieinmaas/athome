@@ -269,14 +269,22 @@ laptop key's age. When it is more than 90 days old, the text output adds
 repository is a warning, printed in the text output as `machines: <warning>`; neither changes
 `current` or the exit code.
 
-`--quiet` prints only the components that are `not current` or `not installed`, one
-name per line, and exits 3 when there is any (0 when there is none). `unknown` does
-not count, so being offline is not drift. `~/.zsh/drift-notice.zsh` runs it at most
-once a day in the background and caches the result in
-`${XDG_CACHE_HOME:-~/.cache}/athome/drift`; a new shell then prints one line such as
-`athome: canopy, grofe not current; run chezmoi apply (athome status for details)`,
-or `athome: not installed; run chezmoi apply` when there is no `athome` on `PATH`.
-Delete the cache file to check again now.
+`--quiet` prints only what is behind, one `<name>: <fix>` line each, and exits 3 when
+there is any (0 when there is none). It looks at `athome`, `grofe` and `canopy` only:
+`dotfiles` and `mise` are left out, since a `chezmoi apply` would overwrite local edits,
+and `unknown` does not count, so being offline is not drift. The fix is `chezmoi apply`
+for a tool behind its pin or missing, and for `athome` below `pins.athome`; it is
+`athome update` for an `athome` at or above its pin but behind the latest tag. `--json`
+carries the same `"fix"` on those components.
+
+`~/.zsh/drift-notice.zsh` runs `athome status --quiet` at most once a day in the
+background (one shell at a time, under a lock) and caches its line in
+`${XDG_CACHE_HOME:-~/.cache}/athome/drift`; a new shell prints that line, such as
+`athome: grofe, canopy not current; run chezmoi apply (athome status for details)`,
+with one `<names> not current; run <fix>` part per fix. A check that exits with anything
+but 0 or 3 caches `athome: drift check failed (exit <n>); run athome status`. Without
+`athome` on `PATH` the line is `athome: not installed; run chezmoi apply`. Delete the
+cache file to check again now.
 
 Exit codes: 0 whenever the report printed, whatever it says (with `--quiet`, when
 everything is current); 1 when the repo is not found; 2 for a usage error; 3 with

@@ -290,13 +290,13 @@ func TestStatusQuiet(t *testing.T) {
 	grofe := filepath.Join(e.home, ".local", "lib", "grofe", "grofe")
 	e.fake.On(grofe, "-V").Return(run.Result{Stdout: "grofe 0.3.0\n"})
 	os.RemoveAll(filepath.Join(e.home, ".local", "share", "canopy"))
-	if code, out, _ := runStatus("--quiet"); code != 3 || out != "grofe\ncanopy\n" {
+	if code, out, _ := runStatus("--quiet"); code != 3 || out != "grofe: chezmoi apply\ncanopy: chezmoi apply\n" {
 		t.Errorf("not current and not installed: exit %d, out %q", code, out)
 	}
 
 	e.fake.On(grofe, "-V").Return(run.Result{Stdout: "grofe dev\n"})
 	e.fake.On("git", "-C", e.repo, "ls-remote", "--tags", "--refs", "origin").Return(run.Result{Code: 128})
-	if code, out, _ := runStatus("--quiet"); code != 3 || out != "canopy\n" {
+	if code, out, _ := runStatus("--quiet"); code != 3 || out != "canopy: chezmoi apply\n" {
 		t.Errorf("unknown is not drift: exit %d, out %q", code, out)
 	}
 
@@ -306,5 +306,33 @@ func TestStatusQuiet(t *testing.T) {
 	t.Setenv("ATHOME_REPO", t.TempDir())
 	if code, out, _ := runStatus("--quiet"); code != 1 || out != "" {
 		t.Errorf("missing repo: exit %d, out %q", code, out)
+	}
+}
+
+// dotfiles and mise are not drift for --quiet: chezmoi apply would overwrite local edits.
+func TestStatusQuietSkipsDotfilesAndMise(t *testing.T) {
+	e := newStatusEnv(t)
+	e.fake.On("chezmoi", "status", "--exclude=scripts").Return(run.Result{Stdout: " M .zshrc\n"})
+	if code, out, _ := runStatus("--quiet"); code != 0 || out != "" {
+		t.Errorf("dotfiles edited: exit %d, out %q", code, out)
+	}
+	e.fake.On("mise", "ls", "--missing", "--json").Return(run.Result{Stdout: `{"node": [{"version": "22"}]}`})
+	if code, out, _ := runStatus("--quiet"); code != 0 || out != "" {
+		t.Errorf("mise tools missing: exit %d, out %q", code, out)
+	}
+}
+
+// athome below its pin is fixed by chezmoi apply; at or above it but behind the
+// latest tag, by athome update.
+func TestStatusQuietAthomeFix(t *testing.T) {
+	e := newStatusEnv(t)
+	cli.Version = "0.5.1"
+	if code, out, _ := runStatus("--quiet"); code != 3 || out != "athome: athome update\n" {
+		t.Errorf("behind the latest tag: exit %d, out %q", code, out)
+	}
+	pins := filepath.Join(e.repo, "home", ".chezmoidata", "pins.toml")
+	os.WriteFile(pins, []byte("[pins]\nathome = \"v0.5.2\"\ngrofe = \"v0.3.1\"\ncanopy = \""+canopyPin+"\"\n"), 0o644)
+	if code, out, _ := runStatus("--quiet"); code != 3 || out != "athome: chezmoi apply\n" {
+		t.Errorf("below the pin: exit %d, out %q", code, out)
 	}
 }

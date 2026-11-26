@@ -46,17 +46,10 @@ func runStatus(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "athome status: %v\n", err)
 		return exitError
 	}
-	rep := status.Collect(context.Background(), newRunner(), Version, Commit, home, repo)
 	if *quiet {
-		drift := rep.Drift()
-		for _, c := range drift {
-			fmt.Fprintf(stdout, "%s: %s\n", c.Name, c.Fix)
-		}
-		if len(drift) > 0 {
-			return exitNotCurrent
-		}
-		return exitOK
+		return runQuiet(stdout, stderr, home, repo)
 	}
+	rep := status.Collect(context.Background(), newRunner(), Version, Commit, home, repo)
 	rep.Keys = status.Keys(home, steps.KeyHostname(), time.Now())
 	ms, merr := machines.Load(home)
 	rep.Machines = status.MachinesFrom(len(ms), machines.ScopeWarnings(home, ms), merr)
@@ -74,6 +67,27 @@ func runStatus(args []string, stdout, stderr io.Writer) int {
 	}
 	if r := reminderText(rep.Keys, time.Now()); r != "" {
 		fmt.Fprintln(stdout, r)
+	}
+	return exitOK
+}
+
+// quietTimeout bounds athome status --quiet, which the shell's drift notice runs
+// under a lock: a hung check must not hold it forever.
+const quietTimeout = time.Minute
+
+func runQuiet(stdout, stderr io.Writer, home, repo string) int {
+	ctx, cancel := context.WithTimeout(context.Background(), quietTimeout)
+	defer cancel()
+	drift, err := status.Drift(ctx, newRunner(), Version, home, repo)
+	if err != nil {
+		fmt.Fprintf(stderr, "athome status: %v\n", err)
+		return exitError
+	}
+	for _, c := range drift {
+		fmt.Fprintf(stdout, "%s: %s\n", c.Name, c.Fix)
+	}
+	if len(drift) > 0 {
+		return exitNotCurrent
 	}
 	return exitOK
 }

@@ -37,10 +37,11 @@ jobs:
         uses: actions/checkout@v4
       - name: Install bats
         run: sudo apt-get update && sudo apt-get install -y bats
-      # test/drift-notice.bats builds the real athome binary.
+      # test/drift-notice.bats builds the real athome binary from the module cache, offline.
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+      - run: go mod download
       # test/templates.bats renders the chezmoi templates; test/ssh-nudge.bats runs
       # the ssh function under zsh.
       - name: Install chezmoi and zsh

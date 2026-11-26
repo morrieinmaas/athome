@@ -272,7 +272,11 @@ repository is a warning, printed in the text output as `machines: <warning>`; ne
 `--quiet` prints only what is behind, one `<name>: <fix>` line each, and exits 3 when
 there is any (0 when there is none). It looks at `athome`, `grofe` and `canopy` only:
 `dotfiles` and `mise` are left out, since a `chezmoi apply` would overwrite local edits,
-and `unknown` does not count, so being offline is not drift. The fix is `chezmoi apply`
+and those two checks do not even run. Being offline is not drift, but anything else
+`--quiet` cannot judge (an unreadable or missing `pins.toml`, an unreadable canopy
+checkout, a `grofe -V` that fails, a development build of athome) exits 1 with the
+reason on stderr, so a broken check never reads as all current. It gives up after
+a minute. The fix is `chezmoi apply`
 for a tool behind its pin or missing, and for `athome` below `pins.athome`; it is
 `athome update` for an `athome` at or above its pin but behind the latest tag. `--json`
 carries the same `"fix"` on those components.
@@ -287,5 +291,5 @@ but 0 or 3 caches `athome: drift check failed (exit <n>); run athome status`. Wi
 cache file to check again now.
 
 Exit codes: 0 whenever the report printed, whatever it says (with `--quiet`, when
-everything is current); 1 when the repo is not found; 2 for a usage error; 3 with
+everything is current); 1 when the repo is not found (or `--quiet` cannot judge); 2 for a usage error; 3 with
 `--quiet` when something is not current.

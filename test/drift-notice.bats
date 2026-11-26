@@ -5,13 +5,22 @@
 
 bats_require_minimum_version 1.5.0
 
+# Build the real athome once, if go is there. HOME stays temp: the module cache
+# is the real one, read only (GOPROXY=off, so nothing is downloaded into it),
+# and the build cache is this file's own.
+setup_file() {
+  command -v go >/dev/null || return 0
+  modcache="$(go env GOMODCACHE)"
+  (cd "$BATS_TEST_DIRNAME/.." &&
+    HOME="$BATS_FILE_TMPDIR" GOMODCACHE="$modcache" GOPROXY=off GOFLAGS=-mod=readonly \
+      GOCACHE="$BATS_FILE_TMPDIR/gocache" go build -o "$BATS_FILE_TMPDIR/athome" ./cmd/athome)
+}
+
 setup() {
   command -v zsh >/dev/null || skip "zsh not installed"
   ROOT="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
   HOOK="$ROOT/home/dot_zsh/drift-notice.zsh"
   ZSH_BIN="$(command -v zsh)"
-  # go build below keeps the real module and build caches; nothing else sees it.
-  REAL_HOME="$HOME"
   export HOME="$BATS_TEST_TMPDIR/home" XDG_CACHE_HOME="$BATS_TEST_TMPDIR/cache"
   mkdir -p "$HOME"
   CACHE="$XDG_CACHE_HOME/athome/drift"
@@ -181,13 +190,15 @@ seed() {
   [ ! -e "$CACHE" ]
 }
 
-@test "the real athome: an old grofe and a missing canopy, origin offline" {
-  if ! command -v go >/dev/null; then
+# real_athome: put the built athome on PATH instead of the stub, with a temp repo
+# (pins grofe v0.3.1 and a canopy commit) whose origin does not exist, and a
+# grofe 0.3.0 in HOME. No canopy is installed.
+real_athome() {
+  if [ ! -x "$BATS_FILE_TMPDIR/athome" ]; then
     [ -z "${CI:-}" ] || { echo "go is required in CI" >&2; return 1; }
     skip "go not installed"
   fi
-  rm "$STUBS/athome"
-  (cd "$ROOT" && HOME="$REAL_HOME" go build -o "$STUBS/athome" ./cmd/athome)
+  cp "$BATS_FILE_TMPDIR/athome" "$STUBS/athome"
   export ATHOME_REPO="$BATS_TEST_TMPDIR/repo"
   mkdir -p "$ATHOME_REPO/home/.chezmoidata" "$HOME/.local/lib/grofe"
   echo home >"$ATHOME_REPO/.chezmoiroot"
@@ -197,7 +208,18 @@ seed() {
   git -C "$ATHOME_REPO" remote add origin "$BATS_TEST_TMPDIR/no-such-origin"
   printf '#!/bin/sh\necho "grofe 0.3.0"\n' >"$HOME/.local/lib/grofe/grofe"
   chmod 0755 "$HOME/.local/lib/grofe/grofe"
+}
+
+@test "the real athome: an old grofe and a missing canopy, origin offline" {
+  real_athome
   notice
   [ -z "$output" ]
   wait_for "$LINE"
+}
+
+@test "the real athome: a corrupt pins.toml caches the failure, not all current" {
+  real_athome
+  echo '[pins' >"$ATHOME_REPO/home/.chezmoidata/pins.toml"
+  notice
+  wait_for "athome: drift check failed (exit 1); run athome status"
 }

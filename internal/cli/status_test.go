@@ -294,10 +294,9 @@ func TestStatusQuiet(t *testing.T) {
 		t.Errorf("not current and not installed: exit %d, out %q", code, out)
 	}
 
-	e.fake.On(grofe, "-V").Return(run.Result{Stdout: "grofe dev\n"})
 	e.fake.On("git", "-C", e.repo, "ls-remote", "--tags", "--refs", "origin").Return(run.Result{Code: 128})
-	if code, out, _ := runStatus("--quiet"); code != 3 || out != "canopy: chezmoi apply\n" {
-		t.Errorf("unknown is not drift: exit %d, out %q", code, out)
+	if code, out, _ := runStatus("--quiet"); code != 3 || out != "grofe: chezmoi apply\ncanopy: chezmoi apply\n" {
+		t.Errorf("offline is not drift: exit %d, out %q", code, out)
 	}
 
 	if code, _, _ := runStatus("--quiet", "--json"); code != 2 {
@@ -309,16 +308,46 @@ func TestStatusQuiet(t *testing.T) {
 	}
 }
 
-// dotfiles and mise are not drift for --quiet: chezmoi apply would overwrite local edits.
+// dotfiles and mise are not drift for --quiet (chezmoi apply would overwrite
+// local edits), so --quiet does not even run their checks.
 func TestStatusQuietSkipsDotfilesAndMise(t *testing.T) {
 	e := newStatusEnv(t)
 	e.fake.On("chezmoi", "status", "--exclude=scripts").Return(run.Result{Stdout: " M .zshrc\n"})
-	if code, out, _ := runStatus("--quiet"); code != 0 || out != "" {
-		t.Errorf("dotfiles edited: exit %d, out %q", code, out)
-	}
 	e.fake.On("mise", "ls", "--missing", "--json").Return(run.Result{Stdout: `{"node": [{"version": "22"}]}`})
 	if code, out, _ := runStatus("--quiet"); code != 0 || out != "" {
-		t.Errorf("mise tools missing: exit %d, out %q", code, out)
+		t.Errorf("dotfiles and mise behind: exit %d, out %q", code, out)
+	}
+	for _, c := range e.fake.Calls() {
+		if c.Name == "chezmoi" || c.Name == "mise" {
+			t.Errorf("--quiet ran %s %v", c.Name, c.Args)
+		}
+	}
+}
+
+// What --quiet cannot judge fails the check (exit 1, the reason on stderr), so a
+// broken check never reads as all current.
+func TestStatusQuietUnknownFails(t *testing.T) {
+	pins := func(e *statusEnv) string { return filepath.Join(e.repo, "home", ".chezmoidata", "pins.toml") }
+	cases := map[string]func(e *statusEnv){
+		"corrupt pins.toml": func(e *statusEnv) { os.WriteFile(pins(e), []byte("[pins\n"), 0o644) },
+		"missing pins.toml": func(e *statusEnv) { os.Remove(pins(e)) },
+		"canopy HEAD unreadable": func(e *statusEnv) {
+			store := filepath.Join(e.home, ".local", "share", "canopy")
+			e.fake.On("git", "-C", store, "rev-parse", "HEAD").Return(run.Result{Code: 128})
+		},
+		"grofe -V fails": func(e *statusEnv) {
+			e.fake.On(filepath.Join(e.home, ".local", "lib", "grofe", "grofe"), "-V").Return(run.Result{Code: 1})
+		},
+		"athome dev build": func(e *statusEnv) { cli.Version = "dev" },
+	}
+	for name, breakIt := range cases {
+		t.Run(name, func(t *testing.T) {
+			e := newStatusEnv(t)
+			breakIt(e)
+			if code, out, errs := runStatus("--quiet"); code != 1 || out != "" || !strings.HasPrefix(errs, "athome status: ") {
+				t.Errorf("exit %d, out %q, err %q", code, out, errs)
+			}
+		})
 	}
 }
 

@@ -26,6 +26,8 @@ const (
 	// The command that brings a drifted component back to current.
 	FixApply  = "chezmoi apply"
 	FixUpdate = "athome update"
+
+	offline = "origin is unreachable"
 )
 
 type Component struct {
@@ -50,20 +52,16 @@ type Report struct {
 }
 
 // Collect checks every component. Version and commit are the running binary's.
+// A pins.toml it cannot read leaves grofe and canopy unknown.
 func Collect(ctx context.Context, r run.Runner, version, commit, home, repo string) Report {
-	pins := readPins(repo)
+	pins, _ := readPins(repo)
+	p := pinned(ctx, r, version, home, repo, pins)
 	rep := Report{
-		Version: version,
-		Commit:  commit,
-		Repo:    repo,
-		Ref:     repoRef(ctx, r, repo),
-		Components: []Component{
-			athomeStatus(ctx, r, version, repo, pins["athome"]),
-			dotfilesStatus(ctx, r),
-			miseStatus(ctx, r, home),
-			pinFix(grofeStatus(ctx, r, home, pins["grofe"])),
-			pinFix(canopyStatus(ctx, r, home, pins["canopy"])),
-		},
+		Version:    version,
+		Commit:     commit,
+		Repo:       repo,
+		Ref:        repoRef(ctx, r, repo),
+		Components: []Component{p[0], dotfilesStatus(ctx, r), miseStatus(ctx, r, home), p[1], p[2]},
 	}
 	rep.Current = true
 	for _, c := range rep.Components {
@@ -72,17 +70,35 @@ func Collect(ctx context.Context, r run.Runner, version, commit, home, repo stri
 	return rep
 }
 
-// Drift is the components that have a Fix: athome, grofe and canopy when they
-// are behind. Unknown (offline, a dev build) is not drift, and neither are
-// dotfiles or mise, where a chezmoi apply would overwrite local edits.
-func (r Report) Drift() []Component {
+// Drift checks only the pinned tools (athome, grofe, canopy) and returns the ones
+// that are behind, each with its Fix. dotfiles and mise are left out: a chezmoi
+// apply would overwrite local edits. Anything it cannot judge is an error, so a
+// broken check never reads as current; only an unreachable origin is not, since
+// being offline is not drift.
+func Drift(ctx context.Context, r run.Runner, version, home, repo string) ([]Component, error) {
+	pins, err := readPins(repo)
+	if err != nil {
+		return nil, err
+	}
 	var drift []Component
-	for _, c := range r.Components {
+	for _, c := range pinned(ctx, r, version, home, repo, pins) {
+		if c.Status == Unknown && c.Detail != offline {
+			return nil, fmt.Errorf("%s: %s", c.Name, c.Detail)
+		}
 		if c.Fix != "" {
 			drift = append(drift, c)
 		}
 	}
-	return drift
+	return drift, nil
+}
+
+// pinned checks athome, grofe and canopy against pins.toml.
+func pinned(ctx context.Context, r run.Runner, version, home, repo string, pins map[string]string) []Component {
+	return []Component{
+		athomeStatus(ctx, r, version, repo, pins["athome"]),
+		pinFix(grofeStatus(ctx, r, home, pins["grofe"])),
+		pinFix(canopyStatus(ctx, r, home, pins["canopy"])),
+	}
 }
 
 // pinFix marks a pinned tool that is behind its pin or missing: chezmoi apply installs it.
@@ -115,7 +131,7 @@ func repoRef(ctx context.Context, r run.Runner, repo string) string {
 	return "unknown"
 }
 
-func readPins(repo string) map[string]string {
+func readPins(repo string) (map[string]string, error) {
 	root := "home"
 	if b, err := os.ReadFile(filepath.Join(repo, ".chezmoiroot")); err == nil && strings.TrimSpace(string(b)) != "" {
 		root = strings.TrimSpace(string(b))
@@ -124,9 +140,9 @@ func readPins(repo string) map[string]string {
 		Pins map[string]string `toml:"pins"`
 	}
 	if _, err := toml.DecodeFile(filepath.Join(repo, root, ".chezmoidata", "pins.toml"), &f); err != nil {
-		return nil
+		return nil, fmt.Errorf("pins.toml: %w", err)
 	}
-	return f.Pins
+	return f.Pins, nil
 }
 
 // athomeStatus compares the running athome with the highest release tag on origin.
@@ -152,7 +168,7 @@ func tagStatus(ctx context.Context, r run.Runner, version, repo string) Componen
 	defer cancel()
 	res, err := r.Run(ctx, run.Cmd{Name: "git", Args: []string{"-C", repo, "ls-remote", "--tags", "--refs", "origin"}})
 	if err != nil || res.Code != 0 {
-		c.Status, c.Detail = Unknown, "origin is unreachable"
+		c.Status, c.Detail = Unknown, offline
 		return c
 	}
 	best := selfupdate.Highest(selfupdate.RemoteTags(res.Stdout))

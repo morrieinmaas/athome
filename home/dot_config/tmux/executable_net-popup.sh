@@ -121,10 +121,10 @@ section_mesh() {
   # shared range 100.64.0.0/10, so an address there means this machine is on a
   # mesh, whichever product is providing it.
   mesh=$(ifconfig 2>/dev/null \
-    | awk '/inet 100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\./{print $2; exit}')
+    | awk -v skip="$vpn_if" '/^[a-z]/{i=substr($1,1,length($1)-1)} i!=skip && /inet 100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\./{print $2; exit}')
   if [ -n "$mesh" ]; then
     row address "$mesh"
-    mesh_if=$(ifconfig 2>/dev/null | awk '/^[a-z]/{i=substr($1,1,length($1)-1)} /inet 100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\./{print i; exit}')
+    mesh_if=$(ifconfig 2>/dev/null | awk -v skip="$vpn_if" '/^[a-z]/{i=substr($1,1,length($1)-1)} i!=skip && /inet 100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\./{print i; exit}')
     row interface "${mesh_if:-unknown}"
   else
     row state "not on a mesh"

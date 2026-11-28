@@ -15,8 +15,9 @@
 # SPAirPortDataType 6020ms. system_profiler is banned from this script entirely;
 # the popup does the expensive work.
 #
-# On macOS the SSID needs `sudo ipconfig setverbose 1` once (see the link
-# section); without it macOS redacts the name and the pill shows the address.
+# No SSID on macOS: it redacts the name (system_profiler, networksetup and
+# ipconfig getsummary, even after `ipconfig setverbose 1`, checked on 27.0)
+# from callers without Location Services, so the pill shows the address.
 #
 # Icons render from codepoints (no literal multibyte bytes in tracked files),
 # matching battery.sh. Nerd Font glyphs, same font the rest of the bar assumes.
@@ -147,14 +148,10 @@ esac
 if [ -z "$lan_if" ] || [ -z "$lan_ip" ]; then
   link=$(pill "$red" net_link "$wifi_g offline")
 elif [ -n "$wifi_dev" ] && [ "$lan_if" = "$wifi_dev" ]; then
-  # The network name first. Linux: NetworkManager's cached list (~45ms, no
-  # radio scan). macOS: ipconfig's summary (~6ms), which macOS redacts unless
-  # `sudo ipconfig setverbose 1` was run once; redacted, it falls back.
+  # The network name where the OS gives it out (Linux: NetworkManager's cached
+  # list, ~45ms, no radio scan), else the address.
   ssid=""
-  if [ "$(uname)" = Darwin ]; then
-    ssid=$(ipconfig getsummary "$wifi_dev" 2>/dev/null | awk -F' : ' '/^ +SSID :/{print $2; exit}')
-    [ "$ssid" = "<redacted>" ] && ssid=""
-  elif command -v nmcli >/dev/null 2>&1; then
+  if [ "$(uname)" != Darwin ] && command -v nmcli >/dev/null 2>&1; then
     ssid=$(nmcli -t -f IN-USE,SSID device wifi list ifname "$wifi_dev" --rescan no 2>/dev/null \
       | awk -F: '$1=="*"{sub(/^\*:/, ""); gsub(/\\:/, ":"); print; exit}')
   fi

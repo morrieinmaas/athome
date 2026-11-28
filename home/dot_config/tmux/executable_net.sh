@@ -185,8 +185,10 @@ case "$vpn_if" in utun*|wg*|tun*|nordlynx|nordtun|qtun) vpn_up=1 ;; *) vpn_up=0 
 # Mesh: NordVPN Meshnet (and Tailscale, and NetBird) all allocate from the
 # RFC 6598 shared range 100.64.0.0/10, so an address in that range on any
 # interface means "this machine is on a mesh". Cheap: one ifconfig, ~7ms.
+# Except the VPN's own tunnel ($vpn_if): NordVPN's app addresses it from that
+# range too, which read as a mesh while only the VPN was up.
 mesh_ip=$(ifconfig 2>/dev/null \
-  | awk '/inet 100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\./{print $2; exit}')
+  | awk -v skip="$vpn_if" '/^[a-z]/{i=substr($1,1,length($1)-1)} i!=skip && /inet 100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\./{print $2; exit}')
 
 # Muted, not red, when either is off. Both are things you switch off on purpose
 # all the time now, so red would cry wolf; red is reserved for a broken link.

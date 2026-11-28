@@ -2,23 +2,22 @@
 # tmux status-bar network segment: link + VPN tunnels, as two pills in the same
 # style as battery.sh / pet.sh. Click either pill for detail (net-popup.sh).
 #
-# Pill 1, link:  Wi-Fi/ethernet glyph + the LAN address. The address is the
-#                genuinely useful bit: it is what you connect to, and it drifts
-#                (this machine moved .156 -> .104 within a day).
+# Pill 1, link:  Wi-Fi/ethernet glyph + the network name, else a private LAN
+#                address, else the interface. Never a public address.
 # Pill 2, VPN:   is the default route on a tunnel, i.e. is traffic leaving
 #                through a VPN. Provider-agnostic.
-# Pill 3, mesh:  this machine's 100.64.0.0/10 address, if it has one. Works for
+# Pill 3, mesh:  whether this machine has a 100.64.0.0/10 address. Works for
 #                NordVPN Meshnet, Tailscale and NetBird alike, since all three
-#                allocate from that range.
+#                allocate from that range. The address itself is not shown.
 #
 # Cost matters here: the bar re-renders every status-interval. Measured on this
 # machine: ifconfig 7ms, networksetup ~160ms (cached below), system_profiler
 # SPAirPortDataType 6020ms. system_profiler is banned from this script entirely;
 # the popup does the expensive work.
 #
-# SSID is deliberately NOT shown: recent macOS redacts it (system_profiler
-# returns "<redacted>", networksetup claims "not associated") unless the calling
-# app holds Location Services permission, which a terminal normally does not.
+# No SSID on macOS: it redacts the name (system_profiler, networksetup and
+# ipconfig getsummary, even after `ipconfig setverbose 1`, checked on 27.0)
+# from callers without Location Services, so the pill shows the address.
 #
 # Icons render from codepoints (no literal multibyte bytes in tracked files),
 # matching battery.sh. Nerd Font glyphs, same font the rest of the bar assumes.
@@ -139,28 +138,26 @@ fi
 lan_ip=""
 [ -n "$lan_if" ] && lan_ip=$(ifconfig "$lan_if" 2>/dev/null | awk '/inet /{print $2; exit}')
 
-# On macOS this shows the ADDRESS, not the network name, on purpose (Linux shows
-# the SSID, see below). macOS treats the SSID as
-# location data (network names are how device positioning works without GPS) and
-# redacts it, along with the BSSID, from any caller lacking Location Services
-# permission. Turning that on for a terminal is a real privacy trade for a
-# cosmetic label, so it is declined here. The address is the more useful value
-# anyway: it is what the break-glass path connects to, and it drifts.
+# The bar is on screen during screen shares, so it never shows a public
+# address: only a private (RFC 1918) one, else the interface name.
+case "$lan_ip" in
+  10.*|192.168.*|172.1[6-9].*|172.2[0-9].*|172.3[01].*) shown_ip=$lan_ip ;;
+  *) shown_ip=$lan_if ;;
+esac
+
 if [ -z "$lan_if" ] || [ -z "$lan_ip" ]; then
   link=$(pill "$red" net_link "$wifi_g offline")
 elif [ -n "$wifi_dev" ] && [ "$lan_if" = "$wifi_dev" ]; then
-  # Linux doesn't redact the SSID, so show the network name there (the address
-  # is one click away in the popup). NetworkManager is required on both Arch
-  # and Fedora; --rescan no reads the cached list (~45ms, no radio scan).
-  # macOS, or no answer, keeps the address.
+  # The network name where the OS gives it out (Linux: NetworkManager's cached
+  # list, ~45ms, no radio scan), else the address.
   ssid=""
   if [ "$(uname)" != Darwin ] && command -v nmcli >/dev/null 2>&1; then
     ssid=$(nmcli -t -f IN-USE,SSID device wifi list ifname "$wifi_dev" --rescan no 2>/dev/null \
       | awk -F: '$1=="*"{sub(/^\*:/, ""); gsub(/\\:/, ":"); print; exit}')
   fi
-  link=$(pill "$blue" net_link "$wifi_g ${ssid:-$lan_ip}")
+  link=$(pill "$blue" net_link "$wifi_g ${ssid:-$shown_ip}")
 else
-  link=$(pill "$blue" net_link "$eth_g $lan_if $lan_ip")
+  link=$(pill "$blue" net_link "$eth_g $shown_ip")
 fi
 
 # ── tunnels ─────────────────────────────────────────────────────────────────
@@ -200,7 +197,8 @@ else
 fi
 
 if [ -n "$mesh_ip" ]; then
-  mesh_pill=$(pill "$green" net_vpn "$peer_g $mesh_ip")
+  # The state, not the address: the address is one click away in the popup.
+  mesh_pill=$(pill "$green" net_vpn "$peer_g mesh")
 else
   mesh_pill=$(pill "$muted" net_vpn "$peer_g no mesh")
 fi

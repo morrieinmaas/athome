@@ -86,8 +86,8 @@ section_link() {
     [ -z "$d" ] && d=$(awk '/^nameserver/{printf "%s ", $2}' /etc/resolv.conf 2>/dev/null)
     row dns "${d:-unknown}"
   fi
-  # No public-IP row here: it belongs with VPN egress, and having it in both
-  # sections meant two curl calls and ~1s of avoidable latency in the popup.
+  # Never a public-IP row, here or under VPN egress: the popup is on screen
+  # during screen shares, and the public address must never be.
 }
 
 section_vpn() {
@@ -113,7 +113,6 @@ section_vpn() {
       row via   "${vpn_if:-unknown}"
       ;;
   esac
-  row "public ip" "$(curl -4 -s --max-time 5 https://1.1.1.1/cdn-cgi/trace 2>/dev/null | sed -n 's/^ip=//p')"
 }
 
 section_mesh() {
